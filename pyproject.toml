@@ -1,0 +1,86 @@
+[project]
+name = "fulcrum"
+version = "0.0.0"
+description = "枢衡 Fulcrum —— 面向政企智能体的安全管控与评测中台"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "pyright>=1.1",
+    "import-linter>=2.0",
+    "pre-commit>=3.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fulcrum"]
+
+# ───────────────────────────── ruff ─────────────────────────────
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+
+# ───────────────────────────── pyright ─────────────────────────────
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+# core 内核要求全类型;实现层可逐步收紧。
+
+# ───────────────────────────── pytest ─────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+# ───────────────────────────── import-linter(依赖方向机器化强制)─────────────────────────────
+[tool.importlinter]
+root_package = "fulcrum"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "core 内核保持纯净:不依赖外层与框架"
+type = "forbidden"
+source_modules = ["fulcrum.core"]
+forbidden_modules = [
+    "fulcrum.adapters",
+    "fulcrum.capabilities",
+    "fulcrum.config",
+    "fulcrum.app",
+    "fulcrum.observability",
+    "fulcrum.eval",
+    "fastapi",
+    "uvicorn",
+    "pydantic_settings",
+    "yaml",
+    "httpx",
+]
+
+[[tool.importlinter.contracts]]
+name = "capabilities 只向内依赖 core"
+type = "forbidden"
+source_modules = ["fulcrum.capabilities"]
+forbidden_modules = ["fulcrum.adapters", "fulcrum.app", "fastapi"]
+
+[[tool.importlinter.contracts]]
+name = "adapters 不依赖 capabilities 与组装根"
+type = "forbidden"
+source_modules = ["fulcrum.adapters"]
+forbidden_modules = ["fulcrum.capabilities", "fulcrum.app"]

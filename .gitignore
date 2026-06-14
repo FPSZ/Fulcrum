@@ -59,6 +59,10 @@ pnpm-debug.log*
 # Large datasets / model weights should not live in git (use DVC / release assets)
 data/raw/
 data/interim/
+data/runtime/
+*.sqlite
+*.sqlite3
+docs/eval/results/
 *.bin
 *.gguf
 *.safetensors

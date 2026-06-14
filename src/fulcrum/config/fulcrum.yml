@@ -1,0 +1,17 @@
+# 枢衡能力装配清单 —— composition root 按此从注册表取实现组装管线。
+# 队友加了新实现?在这里按注册名启用即可,核心管线零改动。
+# M0 默认全部为桩实现(keyword_rules 为示例检测器);M1+ 逐个替换为真实现。
+
+labeler: passthrough
+detectors:
+  - keyword_rules        # 示例检测器(可解释关键词规则)
+attributor: zero
+risk_scorer: zero
+chain_analyzer: noop
+policy: allow_all
+executor: echo
+tools:
+  - echo
+scanner: noop
+model: fake
+audit: memory

@@ -1,0 +1,17 @@
+# 提交前本地门禁:格式 + lint + 依赖方向。安装:pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.10
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter(依赖方向)
+        entry: lint-imports
+        language: system
+        pass_filenames: false
+        files: ^src/fulcrum/.*\.py$
