@@ -65,6 +65,22 @@ data/interim/
 *.ckpt
 *.onnx
 
+# ───────────────────────────── Diagram / Render Tooling ─────────────────────────────
+# 最终图与图源(diagrams/*.svg、*.d2)入库;
+# 生图过程的临时产物(预览图、废弃图源、渲染缓存/配置)一律不入库。
+**/diagrams/_scratch/
+_preview.png
+*.preview.png
+.puppeteer.json
+pconf.json
+.mermaid/
+.mermaid-cli/
+puppeteer-cache/
+.cache/puppeteer/
+ms-playwright/
+.local-chromium/
+render.log
+
 # ───────────────────────────── Logs & Runtime ─────────────────────────────
 logs/
 *.log

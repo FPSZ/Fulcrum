@@ -1,0 +1,100 @@
+# 枢衡 Fulcrum · 技术架构总览(D2 图源)
+# 渲染:d2 --theme 0 --pad 28 architecture-overview.d2 architecture-overview.svg
+
+direction: down
+
+classes: {
+  access: { style: { fill: "#dbeafe"; stroke: "#2563eb"; font-color: "#1e3a8a" } }
+  t1:     { style: { fill: "#ffedd5"; stroke: "#ea580c"; font-color: "#7c2d12" } }
+  t2:     { style: { fill: "#fee2e2"; stroke: "#dc2626"; font-color: "#7f1d1d" } }
+  t3:     { style: { fill: "#fef9c3"; stroke: "#ca8a04"; font-color: "#713f12" } }
+  t4:     { style: { fill: "#dcfce7"; stroke: "#16a34a"; font-color: "#14532d" } }
+  spine:  { style: { fill: "#ede9fe"; stroke: "#7c3aed"; font-color: "#4c1d95" } }
+  ext:    { style: { fill: "#f1f5f9"; stroke: "#94a3b8"; font-color: "#334155" } }
+  ctrl:   { style: { fill: "#e2e8f0"; stroke: "#475569"; font-color: "#1e293b" } }
+}
+
+src: 输入源 {
+  class: ext
+  u: 用户 / 网页 / 文档 { class: ext }
+  k: 知识库 / 记忆 { class: ext }
+}
+
+agent: 智能体（OpenClaw 类） {
+  style: { stroke-dash: 4; fill: "#f8fafc"; stroke: "#64748b" }
+}
+
+gw: 枢衡 Fulcrum · 安全网关 {
+  style: { fill: "#fbfdff"; stroke: "#475569"; stroke-width: 2; font-size: 18; bold: true }
+
+  c1: 接入层 · C1（无侵入） {
+    class: access
+    llm: LLM 代理（OpenAI 兼容） { class: access }
+    mcp: MCP 代理 { class: access }
+    adp: 非 MCP 工具适配器 { class: access }
+  }
+
+  c2a: |md
+    **① 输入威胁检测 · C2a**
+    输入扫描 · 来源打标
+  | { class: t1 }
+  c2b: |md
+    **② 工具调用管控 · C2b**
+    风险评分 · 任务链分析
+  | { class: t2 }
+  c4x: |md
+    **沙箱执行器 · C4x**
+    容器/受限子进程 · 路径白名单 · 网络开关
+  | { class: t2 }
+
+  c3: |md
+    **策略中心 · C3**
+    声明式策略 + 风险分级
+  | { class: spine }
+  c4: |md
+    **审批 / 分级处置 · C4**
+    allow · 净化 · 审批 · 阻断
+  | { class: t2 }
+  c5: |md
+    **③ 供应链扫描 · C5**
+    manifest / 权限 / 外联依赖 → 评级
+  | { class: t3 }
+
+  bus: |md
+    **可信上下文 · 来源归因总线**
+    来源标注 + 证据化溯源（置信度）
+  | { class: spine }
+  c6: |md
+    **④ 防篡改审计 + 评测引擎 · C6**
+    hash-chain · ASR / 误报漏报 / 阻断率 / 溯源命中率
+  | { class: t4 }
+}
+
+con: |md
+  **运营控制台 · C7（Web）**
+  事件 · 审批 · 审计溯源 · 评测报告
+| { class: ctrl }
+
+# ===== 连线 =====
+src -> gw.c1.llm: 多源输入
+agent <-> gw.c1.llm: LLM API
+agent -> gw.c1.mcp: 工具调用
+agent -> gw.c1.adp: 非 MCP 调用
+
+gw.c1 -> gw.c2a
+gw.c2a -> gw.c2b
+gw.c2b -> gw.c4x
+
+gw.c3 -> gw.c2a: 策略 { style.stroke-dash: 4 }
+gw.c3 -> gw.c2b: 策略 { style.stroke-dash: 4 }
+gw.c2b <-> gw.c4: 审批
+gw.c5 -> gw.c2b: 评级
+
+gw.c2a -> gw.bus { style.stroke-dash: 2 }
+gw.c2b -> gw.bus { style.stroke-dash: 2 }
+gw.bus -> gw.c6 { style.stroke-dash: 2 }
+gw.c2a -> gw.c6
+gw.c2b -> gw.c6
+gw.c4x -> gw.c6
+
+gw.c6 -> con: 可视化
