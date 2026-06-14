@@ -39,17 +39,28 @@ src/
     app/
       app-shell.tsx        倒 L 外壳(侧栏 + 内容)
       sidebar.tsx          可收缩动画侧栏
+    lib/
+      module/              ★ 功能模块插件系统(FeatureModule 契约 + 注册表)
+      backup/              ★ 备份导入引擎(资源注册表 + 导入/导出 + Provider)
   features/
+    register.ts            ★ 唯一装配清单:加页面在此加一行
+    placeholders.tsx       未实现页面的占位模块
     events/                实时事件页(master-detail)
-      types.ts             领域类型
-      data.ts              演示数据(无真实 payload/密钥)
-      meta.ts              等级/处置/来源/可信度 的标签·配色·图标映射
-      disposition-icon.tsx 处置状态图标
+      module.tsx           ★ 功能模块(导航项 + 页面 + 备份资源)
+      backup.ts            贡献的可备份资源(zod schema)
       evidence-chain.tsx   证据归因链(签名元素)
-      event-row.tsx        事件行(竖色条=等级 / 时间 / 标题 / 来源图标)
-      event-group.tsx      按处置分组(可折叠,高度动画)
-      event-detail.tsx     右侧常驻详情(属性 + 证据链 + 审批)
       events-page.tsx      页面编排(筛选/选中/键盘/toast)
+    settings/              系统设置(8 类二级导航)+ module.tsx
+    backup/                备份导入 UI(导入按钮 / 数据与备份面板)
+```
+
+## 加一个页面(插件式,3 步)
+
+```
+1. features/<x>/<x>-page.tsx     写页面,复用 @/components/ui
+2. features/<x>/module.tsx       defineFeature({ id,label,icon,group,order,component[,resources] })
+3. features/register.ts          FEATURES 数组加一行
+→ 导航 / 路由 / 备份资源自动接上,不改 App.tsx、不改 Sidebar
 ```
 
 ## 设计令牌

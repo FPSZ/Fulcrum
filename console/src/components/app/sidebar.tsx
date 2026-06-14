@@ -1,51 +1,9 @@
 import { motion } from 'motion/react'
-import {
-  Activity,
-  ChevronUp,
-  FlaskConical,
-  Gauge,
-  PanelLeft,
-  Package,
-  Plug,
-  Scale,
-  Search,
-  Settings,
-  Shield,
-  FileSearch,
-  type LucideIcon,
-} from 'lucide-react'
+import { ChevronUp, PanelLeft, Search, Shield } from 'lucide-react'
 import { Avatar, IconButton, Kbd, Tooltip } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { ease } from '@/lib/motion'
-
-interface NavItem {
-  id: string
-  icon: LucideIcon
-  label: string
-  count?: number
-  danger?: boolean
-}
-interface NavSection {
-  group: string
-  items: NavItem[]
-}
-
-const NAV: NavSection[] = [
-  { group: '监测', items: [
-    { id: 'overview', icon: Gauge, label: '总览' },
-    { id: 'events', icon: Activity, label: '实时事件', count: 38 },
-  ] },
-  { group: '管控', items: [
-    { id: 'policies', icon: Scale, label: '策略中心' },
-    { id: 'tools', icon: Plug, label: '工具网关', count: 5, danger: true },
-    { id: 'supply', icon: Package, label: '供应链', count: 2 },
-  ] },
-  { group: '取证', items: [
-    { id: 'audit', icon: FileSearch, label: '审计溯源' },
-    { id: 'eval', icon: FlaskConical, label: '评测验证' },
-  ] },
-  { group: '系统', items: [{ id: 'settings', icon: Settings, label: '系统设置' }] },
-]
+import { FEATURE_GROUPS, getFeatures } from '@/lib/module'
 
 export function Sidebar({
   collapsed,
@@ -58,6 +16,13 @@ export function Sidebar({
   active: string
   onNavigate: (id: string) => void
 }) {
+  const features = getFeatures()
+  // 从功能模块注册表自动构建导航(按分组,组内按 order)
+  const sections = FEATURE_GROUPS.map((group) => ({
+    group,
+    items: features.filter((f) => f.group === group),
+  })).filter((s) => s.items.length > 0)
+
   return (
     <motion.aside
       animate={{ width: collapsed ? 56 : 244 }}
@@ -105,9 +70,9 @@ export function Sidebar({
         </button>
       </Tooltip>
 
-      {/* 导航 */}
+      {/* 导航(由功能模块注册表生成) */}
       <nav className="mt-1 min-h-0 flex-1 overflow-y-auto">
-        {NAV.map((sec) => (
+        {sections.map((sec) => (
           <div key={sec.group}>
             {!collapsed && (
               <div className="px-2.5 pb-1.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-mute">
@@ -115,14 +80,14 @@ export function Sidebar({
               </div>
             )}
             {collapsed && <div className="my-1.5 border-t border-line" />}
-            {sec.items.map((it) => {
-              const isActive = active === it.id
-              const Icon = it.icon
+            {sec.items.map((f) => {
+              const isActive = active === f.id
+              const Icon = f.icon
               return (
-                <Tooltip key={it.id} content={collapsed ? it.label : ''} side="right">
+                <Tooltip key={f.id} content={collapsed ? f.label : ''} side="right">
                   <button
                     type="button"
-                    onClick={() => onNavigate(it.id)}
+                    onClick={() => onNavigate(f.id)}
                     className={cn(
                       'focus-ring flex w-full items-center gap-2.5 rounded-sm px-2.5 py-1.5 text-[13px] font-normal text-ink-2 transition-colors',
                       'hover:bg-surface-2',
@@ -134,19 +99,19 @@ export function Sidebar({
                       className={cn('h-4 w-4 shrink-0', isActive ? 'text-accent' : 'text-ink-3')}
                       strokeWidth={1.8}
                     />
-                    {!collapsed && <span className="truncate">{it.label}</span>}
-                    {!collapsed && typeof it.count === 'number' && (
+                    {!collapsed && <span className="truncate">{f.label}</span>}
+                    {!collapsed && typeof f.badge === 'number' && (
                       <span
                         className={cn(
                           'font-data ml-auto text-[11px]',
                           isActive
                             ? 'text-accent-ink'
-                            : it.danger
+                            : f.danger
                               ? 'font-semibold text-high'
                               : 'text-ink-mute',
                         )}
                       >
-                        {it.count}
+                        {f.badge}
                       </span>
                     )}
                   </button>

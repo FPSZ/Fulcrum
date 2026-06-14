@@ -2,10 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { App } from './App'
-import { registerBackupResources } from './features/register-backups'
+import { registerFeatures } from './features/register'
 
-// 注册所有可导入/导出的资源(events,后续逐步增加)
-registerBackupResources()
+// 装配所有功能模块:导航 / 路由 / 备份资源一次性接上(新增页面只改 register.ts)
+registerFeatures()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
