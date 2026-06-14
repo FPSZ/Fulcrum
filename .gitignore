@@ -1,0 +1,84 @@
+# ───────────────────────────── Secrets & Local Config ─────────────────────────────
+.env
+.env.*
+!.env.example
+*.local
+secrets/
+*.pem
+*.key
+*.crt
+credentials.json
+
+# ───────────────────────────── Python ─────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ───────────────────────────── Node / Frontend ─────────────────────────────
+node_modules/
+.pnpm-store/
+dist-ssr/
+*.tsbuildinfo
+.next/
+.nuxt/
+.cache/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ───────────────────────────── Data, Models & Artifacts ─────────────────────────────
+# Large datasets / model weights should not live in git (use DVC / release assets)
+data/raw/
+data/interim/
+*.bin
+*.gguf
+*.safetensors
+*.ckpt
+*.onnx
+
+# ───────────────────────────── Logs & Runtime ─────────────────────────────
+logs/
+*.log
+*.pid
+tmp/
+temp/
+
+# ───────────────────────────── IDE / Editor / OS ─────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
