@@ -2,6 +2,8 @@
 
 私有化部署的 Web 控制台前端。技术栈与视觉语言均已锁定,新功能在此基础上扩展。
 
+> 规范见 [docs/arch/02-前端骨架与扩展规范.md](../docs/arch/02-前端骨架与扩展规范.md);整体进度见 [docs/plan/03-进度看板.md](../docs/plan/03-进度看板.md)。
+
 ## 运行
 
 ```bash
@@ -28,28 +30,22 @@ src/
   lib/
     utils.ts               cn() 类名合并
     motion.ts              统一过渡曲线与动效变体
+    module/                ★ 功能模块插件系统(FeatureModule 契约 + 注册表)
+    backup/                ★ 备份导入引擎(资源注册表 + 导入/导出 + Provider)
   components/
     ui/                    ★ 自研组件库(分类归档,统一从 '@/components/ui' 引入)
-      inputs/              Button · IconButton · Segmented
+      inputs/              Button · IconButton · Segmented · Input · Switch · Select
       data-display/        Badge · StatusDot · Avatar · Kbd · KeyValue
       overlay/             Tooltip
       feedback/            Skeleton · EmptyState · Toaster(+toast)
-      layout/              Card · Separator
+      layout/              Card · Separator · SettingSection/Row
       index.ts             统一出口
-    app/
-      app-shell.tsx        倒 L 外壳(侧栏 + 内容)
-      sidebar.tsx          可收缩动画侧栏
-    lib/
-      module/              ★ 功能模块插件系统(FeatureModule 契约 + 注册表)
-      backup/              ★ 备份导入引擎(资源注册表 + 导入/导出 + Provider)
+    app/                   AppShell · Sidebar · Placeholder
   features/
     register.ts            ★ 唯一装配清单:加页面在此加一行
     placeholders.tsx       未实现页面的占位模块
     events/                实时事件页(master-detail)
-      module.tsx           ★ 功能模块(导航项 + 页面 + 备份资源)
-      backup.ts            贡献的可备份资源(zod schema)
-      evidence-chain.tsx   证据归因链(签名元素)
-      events-page.tsx      页面编排(筛选/选中/键盘/toast)
+      module.tsx · backup.ts · evidence-chain.tsx · events-page.tsx …
     settings/              系统设置(8 类二级导航)+ module.tsx
     backup/                备份导入 UI(导入按钮 / 数据与备份面板)
 ```
@@ -80,3 +76,15 @@ src/
 - 颜色只表状态,强调色只有薰衣草蓝一种色相;能用图形/颜色就不写字。
 - 组件先进 `components/ui` 并归类,再在 `features/*` 组合;不要在页面里散写基础样式。
 - 动画走 `lib/motion.ts` 的统一曲线;尊重 `prefers-reduced-motion`。
+
+## 当前进度
+
+- ✅ 工程骨架 + 设计令牌 + 自研组件库
+- ✅ 倒 L 外壳 + 可收缩侧栏
+- ✅ 功能模块插件系统(`lib/module` + `features/register.ts`)
+- ✅ 备份导入系统(`lib/backup`,版本化容器 + 资源注册表)
+- ✅ 实时事件页(master-detail + 证据归因链)、系统设置页(8 类)
+- 🚧 总览 / 策略中心 / 工具网关 / 供应链 / 审计溯源 / 评测验证(占位)
+- ⏳ 接后端 OpenAPI(当前为备份导入的 mock 数据)
+
+> 跨前后端的完整进度以 [docs/plan/03-进度看板.md](../docs/plan/03-进度看板.md) 为准。
