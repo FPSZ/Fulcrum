@@ -23,6 +23,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# 例外:前端 console/src/lib 是真实源码(utils / motion / backup / module),不受上面 Python `lib/` 规则约束
+!console/src/lib/
 parts/
 sdist/
 var/
