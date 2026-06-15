@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 # 敏感文件/路径:系统账户、密钥、凭据、env、证书。
 _SENSITIVE_PATH = re.compile(
     r"(/etc/(passwd|shadow)|id_rsa|\.ssh|\.env\b|\.pem\b|\.key\b|secret|credential|password|"
-    r"密钥|私钥|口令|凭据|凭证|涉密)",
+    r"confidential|密钥|私钥|口令|凭据|凭证|涉密|机密)",
     re.IGNORECASE,
 )
 # 危险 shell 片段:删除、外联下载、反弹 shell、提权、磁盘操作。

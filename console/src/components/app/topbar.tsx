@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bell, HelpCircle, Images, Radio, Search } from 'lucide-react'
+import { Bell, HelpCircle, Images, PanelLeft, Radio, Search, Shield } from 'lucide-react'
 import { IconButton, Kbd } from '@/components/ui'
 import { BACKGROUNDS, useBackground } from '@/lib/background'
 
@@ -22,14 +22,43 @@ function LiveClock() {
 }
 
 /**
- * 全局顶栏:左侧当前区域标题,右侧实时时钟 + 全局检索 + 切换背景(多于一张时) / 帮助 / 告警。
+ * 全局顶栏(横贯整条顶部):左起 收缩钮 + 品牌 + 当前区域标题;
+ * 右侧 实时时钟 + 全局检索 + 切换背景(多于一张时) / 帮助 / 告警。
  * 头像不放这里 —— 左下角侧栏已有用户区。
  */
-export function Topbar({ title }: { title: string }) {
+export function Topbar({
+  title,
+  collapsed,
+  onToggle,
+}: {
+  title: string
+  collapsed: boolean
+  onToggle: () => void
+}) {
   const { current, cycle } = useBackground()
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line pl-6 pr-4">
-      <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{title}</h1>
+    <header className="flex h-20 shrink-0 items-center gap-3 pl-3 pr-4">
+      <IconButton
+        label={collapsed ? '展开侧栏' : '收起侧栏'}
+        variant="ghost"
+        className="h-9 w-9 rounded-[10px]"
+        onClick={onToggle}
+      >
+        <PanelLeft className="h-[18px] w-[18px]" strokeWidth={1.9} />
+      </IconButton>
+
+      {/* 品牌 */}
+      <div className="flex items-center gap-2.5">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-accent shadow-[0_6px_14px_-6px_rgba(59,110,246,0.6)]">
+          <Shield className="h-[19px] w-[19px] text-white" strokeWidth={1.9} />
+        </span>
+        <span className="whitespace-nowrap text-[16px] font-bold leading-none tracking-[-0.01em]">
+          枢衡 <span className="font-medium text-ink-3">Fulcrum</span>
+        </span>
+      </div>
+
+      <span className="mx-1 h-5 w-px shrink-0 bg-line" />
+      <h1 className="truncate text-[16px] font-semibold tracking-[-0.01em] text-ink">{title}</h1>
 
       <div className="ml-auto flex items-center gap-2">
         <LiveClock />

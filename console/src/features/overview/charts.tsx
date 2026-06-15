@@ -1,5 +1,11 @@
 /** 总览图表:纯 SVG 矢量,低 DPI 锐利。颜色取设计令牌 CSS 变量。 */
 
+/** 柱形路径:只圆顶、底部直角(柱从基线向上生长,圆角随高度自适应不变形) */
+function topRoundedBar(x: number, y: number, w: number, h: number, r: number): string {
+  const rr = Math.max(0, Math.min(r, w / 2, h))
+  return `M${x},${y + h} L${x},${y + rr} Q${x},${y} ${x + rr},${y} L${x + w - rr},${y} Q${x + w},${y} ${x + w},${y + rr} L${x + w},${y + h} Z`
+}
+
 export function BarChart({
   data,
   labels,
@@ -19,7 +25,7 @@ export function BarChart({
   const max = Math.max(50, Math.ceil(Math.max(...data) / 50) * 50)
   const n = data.length
   const slot = innerW / n
-  const bw = Math.min(24, slot * 0.5)
+  const bw = Math.min(26, slot * 0.56)
 
   const grid = [0, 1, 2, 3, 4].map((g) => {
     const v = (max * g) / 4
@@ -44,12 +50,8 @@ export function BarChart({
         const isHi = i === highlight
         return (
           <g key={i}>
-            <rect
-              x={x - bw / 2}
-              y={y}
-              width={bw}
-              height={bh}
-              rx="5"
+            <path
+              d={topRoundedBar(x - bw / 2, y, bw, bh, 6)}
               fill={isHi ? 'var(--color-accent)' : 'var(--color-bar-idle)'}
             />
             <text
@@ -138,13 +140,9 @@ export function LiveChart({
         const y = padT + innerH - bh
         const isNow = i === n - 1
         return (
-          <rect
+          <path
             key={i}
-            x={x - bw / 2}
-            y={y}
-            width={bw}
-            height={bh}
-            rx="2"
+            d={topRoundedBar(x - bw / 2, y, bw, bh, 3)}
             fill={isNow ? 'var(--color-accent)' : v > 0 ? 'var(--color-bar-idle)' : 'transparent'}
             opacity={isNow ? 1 : 0.55 + (i / n) * 0.45}
           />

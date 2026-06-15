@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { LogOut, Shield, Sparkles } from 'lucide-react'
+import { LogOut, Sparkles } from 'lucide-react'
 import { Avatar, IconButton, Tooltip } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
@@ -36,25 +36,12 @@ export function Sidebar({
     <motion.aside
       animate={{ width: collapsed ? 64 : 244 }}
       transition={{ duration: 0.22, ease: ease.out }}
-      className="relative z-10 shrink-0 overflow-hidden border-r border-line bg-white/45"
+      className="relative z-10 shrink-0 overflow-hidden"
     >
       {/* 固定 244px 内容壳:宽度恒定 → 不回流;由 aside 裁切 */}
       <div className="flex h-full w-[244px] flex-col px-3 py-3.5">
-        {/* 品牌 */}
-        <div className="flex h-9 items-center gap-2.5 px-1">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-accent shadow-[0_6px_14px_-6px_rgba(59,110,246,0.6)]">
-            <Shield className="h-[19px] w-[19px] text-white" strokeWidth={1.9} />
-          </span>
-          <span className={fade('min-w-0 flex-1 whitespace-nowrap leading-tight')}>
-            <span className="block text-[16px] font-bold tracking-[-0.01em]">
-              枢衡 <span className="font-medium text-ink-3">Fulcrum</span>
-            </span>
-            <span className="block text-[12.5px] text-ink-mute">智能体安全中台</span>
-          </span>
-        </div>
-
-        {/* 导航 */}
-        <nav className="mt-2 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        {/* 导航(品牌已上移到顶栏) */}
+        <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           {sections.map((sec) => (
             <div key={sec.group}>
               {/* 分类名:收起时也保留(监测/管控… 2 字,窄条放得下) */}

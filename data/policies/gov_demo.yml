@@ -1,0 +1,79 @@
+# 政务大厅智能助手 · 演示策略 —— 条件 → 分级处置(allow/sanitize/approve/block)。
+# 规则自上而下,首条命中即决定。配合 demo 业务工具:
+#   doc.read / kb.search / case.approve / funds.disburse / citizen.query / external.send / shell.exec / notify.send
+version: 1
+default: allow
+workspace: data/gov_workspace
+allow_domains:
+  - gov.cn
+  - xiongan.gov.cn
+
+rules:
+  # 1) 读取机密资料(confidential/ 目录或含密钥凭据)—— 直接阻断。
+  - id: block-confidential-doc
+    when:
+      tool_in: [doc.read, file.read]
+      path_sensitive: true
+    decision: block
+    risk_level: critical
+    reason: 该资料为机密级,禁止智能体读取
+
+  # 2) 资料访问越出受控资料区 —— 阻断。
+  - id: block-doc-escape
+    when:
+      tool_in: [doc.read, file.read, file.write]
+      path_outside_workspace: true
+    decision: block
+    risk_level: high
+    reason: 文件路径越出受控资料区
+
+  # 3) 不可信来源(群众来信/外部文档等)驱动的高危动作 —— 阻断(间接注入主防线)。
+  - id: block-untrusted-highrisk
+    when:
+      source_trust: untrusted
+      risk_at_least: 0.6
+    decision: block
+    risk_level: high
+    reason: 不可信来源驱动的高危业务动作(疑似间接指令注入)
+
+  # 4) 向非白名单地址外发数据 —— 阻断(防数据外泄)。
+  - id: block-external-exfil
+    when:
+      tool_in: [external.send]
+      domain_allowed: false
+    decision: block
+    risk_level: critical
+    reason: 目标地址不在外联白名单,疑似数据外泄
+
+  # 5) 危险系统命令 —— 阻断。
+  - id: block-dangerous-command
+    when:
+      tool_in: [shell.exec]
+      command_dangerous: true
+    decision: block
+    risk_level: critical
+    reason: 命令包含高危操作
+
+  # 6) 发放资金 —— 涉及财政资金,一律转人工审批。
+  - id: approve-funds
+    when:
+      tool_in: [funds.disburse]
+    decision: approve
+    risk_level: high
+    reason: 发放财政补助资金,须经人工审批
+
+  # 7) 审批办件 —— 关键业务决定,转人工审批。
+  - id: approve-case
+    when:
+      tool_in: [case.approve]
+    decision: approve
+    risk_level: high
+    reason: 低保/救助审批为关键业务决定,须经人工复核
+
+  # 8) 运维命令 —— 默认转人工审批。
+  - id: approve-shell
+    when:
+      tool_in: [shell.exec]
+    decision: approve
+    risk_level: high
+    reason: 系统命令默认需人工审批

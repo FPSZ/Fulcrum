@@ -219,15 +219,15 @@ export function LoginPage() {
       <div className="w-full shrink-0 md:w-[44%] md:min-w-[440px] md:max-w-[600px]">
         <div
           className={cn(
-            'relative m-4 flex h-[calc(100%-32px)] flex-col rounded-[28px] px-9 py-10 sm:px-14',
-            'border border-white/65 bg-white/72 backdrop-blur-2xl',
+            'relative flex h-full flex-col px-9 py-10 sm:px-14',
+            'border-y border-r border-white/65 bg-white/72 backdrop-blur-2xl',
             'shadow-[0_36px_90px_-36px_rgba(26,36,70,0.5),0_8px_24px_-16px_rgba(26,36,70,0.25),inset_0_1.5px_0_rgba(255,255,255,0.95)]',
           )}
         >
           {/* 顶角受光高光 */}
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 rounded-[28px]"
+            className="pointer-events-none absolute inset-0"
             style={{
               background:
                 'radial-gradient(60% 32% at 0% 0%, rgba(255,255,255,0.5), transparent 70%)',
