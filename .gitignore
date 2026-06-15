@@ -93,6 +93,7 @@ logs/
 *.pid
 tmp/
 temp/
+shot.json
 
 # ───────────────────────────── IDE / Editor / OS ─────────────────────────────
 .idea/

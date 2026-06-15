@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { AppShell } from './components/app/app-shell'
 import { Placeholder } from './components/app/placeholder'
@@ -18,6 +18,29 @@ function View({ id }: { id: string }) {
   return <Page />
 }
 
+/**
+ * 页面切换过场:新页从右侧滑入淡现、旧页向左滑出淡隐,克制快速(Linear 风)。
+ * 页面绝对定位叠放 → 两页同时滑动 = 连贯一气;外层 main 的 overflow-hidden 裁掉越界部分。
+ */
+function PageTransition({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <div className="relative min-h-0 flex-1">
+      <AnimatePresence initial={false}>
+        <motion.div
+          key={id}
+          initial={{ opacity: 0, x: 22 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -22 }}
+          transition={{ duration: 0.26, ease: ease.out }}
+          className="absolute inset-0 flex flex-col"
+        >
+          {children}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  )
+}
+
 /** 登录后的主控制台(外壳 + 当前页面) */
 function AppView() {
   const [view, setView] = useState(() => (getFeature('overview') ? 'overview' : getDefaultFeatureId()))
@@ -25,7 +48,9 @@ function AppView() {
     <BackupProvider>
       <TooltipProvider delayDuration={250}>
         <AppShell active={view} onNavigate={setView}>
-          <View id={view} />
+          <PageTransition id={view}>
+            <View id={view} />
+          </PageTransition>
         </AppShell>
         <Toaster />
       </TooltipProvider>

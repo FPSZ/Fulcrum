@@ -78,20 +78,49 @@ export function BarChart({
   )
 }
 
-/** 秒级实时曲线:近 N 秒每秒攻击尝试,最右=当前秒(高亮),整体随秒左移 */
-export function LiveChart({ data }: { data: number[] }) {
+/** 距今 sec 秒 → 相对时间标签(横坐标用) */
+function fmtAgo(sec: number): string {
+  if (sec <= 0.5) return '现在'
+  if (sec < 60) return `-${Math.round(sec)}秒`
+  if (sec < 3600) return `-${Math.round(sec / 60)}分`
+  if (sec < 86400) {
+    const h = sec / 3600
+    return `-${h < 10 ? +h.toFixed(1) : Math.round(h)}时`
+  }
+  return `-${+(sec / 86400).toFixed(1)}天`
+}
+
+/**
+ * 实时滚动曲线:柱子数量/粗细随窗口自适应(窗口小→桶大→柱粗根数少),
+ * 最右=当前桶(高亮),横坐标按窗口标相对时间刻度。
+ */
+export function LiveChart({
+  data,
+  windowSec,
+  bucketSec,
+}: {
+  data: number[]
+  windowSec: number
+  bucketSec: number
+}) {
   const W = 640
   const H = 212
   const padL = 30
   const padT = 16
-  const padB = 22
+  const padB = 26
   const innerH = H - padT - padB
   const innerW = W - padL
   const n = data.length
   const max = Math.max(3, ...data)
   const slot = innerW / n
-  const bw = Math.max(2, slot * 0.6)
+  const bw = Math.min(36, slot * 0.62)
   const grid = [0, 1, 2].map((g) => ({ v: Math.round((max * g) / 2), y: padT + innerH - (innerH * g) / 2 }))
+  // 横坐标 5 个刻度:从左(−window)到右(现在),按桶大小对齐成整刻度
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const stepsAgo = Math.round(((1 - f) * windowSec) / bucketSec)
+    const anchor: 'start' | 'middle' | 'end' = f === 0 ? 'start' : f === 1 ? 'end' : 'middle'
+    return { x: padL + f * innerW, label: fmtAgo(stepsAgo * bucketSec), anchor }
+  })
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="xMidYMid meet">
@@ -115,12 +144,24 @@ export function LiveChart({ data }: { data: number[] }) {
             y={y}
             width={bw}
             height={bh}
-            rx="1.5"
+            rx="2"
             fill={isNow ? 'var(--color-accent)' : v > 0 ? 'var(--color-bar-idle)' : 'transparent'}
-            opacity={isNow ? 1 : 0.5 + (i / n) * 0.5}
+            opacity={isNow ? 1 : 0.55 + (i / n) * 0.45}
           />
         )
       })}
+      {ticks.map((t, i) => (
+        <text
+          key={i}
+          x={t.x}
+          y={H - 8}
+          textAnchor={t.anchor}
+          fontSize="10"
+          fill="var(--color-ink-mute)"
+        >
+          {t.label}
+        </text>
+      ))}
     </svg>
   )
 }

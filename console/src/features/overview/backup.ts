@@ -15,6 +15,8 @@ export const overviewStatSchema = z.object({
 /** 总览页的聚合指标(平台侧统计,非逐事件;与逐事件的 events 资源互补) */
 export const overviewSchema = z.object({
   stats: z.array(overviewStatSchema),
+  // 年视图 KPI(可选;缺省时年视图沿用 stats)。结构同 stats,标签用「本年…」
+  kpiYear: z.array(overviewStatSchema).optional(),
   attacks: z.object({
     total: z.string(),
     delta: z.string(),

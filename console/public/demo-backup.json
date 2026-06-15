@@ -16,6 +16,12 @@
           { "key": "pending", "label": "待审批处置", "value": "4", "delta": "1", "dir": "up", "tone": "high" },
           { "key": "audit", "label": "审计完整率", "value": "99.8", "unit": "%", "delta": "0.3%", "dir": "up", "tone": "ok" }
         ],
+        "kpiYear": [
+          { "key": "controlled", "label": "本年受控动作", "value": "286,540", "delta": "12.4%", "dir": "up", "tone": "accent" },
+          { "key": "blocked", "label": "高危拦截", "value": "2,131", "delta": "4.9%", "dir": "up", "tone": "crit" },
+          { "key": "pending", "label": "累计转审批", "value": "1,084", "delta": "6.1%", "dir": "up", "tone": "high" },
+          { "key": "audit", "label": "审计完整率", "value": "99.6", "unit": "%", "delta": "0.2%", "dir": "up", "tone": "ok" }
+        ],
         "attacks": {
           "total": "2,131",
           "delta": "4.9%",

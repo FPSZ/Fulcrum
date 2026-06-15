@@ -37,7 +37,6 @@ const TONE: Record<StatTone, { wrap: string; icon: string }> = {
   ok: { wrap: 'bg-ok/14', icon: 'text-ok' },
 }
 
-const pad = (n: number) => String(n).padStart(2, '0')
 const numBase = (v: string) => parseInt(v.replace(/[^0-9]/g, ''), 10) || 0
 const fmtNum = (n: number) => n.toLocaleString('en-US')
 
@@ -72,21 +71,38 @@ const synthBucket = (idx: number, bucketSec: number) => {
   return Math.max(0, Math.round(v))
 }
 
-/** 按选定窗口把时间分 60 桶:≤90 秒用真实每秒数据,更大窗口合成历史桶 */
-function buildWindowSeries(windowSec: number, nowMs: number, perSecond: number[], N = 60): number[] {
-  const bucketSec = windowSec / N
-  if (bucketSec <= 1.5) {
-    const tail = perSecond.slice(-N)
-    return Array.from({ length: N }, (_, i) => tail[i] ?? 0)
-  }
+/** 按窗口选「nice」最小单位(桶大小):目标约 12~24 根柱,窗口越小桶越大、柱越粗 */
+const NICE_BUCKETS = [
+  5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400,
+]
+function niceBucket(windowSec: number): number {
+  const target = windowSec / 18 // ~18 根柱
+  for (const n of NICE_BUCKETS) if (n >= target) return n
+  return NICE_BUCKETS[NICE_BUCKETS.length - 1]
+}
+/** 桶大小 → 中文单位(横坐标/副标题用) */
+function fmtBucket(sec: number): string {
+  if (sec < 60) return `${sec} 秒`
+  if (sec < 3600) return `${sec / 60} 分`
+  if (sec < 86400) return `${sec / 3600} 小时`
+  return `${sec / 86400} 天`
+}
+
+/** 把选定窗口按 bucketSec 分桶;最右(当前)桶在 ≤60 秒桶时取真实到达,其余合成 */
+function buildWindowSeries(windowSec: number, bucketSec: number, nowMs: number, perSecond: number[]): number[] {
+  const count = Math.max(6, Math.round(windowSec / bucketSec))
   const nowEpoch = nowMs / 1000
-  return Array.from({ length: N }, (_, j) => {
-    const end = nowEpoch - (N - 1 - j) * bucketSec
+  return Array.from({ length: count }, (_, j) => {
+    const isCurrent = j === count - 1
+    if (isCurrent && bucketSec <= 60) {
+      return perSecond.slice(-Math.round(bucketSec)).reduce((a, b) => a + b, 0)
+    }
+    const end = nowEpoch - (count - 1 - j) * bucketSec
     return synthBucket(Math.floor(end / bucketSec), bucketSec)
   })
 }
 
-function StatCard({ s, live }: { s: OverviewStat; live?: boolean }) {
+function StatCard({ s, live, deltaLabel = '较上月' }: { s: OverviewStat; live?: boolean; deltaLabel?: string }) {
   const Icon = STAT_ICON[s.key]
   const tone = TONE[s.tone]
   return (
@@ -114,7 +130,7 @@ function StatCard({ s, live }: { s: OverviewStat; live?: boolean }) {
               <ArrowUp className={cn('h-3.5 w-3.5', s.dir === 'down' && 'rotate-180')} strokeWidth={2.4} />
               {s.delta}
             </span>
-            <span>较上月</span>
+            <span>{deltaLabel}</span>
           </>
         )}
       </div>
@@ -150,11 +166,11 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
   const [chartMode, setChartMode] = useState<'live' | 'month' | 'year'>('live')
   const [sliderVal, setSliderVal] = useState(DEFAULT_SLIDER)
 
-  const clock = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-  // 实时窗口:滑条 → 秒数(对数),据此分桶聚合(随 now 每秒重算 → 滚动)
+  // 实时窗口:滑条 → 秒数(对数)→ nice 桶大小 → 分桶聚合(随 now 每秒重算 → 滚动)
   const windowSec = Math.round(sliderToSec(sliderVal))
   const windowLabel = fmtWindow(windowSec)
-  const liveSeries = buildWindowSeries(windowSec, now.getTime(), perSecond)
+  const bucketSec = niceBucket(windowSec)
+  const liveSeries = buildWindowSeries(windowSec, bucketSec, now.getTime(), perSecond)
   const liveTotal = liveSeries.reduce((a, b) => a + b, 0)
 
   // 月视图数据:按天序列(缺省时回退到年序列,保证旧备份也能渲染)
@@ -166,18 +182,26 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
   const headerTotal = chartMode === 'month' ? (at?.monthTotal ?? at?.total) : at?.total
   const headerDelta = chartMode === 'month' ? (at?.monthDelta ?? at?.delta) : at?.delta
 
-  // KPI 实时跳动:在备份基线上叠加自进入面板起的实时增量
+  // KPI 随时间筛选变化:年用 kpiYear;仅「实时」档在基线上叠加实时增量并跳动
+  const isLive = chartMode === 'live'
+  const baseStats = chartMode === 'year' && ov?.kpiYear ? ov.kpiYear : ov?.stats
+  const deltaLabel = chartMode === 'year' ? '较上年' : '较上月'
   const stats: { stat: OverviewStat; live: boolean }[] =
-    ov?.stats.map((s) => {
-      if (s.key === 'controlled')
+    baseStats?.map((s) => {
+      if (isLive && s.key === 'controlled')
         return { stat: { ...s, value: fmtNum(numBase(s.value) + added.controlled) }, live: true }
-      if (s.key === 'blocked')
+      if (isLive && s.key === 'blocked')
         return { stat: { ...s, value: fmtNum(numBase(s.value) + added.blocked) }, live: true }
-      if (s.key === 'pending') return { stat: { ...s, value: String(pending) }, live: true }
+      if (isLive && s.key === 'pending') return { stat: { ...s, value: String(pending) }, live: true }
       return { stat: s, live: false }
     }) ?? []
 
   const recent = deriveRecent(feed, 7)
+  const RANGE: { key: 'live' | 'month' | 'year'; label: string }[] = [
+    { key: 'live', label: '实时' },
+    { key: 'month', label: '本月' },
+    { key: 'year', label: '本年' },
+  ]
 
   return (
     <div className="h-full overflow-y-auto px-6 py-5">
@@ -191,10 +215,22 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
-          <span className="tabnum flex items-center gap-2 rounded-[11px] border border-line bg-surface/70 px-3 py-2 text-[15px] font-semibold text-ink">
-            <Radio className="h-[15px] w-[15px] text-ok" strokeWidth={2.2} />
-            {clock}
-          </span>
+          {/* 全局时间筛选:切换后下方 KPI / 图表 / 事件全部跟随 */}
+          <div className="flex items-center rounded-full border border-line bg-subtle p-0.5">
+            {RANGE.map((r) => (
+              <button
+                key={r.key}
+                onClick={() => setChartMode(r.key)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13.5px] font-semibold transition-colors',
+                  chartMode === r.key ? 'bg-ink text-white shadow-xs' : 'text-ink-3 hover:text-ink',
+                )}
+              >
+                {r.key === 'live' && <Radio className="h-3.5 w-3.5" strokeWidth={2.2} />}
+                {r.label}
+              </button>
+            ))}
+          </div>
           <Button variant="secondary">
             <Download className="h-3.5 w-3.5" /> 导出
           </Button>
@@ -210,7 +246,7 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
           className="grid grid-cols-2 gap-4 xl:grid-cols-4"
         >
           {stats.map(({ stat, live }) => (
-            <StatCard key={stat.key} s={stat} live={live} />
+            <StatCard key={stat.key} s={stat} live={live} deltaLabel={deltaLabel} />
           ))}
         </motion.div>
       )}
@@ -230,7 +266,7 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-[13.5px] text-ink-mute">
                       <span className="h-1.5 w-1.5 rounded-full bg-accent" style={{ animation: 'pulse-ring 2s infinite' }} />
-                      实时尝试速率 · {liveSeries.length} 桶滚动
+                      每 {fmtBucket(bucketSec)}一桶 · 共 {liveSeries.length} 桶滚动
                     </div>
                   </>
                 ) : (
@@ -253,50 +289,19 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
                   </>
                 )}
               </div>
-              <div className="flex flex-col items-end gap-2.5">
-                <div className="flex rounded-full border border-line bg-subtle p-0.5">
-                  <button
-                    onClick={() => setChartMode('live')}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-full px-3 py-1 text-[13.5px] font-semibold transition-colors',
-                      chartMode === 'live' ? 'bg-ink text-white' : 'text-ink-3',
-                    )}
-                  >
-                    <Radio className="h-3.5 w-3.5" strokeWidth={2.2} /> 实时
-                  </button>
-                  <button
-                    onClick={() => setChartMode('month')}
-                    className={cn(
-                      'rounded-full px-3 py-1 text-[13.5px] font-semibold transition-colors',
-                      chartMode === 'month' ? 'bg-ink text-white' : 'text-ink-3',
-                    )}
-                  >
-                    月
-                  </button>
-                  <button
-                    onClick={() => setChartMode('year')}
-                    className={cn(
-                      'rounded-full px-3 py-1 text-[13.5px] font-semibold transition-colors',
-                      chartMode === 'year' ? 'bg-ink text-white' : 'text-ink-3',
-                    )}
-                  >
-                    年
-                  </button>
-                </div>
-                <div className="flex gap-3.5 text-[13.5px] text-ink-3">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-[3px] bg-bar-idle" /> {chartMode === 'live' ? '历史秒' : '攻击尝试'}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-[3px] bg-accent" />{' '}
-                    {chartMode === 'live' ? '当前秒' : chartMode === 'month' ? '峰值日' : '峰值月份'}
-                  </span>
-                </div>
+              <div className="flex gap-3.5 pt-1 text-[13.5px] text-ink-3">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-[3px] bg-bar-idle" /> {chartMode === 'live' ? '历史秒' : '攻击尝试'}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-[3px] bg-accent" />{' '}
+                  {chartMode === 'live' ? '当前秒' : chartMode === 'month' ? '峰值日' : '峰值月份'}
+                </span>
               </div>
             </div>
             <div className="px-[18px] pb-3 pt-1">
               {chartMode === 'live' ? (
-                <LiveChart data={liveSeries} />
+                <LiveChart data={liveSeries} windowSec={windowSec} bucketSec={bucketSec} />
               ) : chartMode === 'month' ? (
                 <BarChart data={dayData} labels={dayLabels} highlight={dayPeak} />
               ) : (
@@ -361,11 +366,15 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
       <div className="mt-4 glass-card overflow-hidden rounded-[16px]">
         <div className="flex items-center justify-between gap-3 px-5 py-4">
           <div className="flex items-center gap-2.5">
-            <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">实时风险事件</div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-ok/14 px-2 py-0.5 text-[12px] font-semibold text-ok">
-              <span className="h-1.5 w-1.5 rounded-full bg-ok" style={{ animation: 'pulse-ring 2s infinite' }} />
-              LIVE
-            </span>
+            <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">
+              {chartMode === 'live' ? '实时风险事件' : chartMode === 'month' ? '本月风险事件' : '本年风险事件'}
+            </div>
+            {chartMode === 'live' && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-ok/14 px-2 py-0.5 text-[12px] font-semibold text-ok">
+                <span className="h-1.5 w-1.5 rounded-full bg-ok" style={{ animation: 'pulse-ring 2s infinite' }} />
+                LIVE
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2.5">
             <span className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-surface/70 px-3 text-[14px] text-ink-mute">
