@@ -1,12 +1,9 @@
-"""AuthService —— 账号口令校验 + 服务端会话签发/校验的应用编排。
+"""AuthService —— 登录校验、会话签发/校验、账号申请、首启引导。
 
-安全红线(逐条对应实现):
-- 口令只存 Argon2id 哈希,明文不落库、不入日志。            → passwords + store
-- 会话用 256bit 随机不透明令牌;库内只存其 SHA-256。         → login / store
-- 失败有锁定窗口,挡暴力破解。                              → login + store
-- 抗用户枚举:账号不存在时也跑一次等价哈希校验,登录失败信息统一。 → login(_dummy)
-- 令牌过期 / 用户停用 → 会话立即失效。                       → store.session_user
-- 退出即撤销服务端会话(不是只删 Cookie)。                  → logout
+安全红线见 passwords/store;本层补充:
+- 登录先校验口令、再看状态:错口令不泄露"账号是否存在/是否待审批"。
+- 申请账号(register)落为 pending,需管理员审批才能登录。
+- 会话校验时按角色加载**生效权限点**,组装进 Principal(供 require_permission / 前端按权过滤)。
 """
 
 from __future__ import annotations
@@ -17,15 +14,24 @@ import secrets
 import time
 from collections.abc import Callable
 
-from .models import Principal
+from .models import (
+    STATUS_ACTIVE,
+    STATUS_PENDING,
+    Principal,
+)
 from .passwords import hash_password, needs_rehash, verify_password
+from .permissions import (
+    ALL_PERMISSION_KEYS,
+    BUILTIN_DEPARTMENTS,
+    BUILTIN_ROLES,
+    DEFAULT_BOOTSTRAP_ROLE,
+)
 from .store import SQLiteAuthStore
 
 logger = logging.getLogger("fulcrum.auth")
 
-# 抗用户枚举:对一段固定明文预算一个哈希,账号不存在时拿它走一遍校验,
-# 让"用户存在/不存在"两条路径耗时接近,避免据响应时间探测账号。
 _DUMMY_PLAIN = "fulcrum-timing-equalizer"
+_MIN_PASSWORD_LEN = 8
 
 
 class AuthError(Exception):
@@ -33,15 +39,37 @@ class AuthError(Exception):
 
 
 class InvalidCredentials(AuthError):
-    """账号或口令错误(信息对外统一,不区分是哪一项错)。"""
+    """账号或口令错误(对外信息统一,不区分哪项错)。"""
 
 
 class AccountLocked(AuthError):
-    """连续失败过多,账号临时锁定。"""
-
     def __init__(self, retry_after_seconds: int) -> None:
         super().__init__("账号已被临时锁定,请稍后再试")
         self.retry_after_seconds = retry_after_seconds
+
+
+class PendingApproval(AuthError):
+    """账号已提交申请,待管理员审批。"""
+
+    def __init__(self) -> None:
+        super().__init__("账号正在等待管理员审批")
+
+
+class AccountDisabled(AuthError):
+    """账号被停用或已离职。"""
+
+    def __init__(self) -> None:
+        super().__init__("账号已被停用,请联系管理员")
+
+
+class UsernameTaken(AuthError):
+    def __init__(self) -> None:
+        super().__init__("该账号已存在")
+
+
+class WeakPassword(AuthError):
+    def __init__(self) -> None:
+        super().__init__(f"口令至少需要 {_MIN_PASSWORD_LEN} 位")
 
 
 class AuthService:
@@ -68,17 +96,51 @@ class AuthService:
     def _hash_token(token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-    # ── 引导:首次启动且库内无用户时创建管理员 ────────────────────
-    def bootstrap_admin(self, username: str, password: str) -> str | None:
-        """库内已有用户则跳过;否则创建管理员。
+    # ── 种子:角色目录 + 组织架构 + 首启管理员 ────────────────────
+    def seed(self, admin_username: str, admin_password: str) -> str | None:
+        """幂等装配:补齐内置角色与部门,库内无用户时引导管理员。"""
+        self._seed_roles()
+        self._seed_departments()
+        return self._bootstrap_admin(admin_username, admin_password)
 
-        返回值:None=已存在用户(未创建);否则返回所用口令明文(供"随机生成"时打印一次)。
-        """
+    def _seed_roles(self) -> None:
+        now = self._now()
+        for seed in BUILTIN_ROLES:
+            existing = self._store.get_role_by_key(seed.key)
+            if existing is None:
+                self._store.create_role(
+                    seed.key, seed.name, seed.description, True,
+                    list(seed.permissions), now,
+                )
+            elif seed.key == DEFAULT_BOOTSTRAP_ROLE:
+                # 超级管理员恒等于"全部权限":新增权限点后随版本自动补齐。
+                self._store.update_role(
+                    existing.id, None, None, sorted(ALL_PERMISSION_KEYS)
+                )
+
+    def _seed_departments(self) -> None:
+        if self._store.list_departments():
+            return
+        now = self._now()
+        key_to_id: dict[str, int] = {}
+        for order, seed in enumerate(BUILTIN_DEPARTMENTS):
+            parent_id = key_to_id.get(seed.parent_key) if seed.parent_key else None
+            dept = self._store.create_department(seed.name, parent_id, (order + 1) * 10, now)
+            key_to_id[seed.key] = dept.id
+
+    def _bootstrap_admin(self, username: str, password: str) -> str | None:
         if self._store.count_users() > 0:
             return None
         generated = not password
         pwd = password or secrets.token_urlsafe(15)
-        self._store.create_user(username, "系统管理员", hash_password(pwd), self._now())
+        role = self._store.get_role_by_key(DEFAULT_BOOTSTRAP_ROLE)
+        root = next(iter(self._store.list_departments()), None)
+        self._store.create_user(
+            username, "系统管理员", hash_password(pwd), STATUS_ACTIVE, self._now(),
+            title="平台管理员",
+            role_id=role.id if role else None,
+            department_id=root.id if root else None,
+        )
         logger.warning("已创建初始管理员账号:%s", username)
         if generated:
             logger.warning(
@@ -87,7 +149,22 @@ class AuthService:
             )
         return pwd
 
-    # ── 登录:校验通过则签发会话,返回原始令牌(仅此一次可见)─────
+    # ── 申请账号(公开):落为 pending,待审批 ─────────────────────
+    def register(self, username: str, password: str, display_name: str) -> None:
+        username = username.strip()
+        if not username or not display_name.strip():
+            raise InvalidCredentials("请填写账号与姓名")
+        if len(password) < _MIN_PASSWORD_LEN:
+            raise WeakPassword()
+        if self._store.get_user(username) is not None:
+            raise UsernameTaken()
+        self._store.create_user(
+            username, display_name.strip(), hash_password(password),
+            STATUS_PENDING, self._now(),
+        )
+        logger.info("收到账号申请:%s", username)
+
+    # ── 登录 ──────────────────────────────────────────────────────
     def login(self, username: str, password: str) -> str:
         username = username.strip()
         now = self._now()
@@ -97,9 +174,8 @@ class AuthService:
             raise AccountLocked(locked_until - now)
 
         user = self._store.get_user(username)
-        # 抗枚举:无此用户也走一遍等价校验,再统一报错。
-        if user is None or not user.is_active:
-            verify_password(self._dummy_hash, password)
+        if user is None:
+            verify_password(self._dummy_hash, password)  # 抗枚举:等价耗时
             self._fail(username, now)
             raise InvalidCredentials("账号或口令错误")
 
@@ -108,13 +184,21 @@ class AuthService:
             logger.warning("登录失败:账号=%s", username)
             raise InvalidCredentials("账号或口令错误")
 
-        # 校验通过:参数过时则顺手用更强参数重存哈希(透明升级)。
+        # 口令正确后才暴露账号状态,避免据此探测账号。
+        if user.status == STATUS_PENDING:
+            self._store.reset_failures(username)
+            raise PendingApproval()
+        if user.status != STATUS_ACTIVE:
+            self._store.reset_failures(username)
+            raise AccountDisabled()
+
         if needs_rehash(user.password_hash):
             self._store.update_password_hash(user.id, hash_password(password))
         self._store.reset_failures(username)
 
         token = secrets.token_urlsafe(32)
         self._store.create_session(self._hash_token(token), user.id, now, now + self._ttl)
+        self._store.touch_last_login(user.id, now)
         self._store.purge_expired(now)
         logger.info("登录成功:账号=%s", username)
         return token
@@ -122,16 +206,23 @@ class AuthService:
     def _fail(self, username: str, now: int) -> None:
         self._store.record_failure(username, self._max_failures, now + self._lockout)
 
-    # ── 校验会话令牌 → 当事人 ─────────────────────────────────────
+    # ── 会话令牌 → 当事人(含生效权限点)──────────────────────────
     def authenticate(self, token: str | None) -> Principal | None:
         if not token:
             return None
         user = self._store.session_user(self._hash_token(token), self._now())
         if user is None:
             return None
-        return Principal(user.id, user.username, user.display_name)
+        role = self._store.get_role(user.role_id) if user.role_id is not None else None
+        return Principal(
+            user_id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            role_key=role.key if role else None,
+            role_name=role.name if role else None,
+            permissions=role.permissions if role else frozenset(),
+        )
 
-    # ── 退出:撤销服务端会话 ──────────────────────────────────────
     def logout(self, token: str | None) -> None:
         if token:
             self._store.delete_session(self._hash_token(token))

@@ -4,7 +4,7 @@ import { Avatar, IconButton, Tooltip } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { ease } from '@/lib/motion'
-import { FEATURE_GROUPS, getFeatures } from '@/lib/module'
+import { FEATURE_GROUPS, getFeaturesFor } from '@/lib/module'
 
 /**
  * 可收缩侧栏 —— 丝滑收起的关键:
@@ -20,8 +20,8 @@ export function Sidebar({
   active: string
   onNavigate: (id: string) => void
 }) {
-  const { user, logout } = useAuth()
-  const features = getFeatures()
+  const { user, has, logout } = useAuth()
+  const features = getFeaturesFor(has)
   const displayName = user?.displayName || '未登录'
   const sections = FEATURE_GROUPS.map((group) => ({
     group,

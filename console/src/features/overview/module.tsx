@@ -9,6 +9,7 @@ export const overviewModule = defineFeature({
   icon: Gauge,
   group: '监测',
   order: 10,
+  requires: 'overview.view',
   component: OverviewPage,
   resources: [overviewResourceSpec],
 })

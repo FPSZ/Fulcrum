@@ -8,5 +8,6 @@ export const settingsModule = defineFeature({
   icon: Settings,
   group: '系统',
   order: 90,
+  requires: 'settings.view',
   component: SettingsPage,
 })

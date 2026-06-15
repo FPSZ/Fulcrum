@@ -8,7 +8,7 @@ import { AuthProvider, useAuth } from './lib/auth'
 import { BackupProvider } from './lib/backup'
 import { BackgroundLayer, BackgroundProvider } from './lib/background'
 import { ease } from './lib/motion'
-import { getDefaultFeatureId, getFeature } from './lib/module'
+import { getDefaultFeatureIdFor, getFeature } from './lib/module'
 
 /** 按功能模块注册表渲染当前页面 */
 function View({ id }: { id: string }) {
@@ -43,7 +43,10 @@ function PageTransition({ id, children }: { id: string; children: ReactNode }) {
 
 /** 登录后的主控制台(外壳 + 当前页面) */
 function AppView() {
-  const [view, setView] = useState(() => (getFeature('overview') ? 'overview' : getDefaultFeatureId()))
+  const { has } = useAuth()
+  const [view, setView] = useState(() =>
+    getFeature('overview') && has('overview.view') ? 'overview' : getDefaultFeatureIdFor(has),
+  )
   return (
     <BackupProvider>
       <TooltipProvider delayDuration={250}>

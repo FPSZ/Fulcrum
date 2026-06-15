@@ -10,6 +10,7 @@ export const eventsModule = defineFeature({
   group: '监测',
   order: 20,
   badge: 38,
+  requires: 'events.view',
   component: EventsPage,
   resources: [eventResourceSpec],
 })

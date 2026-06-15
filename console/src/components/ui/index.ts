@@ -18,6 +18,7 @@ export { KeyValue } from './data-display/key-value'
 
 // overlay
 export { Tooltip, TooltipProvider } from './overlay/tooltip'
+export { Dialog, type DialogProps } from './overlay/dialog'
 
 // feedback
 export { Skeleton } from './feedback/skeleton'

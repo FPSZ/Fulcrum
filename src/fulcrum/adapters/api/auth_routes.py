@@ -1,10 +1,7 @@
-"""鉴权路由 —— /auth/login、/auth/logout、/auth/me + require_auth 依赖。
+"""鉴权路由 —— /auth/login、/auth/logout、/auth/me、/auth/register。
 
-会话令牌只走 HttpOnly Cookie:
-- HttpOnly  → JS 读不到,杜绝 XSS 窃取令牌;
-- SameSite=strict → 跨站请求不携带,挡 CSRF;
-- Secure(TLS 后置 true)→ 只在 HTTPS 下回传;
-- 令牌本身不进响应体、不进前端源码 —— 前端只知道"我登没登上"。
+会话令牌只走 HttpOnly Cookie(HttpOnly 防 XSS 窃取、SameSite=strict 防 CSRF、
+Secure 经 TLS 后置 true、Max-Age 绝对过期)。令牌不进响应体、不进前端源码。
 """
 
 from __future__ import annotations
@@ -13,29 +10,38 @@ from typing import TYPE_CHECKING
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, status
 
-from ..auth import AccountLocked, AuthService, InvalidCredentials, Principal
-from .schemas import LoginRequest, PrincipalResponse
+from ..auth import (
+    AccountDisabled,
+    AccountLocked,
+    AuthService,
+    InvalidCredentials,
+    PendingApproval,
+    Principal,
+    UsernameTaken,
+    WeakPassword,
+)
+from .deps import AuthDeps
+from .schemas import LoginRequest, PrincipalResponse, RegisterRequest
 
 if TYPE_CHECKING:
     from ...config import Settings
 
 
-def register_auth_routes(app: FastAPI, auth: AuthService, settings: Settings) -> None:
+def _principal_dto(p: Principal) -> PrincipalResponse:
+    return PrincipalResponse(
+        username=p.username,
+        display_name=p.display_name,
+        role_key=p.role_key,
+        role_name=p.role_name,
+        permissions=sorted(p.permissions),
+    )
+
+
+def register_auth_routes(
+    app: FastAPI, auth: AuthService, settings: Settings, deps: AuthDeps
+) -> None:
     cookie_name = settings.session_cookie_name
-
-    def current_principal(
-        session: str | None = Cookie(default=None, alias=cookie_name),
-    ) -> Principal:
-        """受保护路由的守卫:无有效会话直接 401。"""
-        principal = auth.authenticate(session)
-        if principal is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录或会话已失效"
-            )
-        return principal
-
-    # 导出给其它受保护路由复用(M4 接 RBAC 时在此之上叠权限校验)。
-    app.state.require_auth = current_principal
+    principal_dep = deps.principal_dependency()
 
     @app.post("/auth/login", response_model=PrincipalResponse)
     async def login(body: LoginRequest, response: Response) -> PrincipalResponse:
@@ -47,6 +53,10 @@ def register_auth_routes(app: FastAPI, auth: AuthService, settings: Settings) ->
                 detail=str(exc),
                 headers={"Retry-After": str(exc.retry_after_seconds)},
             ) from exc
+        except PendingApproval as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        except AccountDisabled as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
         except InvalidCredentials as exc:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
@@ -61,10 +71,18 @@ def register_auth_routes(app: FastAPI, auth: AuthService, settings: Settings) ->
             path="/",
         )
         principal = auth.authenticate(token)
-        assert principal is not None  # 刚签发,必有效
-        return PrincipalResponse(
-            username=principal.username, display_name=principal.display_name
-        )
+        assert principal is not None
+        return _principal_dto(principal)
+
+    @app.post("/auth/register", status_code=status.HTTP_202_ACCEPTED)
+    async def register(body: RegisterRequest) -> dict[str, str]:
+        try:
+            auth.register(body.username, body.password, body.display_name)
+        except (UsernameTaken, WeakPassword, InvalidCredentials) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        return {"detail": "申请已提交,等待管理员审批"}
 
     @app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
     async def logout(
@@ -77,7 +95,5 @@ def register_auth_routes(app: FastAPI, auth: AuthService, settings: Settings) ->
         return response
 
     @app.get("/auth/me", response_model=PrincipalResponse)
-    async def me(principal: Principal = Depends(current_principal)) -> PrincipalResponse:
-        return PrincipalResponse(
-            username=principal.username, display_name=principal.display_name
-        )
+    async def me(principal: Principal = Depends(principal_dep)) -> PrincipalResponse:
+        return _principal_dto(principal)

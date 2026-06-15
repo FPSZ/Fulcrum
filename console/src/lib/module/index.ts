@@ -38,6 +38,8 @@ export interface FeatureModule {
   component: ComponentType
   /** 该模块贡献的可备份/可导入资源(自动注册进备份系统) */
   resources?: ResourceSpec[]
+  /** 可见所需权限点(RBAC):缺省=人人可见;设置后无此权限者导航/路由都看不到 */
+  requires?: string
 }
 
 /** 身份函数:仅为获得类型检查与补全 */
@@ -57,6 +59,11 @@ export function getFeatures(): FeatureModule[] {
   return [...registry.values()].sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
 }
 
+/** 按权限过滤后的可见模块(无 requires 的恒可见) */
+export function getFeaturesFor(can: (perm: string) => boolean): FeatureModule[] {
+  return getFeatures().filter((f) => !f.requires || can(f.requires))
+}
+
 export function getFeature(id: string): FeatureModule | undefined {
   return registry.get(id)
 }
@@ -64,4 +71,9 @@ export function getFeature(id: string): FeatureModule | undefined {
 /** 默认进入的模块 id(order 最小者) */
 export function getDefaultFeatureId(): string {
   return getFeatures()[0]?.id ?? ''
+}
+
+/** 当前权限下的默认模块 id(可见集合里 order 最小者) */
+export function getDefaultFeatureIdFor(can: (perm: string) => boolean): string {
+  return getFeaturesFor(can)[0]?.id ?? ''
 }

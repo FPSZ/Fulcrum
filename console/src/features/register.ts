@@ -3,6 +3,7 @@ import { registerResource } from '@/lib/backup'
 import { eventsModule } from './events/module'
 import { overviewModule } from './overview/module'
 import { settingsModule } from './settings/module'
+import { usersModule } from './admin/module'
 import {
   auditModule,
   evalModule,
@@ -23,6 +24,7 @@ const FEATURES: FeatureModule[] = [
   supplyModule,
   auditModule,
   evalModule,
+  usersModule,
   settingsModule,
 ]
 
