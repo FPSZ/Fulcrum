@@ -1,0 +1,72 @@
+# 枢衡默认安全策略 —— 条件 → 分级处置(allow / sanitize / approve / block)。
+# 规则自上而下,首条命中即决定;均未命中用 default 兜底。
+# 改策略只改本文件,核心代码零改动(条件键见 capabilities/policy/yaml_policy.py:_PREDICATES)。
+version: 1
+default: allow
+workspace: data/workspace        # file.* 工具允许访问的受控工作区根
+allow_domains:                   # http.request 外联白名单(含子域)
+  - gov.cn
+  - xiongan.gov.cn
+
+rules:
+  # 1) 敏感文件/密钥/凭据路径的读写 —— 直接阻断(不论来源)。
+  - id: block-sensitive-path
+    when:
+      tool_in: [file.read, file.write]
+      path_sensitive: true
+    decision: block
+    risk_level: critical
+    reason: 涉及密钥/凭据/系统账户等敏感文件,禁止访问
+
+  # 2) 不可信来源(文档/网页/检索/记忆/工具返回)驱动的高危动作 —— 阻断(间接注入主防线)。
+  - id: block-untrusted-highrisk
+    when:
+      source_trust: untrusted
+      risk_at_least: 0.6
+    decision: block
+    risk_level: high
+    reason: 不可信来源驱动的高危工具调用(疑似间接指令污染)
+
+  # 3) 文件访问越出受控工作区 —— 阻断。
+  - id: block-path-escape
+    when:
+      tool_in: [file.read, file.write]
+      path_outside_workspace: true
+    decision: block
+    risk_level: high
+    reason: 文件路径越出受控工作区
+
+  # 4) 非白名单域名外联 —— 阻断。
+  - id: block-nonwhitelist-domain
+    when:
+      tool_in: [http.request]
+      domain_allowed: false
+    decision: block
+    risk_level: high
+    reason: 目标域名不在外联白名单内
+
+  # 5) 危险系统命令 —— 阻断。
+  - id: block-dangerous-command
+    when:
+      tool_in: [shell.exec]
+      command_dangerous: true
+    decision: block
+    risk_level: critical
+    reason: 命令包含高危操作(删除/外联下载/提权等)
+
+  # 6) 一般系统命令 —— 默认需人工审批。
+  - id: approve-shell
+    when:
+      tool_in: [shell.exec]
+    decision: approve
+    risk_level: high
+    reason: 系统命令默认需人工审批后执行
+
+  # 7) 半可信来源的中风险动作 —— 先净化再评估。
+  - id: sanitize-semitrusted
+    when:
+      source_trust: semi_trusted
+      risk_at_least: 0.5
+    decision: sanitize
+    risk_level: medium
+    reason: 半可信来源的中风险动作,先净化降级

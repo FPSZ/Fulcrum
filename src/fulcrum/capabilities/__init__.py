@@ -9,14 +9,14 @@ from __future__ import annotations
 
 def load_builtin_capabilities() -> None:
     """显式导入所有内置能力实现,触发其 @capability 注册(幂等,可重复调用)。"""
-    from .attribution import zero  # noqa: F401
+    from .attribution import evidence, zero  # noqa: F401
     from .detectors import keyword_rules, noop  # noqa: F401
     from .labelers import passthrough  # noqa: F401
-    from .policy import allow_all  # noqa: F401
+    from .policy import allow_all, yaml_policy  # noqa: F401
     from .sandbox import echo_executor  # noqa: F401
     from .supplychain import noop as supplychain_noop  # noqa: F401
-    from .toolguard import noop_chain, zero_scorer  # noqa: F401
-    from .tools import echo_tool  # noqa: F401
+    from .toolguard import heuristic, noop_chain, zero_scorer  # noqa: F401
+    from .tools import echo_tool, file_tools  # noqa: F401
 
 
 __all__ = ["load_builtin_capabilities"]

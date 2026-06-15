@@ -13,9 +13,10 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
-    # 模型(M0 用桩,不实际连接)
+    # 模型:OpenAI 兼容端点(桩用 fake;openai 适配器读取以下三项连真实模型)
     model_endpoint: str = "http://127.0.0.1:11434/v1"
     model_api_key: str = ""
+    model_name: str = "mimo-v2.5-pro"
 
     # 装配清单路径(None 用包内默认 fulcrum.yml)
     capability_config: str | None = None
