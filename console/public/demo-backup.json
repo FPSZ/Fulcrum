@@ -8,6 +8,30 @@
     "appVersion": "0.1.0"
   },
   "resources": {
+    "overview": [
+      {
+        "stats": [
+          { "key": "controlled", "label": "本月受控动作", "value": "24,318", "delta": "4.9%", "dir": "up", "tone": "accent" },
+          { "key": "blocked", "label": "高危拦截", "value": "214", "delta": "6.2%", "dir": "up", "tone": "crit" },
+          { "key": "pending", "label": "待审批处置", "value": "4", "delta": "1", "dir": "up", "tone": "high" },
+          { "key": "audit", "label": "审计完整率", "value": "99.8", "unit": "%", "delta": "0.3%", "dir": "up", "tone": "ok" }
+        ],
+        "attacks": {
+          "total": "2,131",
+          "delta": "4.9%",
+          "dir": "up",
+          "months": ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
+          "monthly": [142, 118, 165, 180, 150, 210, 238, 196, 175, 205, 168, 184],
+          "peakIndex": 6,
+          "days": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
+          "daily": [38, 42, 55, 49, 61, 47, 58, 72, 64, 80, 91, 77, 68, 74, 66],
+          "dailyPeakIndex": 10,
+          "monthTotal": "942",
+          "monthDelta": "8.3%"
+        },
+        "protection": { "rate": 94.1, "blocked": 1070, "target": 1200 }
+      }
+    ],
     "events": [
       {
         "id": "a7f3e1", "time": "14:02:18", "sess": "9f12c7", "srcType": "文档", "trust": "untrusted",

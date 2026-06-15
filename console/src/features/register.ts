@@ -1,11 +1,11 @@
 import { registerFeature, type FeatureModule } from '@/lib/module'
 import { registerResource } from '@/lib/backup'
 import { eventsModule } from './events/module'
+import { overviewModule } from './overview/module'
 import { settingsModule } from './settings/module'
 import {
   auditModule,
   evalModule,
-  overviewModule,
   policiesModule,
   supplyModule,
   toolsModule,

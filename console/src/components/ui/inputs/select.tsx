@@ -30,7 +30,7 @@ export function Select({
     <RSel.Root value={value} defaultValue={defaultValue} onValueChange={onValueChange} disabled={disabled}>
       <RSel.Trigger
         className={cn(
-          'focus-ring inline-flex h-8 min-w-[140px] items-center gap-2 rounded-sm border border-line-2 bg-surface px-2.5 text-[13px] text-ink',
+          'focus-ring inline-flex h-8 min-w-[140px] items-center gap-2 rounded-sm border border-line-2 bg-surface px-2.5 text-[15px] text-ink',
           'transition-colors hover:border-line-3 data-[placeholder]:text-ink-mute disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
@@ -51,7 +51,7 @@ export function Select({
               <RSel.Item
                 key={o.value}
                 value={o.value}
-                className="focus-ring flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 pr-8 text-[13px] text-ink-2 outline-none data-[highlighted]:bg-surface-2 data-[state=checked]:font-medium data-[state=checked]:text-ink"
+                className="focus-ring flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 pr-8 text-[15px] text-ink-2 outline-none data-[highlighted]:bg-surface-2 data-[state=checked]:font-medium data-[state=checked]:text-ink"
               >
                 <RSel.ItemText>{o.label}</RSel.ItemText>
                 <RSel.ItemIndicator className="absolute right-2">

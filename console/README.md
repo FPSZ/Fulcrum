@@ -66,14 +66,15 @@ src/
 - 表层 `bg-canvas / bg-surface / bg-surface-2 / bg-inset`
 - 文字 `text-ink / text-ink-2 / text-ink-3 / text-ink-mute`
 - 边框 `border-line / border-line-2`(半透明发丝边)
-- 强调 `bg-accent / text-accent-ink`(薰衣草蓝,全 UI 唯一色相)
+- 强调 `bg-accent / text-accent-ink`(**宝蓝 `#3b6ef6`**,hover `#2f5fe0`,全 UI 唯一色相)
+- 玻璃 `.glass-panel`(磨砂玻璃外壳)/ `.glass-card`(次级玻璃卡),浮在哑光浅灰桌面 + 暖橙/冷蓝双光晕背景上
 - 状态 `crit / high / med / ok / info`(仅用于真实状态)
 - 阴影 `shadow-xs / shadow-card / shadow-pop`,圆角 `rounded-xs/sm/md/lg`
 - 焦点环统一用 `.focus-ring` 工具类(键盘可见)
 
 ## 约定
 
-- 颜色只表状态,强调色只有薰衣草蓝一种色相;能用图形/颜色就不写字。
+- 颜色只表状态,强调色只有宝蓝(`#3b6ef6`)一种色相;能用图形/颜色就不写字。
 - 组件先进 `components/ui` 并归类,再在 `features/*` 组合;不要在页面里散写基础样式。
 - 动画走 `lib/motion.ts` 的统一曲线;尊重 `prefers-reduced-motion`。
 

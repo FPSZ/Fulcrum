@@ -27,15 +27,15 @@ export function EventDetail({
   onNext?: () => void
 }) {
   return (
-    <aside className="flex w-[484px] shrink-0 flex-col border-l border-line bg-surface max-[1320px]:w-[420px] max-[1080px]:hidden">
-      {/* 头:会话/事件 + 上下条(高度与左侧工具条 h-11 对齐) */}
-      <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
-        <span className="text-[12px] text-ink-3">
+    <aside className="flex w-[560px] shrink-0 flex-col border-l border-white/50 bg-white/48 backdrop-blur-xl max-[1320px]:w-[480px] max-[1080px]:hidden">
+      {/* 头:会话/事件 + 上下条(高度与左侧工具条 h-12 对齐) */}
+      <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
+        <span className="text-[14px] text-ink-3">
           会话 <span className="font-data text-ink-2">{e.sess}</span>
           <span className="mx-1.5 text-ink-mute">·</span>
           事件 <span className="font-data text-ink-2">{e.id}</span>
         </span>
-        <span className="font-data ml-auto mr-1 text-[12px] text-ink-mute">
+        <span className="font-data ml-auto mr-1 text-[14px] text-ink-mute">
           {index + 1}/{total}
         </span>
         <IconButton label="上一条" onClick={onPrev} disabled={!onPrev}>
@@ -57,7 +57,7 @@ export function EventDetail({
           >
             {/* 标题 + 徽标 */}
             <div className="px-[18px] pb-2 pt-4">
-              <h1 className="mb-2.5 text-[18px] font-semibold leading-snug tracking-[-0.02em]">
+              <h1 className="mb-2.5 text-[20px] font-semibold leading-snug tracking-[-0.02em]">
                 {e.risk}
               </h1>
               <Badge tone={LEVEL_BADGE[e.level]} dot>
@@ -73,13 +73,13 @@ export function EventDetail({
               <KeyValue label="来源">
                 <StatusDot tone={TRUST_TONE[e.trust]} shape="square" />
                 {e.srcType}
-                <span className="text-[11px] text-ink-3">{TRUST_LABEL[e.trust]}</span>
+                <span className="text-[13px] text-ink-3">{TRUST_LABEL[e.trust]}</span>
               </KeyValue>
               <KeyValue label="工具/动作">
                 <span className="font-data">{e.tool}</span>
               </KeyValue>
               <KeyValue label="命中策略">
-                <span className="font-data rounded-xs bg-inset px-[7px] py-0.5 text-[11px]">
+                <span className="font-data rounded-xs bg-inset px-[7px] py-0.5 text-[13px]">
                   {e.policy}
                 </span>
               </KeyValue>
@@ -91,7 +91,7 @@ export function EventDetail({
               </KeyValue>
             </div>
 
-            <div className="px-[18px] pb-0.5 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-mute">
+            <div className="px-[18px] pb-0.5 pt-3.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-mute">
               证据归因链
             </div>
             <EvidenceChain event={e} />

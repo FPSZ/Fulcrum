@@ -10,8 +10,8 @@ export function Toaster() {
         classNames: {
           toast:
             '!rounded-md !bg-surface !text-ink !shadow-pop !border !border-line !font-sans',
-          title: '!text-[13px] !font-semibold',
-          description: '!text-[11px] !text-ink-3',
+          title: '!text-[15px] !font-semibold',
+          description: '!text-[13px] !text-ink-3',
           error: '!border-l-[3px] !border-l-crit',
         },
       }}

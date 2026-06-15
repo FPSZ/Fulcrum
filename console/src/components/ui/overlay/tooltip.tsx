@@ -21,7 +21,7 @@ export function Tooltip({ content, children, side = 'top', delay = 250 }: Toolti
           side={side}
           sideOffset={6}
           className={cn(
-            'z-50 select-none rounded-md bg-ink px-2 py-1 text-[11px] font-medium text-white shadow-pop',
+            'z-50 select-none rounded-md bg-ink px-2 py-1 text-[13px] font-medium text-white shadow-pop',
             'data-[state=delayed-open]:animate-[pop-in_0.14s_var(--ease-out-quart)]',
           )}
         >

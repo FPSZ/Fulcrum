@@ -26,8 +26,8 @@ export function EventRow({
       data-selected={selected || undefined}
       className={cn(
         'focus-ring group relative flex h-[42px] w-full items-center gap-3.5 border-b border-line pl-[18px] pr-4 text-left',
-        'transition-colors duration-100 hover:bg-surface-2',
-        'data-[selected]:bg-accent/10',
+        'bg-white/48 transition-colors duration-100 hover:bg-white/70',
+        'data-[selected]:bg-accent/12 data-[selected]:hover:bg-accent/12',
       )}
     >
       {/* 最左竖色条 = 严重等级(纯颜色,不写字) */}
@@ -37,17 +37,17 @@ export function EventRow({
 
       <span
         className={cn(
-          'font-data w-[62px] shrink-0 text-[11px]',
+          'font-data w-[62px] shrink-0 text-[13px]',
           e.verified ? 'text-ink-3' : 'text-crit',
         )}
       >
         {e.time}
       </span>
 
-      <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{e.risk}</span>
+      <span className="min-w-0 flex-1 truncate text-[15px] text-ink">{e.risk}</span>
 
       <Tooltip content={`来源:${e.srcType} · ${e.trust}`}>
-        <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-ink-3">
+        <span className="flex shrink-0 items-center gap-1.5 text-[14px] text-ink-3">
           <SrcIcon className={cn('h-3.5 w-3.5', TRUST_TEXT[TRUST_TONE[e.trust]])} strokeWidth={1.8} />
           <span className="hidden sm:inline">{e.srcType}</span>
         </span>

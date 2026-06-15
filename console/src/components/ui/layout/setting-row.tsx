@@ -15,9 +15,9 @@ export function SettingSection({
 }) {
   return (
     <section className={cn('mb-7', className)}>
-      <h2 className="text-[14px] font-semibold tracking-[-0.01em]">{title}</h2>
-      {desc && <p className="mt-1 text-[12px] leading-relaxed text-ink-3">{desc}</p>}
-      <div className="mt-3 divide-y divide-line rounded-lg bg-surface px-4 shadow-card">{children}</div>
+      <h2 className="text-[16px] font-semibold tracking-[-0.01em]">{title}</h2>
+      {desc && <p className="mt-1 text-[14px] leading-relaxed text-ink-3">{desc}</p>}
+      <div className="glass-card mt-3 divide-y divide-line/70 rounded-lg px-4">{children}</div>
     </section>
   )
 }
@@ -37,8 +37,8 @@ export function SettingRow({
   return (
     <div className={cn('flex items-start justify-between gap-6 py-3.5', className)}>
       <div className="min-w-0">
-        <div className="text-[13px] font-medium text-ink">{label}</div>
-        {hint && <div className="mt-0.5 text-[12px] leading-relaxed text-ink-3">{hint}</div>}
+        <div className="text-[15px] font-medium text-ink">{label}</div>
+        {hint && <div className="mt-0.5 text-[14px] leading-relaxed text-ink-3">{hint}</div>}
       </div>
       <div className="flex shrink-0 items-center gap-2 pt-0.5">{children}</div>
     </div>

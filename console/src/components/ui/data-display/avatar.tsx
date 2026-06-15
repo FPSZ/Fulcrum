@@ -12,7 +12,7 @@ export function Avatar({ fallback, src, className }: AvatarProps) {
     <RA.Root
       className={cn(
         'inline-grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full',
-        'bg-accent/10 text-[11px] font-semibold text-accent-ink',
+        'bg-accent/10 text-[13px] font-semibold text-accent-ink',
         className,
       )}
     >

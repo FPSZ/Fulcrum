@@ -96,36 +96,13 @@ export function EventsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 页头:横跨整页 */}
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
-        <div className="flex items-center gap-2.5 text-sm font-semibold tracking-[-0.014em]">
-          <Activity className="h-[17px] w-[17px] text-ink-3" />
-          实时事件
-        </div>
-        <span className="inline-flex items-center gap-1.5 rounded-xs bg-ok/14 px-2 py-0.5 text-[11px] font-medium text-ok">
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-ok"
-            style={{ animation: 'pulse-ring 2s infinite' }}
-          />
-          实时
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm">
-            <Clock className="h-3.5 w-3.5" /> 近 24 小时
-          </Button>
-          <Button variant="primary" size="sm">
-            <Download className="h-3.5 w-3.5" /> 导出报告
-          </Button>
-        </div>
-      </header>
-
       {events.length === 0 ? (
         /* 空态:引导导入备份 */
         <div className="flex flex-1 flex-col items-center justify-center gap-5 p-10 text-center">
           <Inbox className="h-8 w-8 text-line-3" strokeWidth={1.4} />
           <div>
-            <p className="text-[14px] font-medium text-ink">还没有数据</p>
-            <p className="mx-auto mt-1 max-w-[360px] text-[12.5px] leading-relaxed text-ink-3">
+            <p className="text-[16px] font-medium text-ink">还没有数据</p>
+            <p className="mx-auto mt-1 max-w-[360px] text-[14.5px] leading-relaxed text-ink-3">
               事件数据来自导入的备份文件。导入一个枢衡备份,或先载入演示备份查看效果。
             </p>
           </div>
@@ -136,10 +113,17 @@ export function EventsPage() {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           {/* 工具条 */}
-          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-4">
+          <div className="flex h-12 shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xs bg-ok/14 px-2 py-0.5 text-[13px] font-medium text-ok">
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-ok"
+                style={{ animation: 'pulse-ring 2s infinite' }}
+              />
+              实时
+            </span>
             <button
               type="button"
-              className="focus-ring inline-flex items-center gap-1.5 rounded-sm border border-dashed border-line-2 px-2.5 py-1 text-[12px] text-ink-3 transition-colors hover:border-line-3 hover:text-ink-2"
+              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-dashed border-line-2 px-2.5 py-1 text-[14px] text-ink-3 transition-colors hover:border-line-3 hover:text-ink-2"
             >
               <Plus className="h-3.5 w-3.5" /> 筛选
             </button>
@@ -148,10 +132,16 @@ export function EventsPage() {
               onValueChange={(v) => setFilter(v as Filter)}
               items={FILTERS.map((f) => ({ ...f, count: counts[f.value] }))}
             />
-            <div className="ml-auto flex items-center gap-2">
-              <span className="font-data text-xs text-ink-mute">{items.length} 个事件</span>
-              <Button variant="ghost" size="sm">
+            <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+              <Button variant="ghost" size="sm" className="max-[1440px]:hidden">
                 <SlidersHorizontal className="h-3.5 w-3.5" /> 分组:处置
+              </Button>
+              <span className="mx-0.5 h-4 w-px bg-line max-[1440px]:hidden" />
+              <Button variant="ghost" size="sm" className="max-[1280px]:hidden">
+                <Clock className="h-3.5 w-3.5" /> 近 24 小时
+              </Button>
+              <Button variant="primary" size="sm">
+                <Download className="h-3.5 w-3.5" /> 导出报告
               </Button>
             </div>
           </div>
@@ -185,7 +175,7 @@ export function EventsPage() {
             }
           />
         ) : (
-          <aside className="flex w-[484px] shrink-0 border-l border-line bg-surface max-[1080px]:hidden">
+          <aside className="flex w-[484px] shrink-0 border-l border-white/50 bg-white/48 backdrop-blur-xl max-[1080px]:hidden">
             <EmptyState icon={Activity} title="未选中事件" hint="从左侧清单选择一条以查看证据归因链" />
           </aside>
         )}

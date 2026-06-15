@@ -22,20 +22,20 @@ export function Segmented({ value, onValueChange, items, className }: SegmentedP
       type="single"
       value={value}
       onValueChange={(v) => v && onValueChange(v)}
-      className={cn('inline-flex gap-0.5 rounded-sm border border-line bg-subtle p-0.5', className)}
+      className={cn('inline-flex shrink-0 gap-0.5 rounded-sm border border-line bg-subtle p-0.5', className)}
     >
       {items.map((it) => (
         <RTG.Item
           key={it.value}
           value={it.value}
           className={cn(
-            'focus-ring rounded-[4px] px-2.5 py-1 text-xs font-medium text-ink-3 transition-colors duration-150',
+            'focus-ring shrink-0 whitespace-nowrap rounded-[4px] px-2.5 py-1 text-[14px] font-medium text-ink-3 transition-colors duration-150',
             'hover:text-ink data-[state=on]:bg-surface data-[state=on]:text-ink data-[state=on]:shadow-xs',
           )}
         >
           {it.label}
           {typeof it.count === 'number' && (
-            <span className="ml-1.5 font-data text-[11px] opacity-60">{it.count}</span>
+            <span className="ml-1.5 font-data text-[13px] opacity-60">{it.count}</span>
           )}
         </RTG.Item>
       ))}

@@ -5,7 +5,7 @@ export function Kbd({ className, children }: React.PropsWithChildren<{ className
   return (
     <kbd
       className={cn(
-        'font-data rounded border border-line-2 px-1 py-px text-[10px] leading-none text-ink-mute',
+        'font-data rounded border border-line-2 px-1 py-px text-[12px] leading-none text-ink-mute',
         className,
       )}
     >

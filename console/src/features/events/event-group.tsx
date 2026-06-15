@@ -27,7 +27,7 @@ export function EventGroup({
       <button
         type="button"
         onClick={onToggle}
-        className="focus-ring sticky top-0 z-[2] flex w-full items-center gap-2.5 border-b border-line bg-subtle px-4 py-2 text-left text-[12px] font-semibold"
+        className="focus-ring sticky top-0 z-[2] flex w-full items-center gap-2.5 border-b border-line bg-white/55 px-4 py-2 text-left text-[14px] font-semibold backdrop-blur-md"
       >
         <ChevronDown
           className={cn(
@@ -37,8 +37,8 @@ export function EventGroup({
         />
         <DispositionIcon disp={disp} />
         {DISPOSITION_LABEL[disp]}
-        <span className="font-data text-[11px] font-medium text-ink-mute">{rows.length}</span>
-        <span className="ml-auto text-[11px] font-medium text-ink-mute opacity-0 transition-opacity hover:text-ink-3 group-hover:opacity-100">
+        <span className="font-data text-[13px] font-medium text-ink-mute">{rows.length}</span>
+        <span className="ml-auto text-[13px] font-medium text-ink-mute opacity-0 transition-opacity hover:text-ink-3 group-hover:opacity-100">
           批量处置
         </span>
       </button>

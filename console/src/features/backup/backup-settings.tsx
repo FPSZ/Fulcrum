@@ -41,12 +41,12 @@ export function BackupSettings() {
           <>
             {meta?.instance && (
               <SettingRow label="来源实例">
-                <span className="text-[13px] text-ink-2">{meta.instance}</span>
+                <span className="text-[15px] text-ink-2">{meta.instance}</span>
               </SettingRow>
             )}
             {meta?.exportedAt && (
               <SettingRow label="导出时间">
-                <span className="font-data text-[12px] text-ink-2">
+                <span className="font-data text-[14px] text-ink-2">
                   {new Date(meta.exportedAt).toLocaleString('zh-CN')}
                 </span>
               </SettingRow>
@@ -65,7 +65,7 @@ export function BackupSettings() {
             </SettingRow>
           </>
         ) : (
-          <div className="py-3.5 text-[12.5px] text-ink-3">尚未导入任何数据。</div>
+          <div className="py-3.5 text-[14.5px] text-ink-3">尚未导入任何数据。</div>
         )}
       </SettingSection>
 
@@ -77,7 +77,7 @@ export function BackupSettings() {
           <Badge tone="neutral">fulcrum.backup</Badge>
         </SettingRow>
         <SettingRow label="Schema 版本">
-          <span className="font-data text-[12px] text-ink-2">v{BACKUP_SCHEMA_VERSION}</span>
+          <span className="font-data text-[14px] text-ink-2">v{BACKUP_SCHEMA_VERSION}</span>
         </SettingRow>
         <SettingRow label="当前支持资源" hint="路线图:策略 / 工具 / 供应链 / 审计链 / 评测 …(逐步开放导入)">
           <div className="flex flex-wrap justify-end gap-1.5">

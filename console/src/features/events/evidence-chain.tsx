@@ -34,7 +34,7 @@ function Stage({
           node,
         )}
       />
-      <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-ink-mute">
+      <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-ink-mute">
         {label}
       </div>
       <div className="mt-1.5">{children}</div>
@@ -48,17 +48,17 @@ export function EvidenceChain({ event: e }: { event: SecurityEvent }) {
   return (
     <div className="relative px-[18px] pb-4 pt-1">
       <Stage tone="warn" label={`来源片段 · ${TRUST_LABEL[e.trust]}`}>
-        <div className="rounded-r-sm border-l-2 border-high bg-inset px-[11px] py-[9px] text-[12px] leading-relaxed text-ink-2">
+        <div className="rounded-r-sm border-l-2 border-high bg-inset px-[11px] py-[9px] text-[14px] leading-relaxed text-ink-2">
           {e.excerpt}
         </div>
       </Stage>
 
       <Stage label="模型意图">
-        <p className="text-[13px] leading-relaxed text-ink">{e.intent}</p>
+        <p className="text-[15px] leading-relaxed text-ink">{e.intent}</p>
       </Stage>
 
       <Stage label="工具参数">
-        <pre className="font-data overflow-x-auto whitespace-pre-wrap break-all rounded-sm bg-inset px-[11px] py-[9px] text-[12px] leading-relaxed text-ink-2">
+        <pre className="font-data overflow-x-auto whitespace-pre-wrap break-all rounded-sm bg-inset px-[11px] py-[9px] text-[14px] leading-relaxed text-ink-2">
           {e.args}
         </pre>
       </Stage>
@@ -67,20 +67,20 @@ export function EvidenceChain({ event: e }: { event: SecurityEvent }) {
         <div className="h-1.5 overflow-hidden rounded bg-surface-2">
           <div className="h-full rounded bg-high" style={{ width: `${Math.round(e.conf * 100)}%` }} />
         </div>
-        <div className="mt-1.5 flex justify-between text-[11px] text-ink-3">
+        <div className="mt-1.5 flex justify-between text-[13px] text-ink-3">
           <span>{e.derived}</span>
           <span className="font-data">置信度 {e.conf.toFixed(2)}</span>
         </div>
       </Stage>
 
       <Stage label="命中策略">
-        <span className="font-data rounded-xs bg-inset px-[7px] py-0.5 text-[11px] text-ink-2">
+        <span className="font-data rounded-xs bg-inset px-[7px] py-0.5 text-[13px] text-ink-2">
           {e.policy}
         </span>
       </Stage>
 
       <Stage tone={dispTone} label={`处置 · ${e.risk}`}>
-        <p className="text-[13px] leading-relaxed text-ink">{e.reason}</p>
+        <p className="text-[15px] leading-relaxed text-ink">{e.reason}</p>
       </Stage>
 
       <Stage tone={e.verified ? 'accent' : 'block'} label="审计 hash-chain" last>
@@ -94,14 +94,14 @@ export function EvidenceChain({ event: e }: { event: SecurityEvent }) {
               ].map(([k, v]) => (
                 <div
                   key={k}
-                  className="font-data flex items-center gap-2.5 rounded-sm bg-inset px-[9px] py-1.5 text-[11px]"
+                  className="font-data flex items-center gap-2.5 rounded-sm bg-inset px-[9px] py-1.5 text-[13px]"
                 >
                   <span className="text-ink-mute">{k}</span>
                   <span className="text-accent-ink">{v}</span>
                 </div>
               ))}
             </div>
-            <span className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-ok">
+            <span className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-ok">
               <Check className="h-[13px] w-[13px]" /> 链校验通过 · 5 个事件连续
             </span>
           </div>
@@ -109,8 +109,8 @@ export function EvidenceChain({ event: e }: { event: SecurityEvent }) {
           <div className="flex items-start gap-2.5 rounded-sm bg-crit/12 px-3 py-2.5 text-crit">
             <AlertTriangle className="mt-px h-4 w-4 shrink-0" />
             <div>
-              <b className="text-[12px] font-semibold">审计链校验失败</b>
-              <p className="mt-0.5 text-[11px] opacity-85">
+              <b className="text-[14px] font-semibold">审计链校验失败</b>
+              <p className="mt-0.5 text-[13px] opacity-85">
                 事件 #4 哈希与 prev 不一致,疑似篡改。已锁定会话并上报取证。
               </p>
             </div>

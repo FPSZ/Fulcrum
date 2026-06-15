@@ -1,8 +1,8 @@
 @import 'tailwindcss';
 
 /* ===================================================================
-   枢衡 · 设计令牌(Linear 浅色 + 薰衣草蓝)
-   手法:单一强调色 / 半透明发丝边 + 柔和分层阴影 / Inter 负字距
+   枢衡 · 设计令牌(Linear 浅色 + 宝蓝 + 磨砂玻璃)
+   手法:单一强调色 / 半透明发丝边 + 柔和分层阴影 + 磨砂玻璃外壳 / Inter
    颜色映射进 Tailwind v4 主题,组件用 bg-surface / text-ink / border-line 等
    =================================================================== */
 @theme {
@@ -12,29 +12,36 @@
   --color-surface: #ffffff;
   --color-surface-2: #f3f4f7;
   --color-inset: #f6f7f9;
+  /* 图表空槽柱/刻度:玻璃卡上需明确可见的蓝灰实色 */
+  --color-bar-idle: #c0c8d6;
 
   /* —— 文字四级 —— */
   --color-ink: #08090a;
   --color-ink-2: #3c4149;
-  --color-ink-3: #6b7280;
-  --color-ink-mute: #9499a3;
+  --color-ink-3: #474d57;
+  --color-ink-mute: #5b626d;
 
   /* —— 边框:半透明发丝(配合阴影分层,几乎不可见) —— */
   --color-line: oklch(0% 0 0 / 0.07);
   --color-line-2: oklch(0% 0 0 / 0.11);
   --color-line-3: oklch(0% 0 0 / 0.15);
 
-  /* —— 强调色:薰衣草蓝(全 UI 唯一色相) —— */
-  --color-accent: #5e6ad2;
-  --color-accent-hover: #6872e5;
-  --color-accent-ink: #4750c4;
+  /* —— 强调色:蓝(全 UI 唯一色相) —— */
+  --color-accent: #3b6ef6;
+  --color-accent-hover: #2f5fe0;
+  --color-accent-ink: #2f5fe0;
+
+  /* —— 玻璃外壳(磨砂玻璃板 + 哑光桌面) —— */
+  --glass-fill: rgba(255, 255, 255, 0.42);
+  --glass-card: rgba(255, 255, 255, 0.78);
+  --glass-brd: rgba(255, 255, 255, 0.55);
 
   /* —— 状态色(浅底 AA 文字) —— */
-  --color-crit: #c5372c;
-  --color-high: #b45309;
-  --color-med: #a16207;
-  --color-ok: #2f9461;
-  --color-info: #4750c4;
+  --color-crit: #d8382b;
+  --color-high: #d97706;
+  --color-med: #ca8a04;
+  --color-ok: #16a34a;
+  --color-info: #2563eb;
 
   /* —— 圆角 —— */
   --radius-xs: 4px;
@@ -71,10 +78,15 @@
   }
   body {
     margin: 0;
-    background: var(--color-canvas);
+    /* 哑光浅灰"桌面" + 背后透出的暖色柔焦光晕(背景图可替换 --orb 图层) */
+    background:
+      radial-gradient(42vw 38vw at 50% 20%, rgba(255, 197, 120, 0.5), transparent 58%),
+      radial-gradient(38vw 38vw at 86% 94%, rgba(120, 160, 255, 0.22), transparent 60%),
+      linear-gradient(162deg, #edeff3 0%, #e5e8ed 52%, #dde0e7 100%);
+    background-attachment: fixed;
     color: var(--color-ink);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.5;
     /* 低 DPI(1080p)友好:不强制 optimizeLegibility(会糊小字),
        不加全局负字距(会让小字更棱角);抗锯齿仅在 hi-DPI 开启 */
@@ -111,9 +123,48 @@
     outline: none;
   }
   .focus-ring:focus-visible {
-    box-shadow: 0 0 0 2px var(--color-canvas), 0 0 0 4px
+    box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px
       color-mix(in oklch, var(--color-accent) 60%, transparent);
     border-radius: var(--radius-sm);
+  }
+
+  /* —— 磨砂玻璃板:整个控制台外壳 —— */
+  .glass-panel {
+    position: relative;
+    background: var(--glass-fill);
+    backdrop-filter: blur(26px) saturate(150%);
+    -webkit-backdrop-filter: blur(26px) saturate(150%);
+    border: 1px solid var(--glass-brd);
+    box-shadow:
+      0 50px 110px -45px rgba(26, 36, 70, 0.5),
+      0 10px 30px -14px rgba(26, 36, 70, 0.2),
+      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.9),
+      inset 1px 0 0 0 rgba(255, 255, 255, 0.4),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  }
+  /* 玻璃顶角受光高光 */
+  .glass-panel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+      radial-gradient(18% 15% at 2% -3%, rgba(255, 255, 255, 0.34), transparent 70%),
+      radial-gradient(30% 20% at 98% -1%, rgba(255, 255, 255, 0.38), transparent 72%);
+  }
+  /* —— 玻璃卡片:面板内的次级玻璃(一点点液态玻璃质感,克制) —— */
+  .glass-card {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(255, 255, 255, 0.5));
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow:
+      0 1px 2px rgba(26, 36, 70, 0.05),
+      0 14px 34px -22px rgba(26, 36, 70, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.18);
   }
 }
 
@@ -146,6 +197,63 @@
   to {
     background-position: 0 0;
   }
+}
+@keyframes bg-fade {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* 实时事件入场:背景闪一下(不用 transform,低 DPI 文字不糊) */
+@keyframes row-flash {
+  from {
+    background-color: color-mix(in oklch, var(--color-accent) 16%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.row-flash {
+  animation: row-flash 0.9s ease-out;
+}
+
+/* 实时区间滑条(PR 式细条 + 白底蓝环滑块) */
+.range-live {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+}
+.range-live::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--color-accent);
+  box-shadow: 0 1px 4px rgba(26, 36, 70, 0.25);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.range-live::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+.range-live::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--color-accent);
+  box-shadow: 0 1px 4px rgba(26, 36, 70, 0.25);
+  cursor: pointer;
+}
+.range-live:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-accent) 35%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

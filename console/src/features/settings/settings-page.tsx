@@ -5,7 +5,6 @@ import {
   DatabaseBackup,
   FileSearch,
   Info,
-  Settings as SettingsIcon,
   ShieldCheck,
   SlidersHorizontal,
   Users,
@@ -36,11 +35,6 @@ export function SettingsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-4">
-        <SettingsIcon className="h-[17px] w-[17px] text-ink-3" />
-        <h1 className="text-sm font-semibold tracking-[-0.014em]">系统设置</h1>
-      </header>
-
       <div className="flex min-h-0 flex-1">
         {/* 设置二级导航 */}
         <nav className="w-56 shrink-0 overflow-y-auto border-r border-line p-2 max-[820px]:hidden">
@@ -53,7 +47,7 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => setCat(c.id)}
                 className={cn(
-                  'focus-ring flex w-full items-center gap-2.5 rounded-sm px-2.5 py-1.5 text-[13px] font-normal text-ink-2 transition-colors hover:bg-surface-2',
+                  'focus-ring flex w-full items-center gap-2.5 rounded-sm px-2.5 py-1.5 text-[15px] font-normal text-ink-2 transition-colors hover:bg-surface-2',
                   active && 'bg-accent/10 font-semibold text-accent-ink',
                 )}
               >
@@ -68,8 +62,8 @@ export function SettingsPage() {
         </nav>
 
         {/* 内容 */}
-        <div className="min-w-0 flex-1 overflow-y-auto px-7 py-6">
-          <div className="mx-auto max-w-[760px]">
+        <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
+          <div className="mx-auto w-full max-w-[720px]">
             {cat === 'general' && <GeneralPanel />}
             {cat === 'gateway' && <GatewayPanel />}
             {cat === 'models' && <ModelsPanel />}
@@ -271,16 +265,16 @@ function AboutPanel() {
   return (
     <SettingSection title="关于" desc="部署形态与版本信息。">
       <SettingRow label="产品">
-        <span className="text-[13px] text-ink-2">枢衡 Fulcrum · 安全控制台</span>
+        <span className="text-[15px] text-ink-2">枢衡 Fulcrum · 安全控制台</span>
       </SettingRow>
       <SettingRow label="版本">
-        <span className="font-data text-[12px] text-ink-2">0.1.0</span>
+        <span className="font-data text-[14px] text-ink-2">0.1.0</span>
       </SettingRow>
       <SettingRow label="部署形态" hint="政企数据不出域">
         <Badge tone="accent">私有化 · 单租户 · 自托管</Badge>
       </SettingRow>
       <SettingRow label="许可证">
-        <span className="text-[13px] text-ink-2">内部评估版</span>
+        <span className="text-[15px] text-ink-2">内部评估版</span>
       </SettingRow>
     </SettingSection>
   )
