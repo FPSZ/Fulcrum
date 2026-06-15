@@ -3,6 +3,9 @@ import { buildBackup, parseBackup, type ImportReport } from './io'
 import type { BackupMeta, ResourceData } from './types'
 
 const LS_KEY = 'fulcrum.backup.v1'
+/** 单文件导入上限:脱敏备份本就轻量(演示档约几十 KB),超过即视为误选大文件,
+ *  直接拒绝,避免 file.text()+JSON.parse 把超大 JSON 读进内存卡死页面。 */
+const MAX_BACKUP_BYTES = 5 * 1024 * 1024
 
 interface PersistShape {
   resources: ResourceData
@@ -71,7 +74,20 @@ export function BackupProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const importFile = useCallback(
-    async (file: File) => importText(await file.text()),
+    async (file: File) => {
+      if (file.size > MAX_BACKUP_BYTES) {
+        const mb = (MAX_BACKUP_BYTES / 1024 / 1024).toFixed(0)
+        const r: ImportReport = {
+          ok: false,
+          imported: [],
+          skipped: [],
+          error: `文件过大(${(file.size / 1024 / 1024).toFixed(1)} MB),备份不应超过 ${mb} MB,请确认选对了文件`,
+        }
+        setReport(r)
+        return r
+      }
+      return importText(await file.text())
+    },
     [importText],
   )
 
