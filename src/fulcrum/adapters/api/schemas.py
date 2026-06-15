@@ -62,3 +62,16 @@ class AuditResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str
+
+
+# ---- /auth ----
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class PrincipalResponse(BaseModel):
+    """当前登录主体(绝不含口令哈希或会话令牌)。"""
+
+    username: str
+    display_name: str

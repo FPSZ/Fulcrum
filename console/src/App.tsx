@@ -66,10 +66,12 @@ function AppView() {
  * 三段重叠编排成一条连贯动画。`reducedMotion="user"` 尊重系统“减少动态”。
  */
 function Shell() {
-  const { authed } = useAuth()
+  const { ready, authed } = useAuth()
   return (
     <>
       <BackgroundLayer blurred={authed} />
+      {/* 会话探测完成前只铺背景,不抢先渲染登录页/主控制台,避免刷新瞬间闪一下登录页 */}
+      {!ready ? null : (
       <MotionConfig reducedMotion="user">
         <AnimatePresence initial={false}>
           {authed ? (
@@ -95,6 +97,7 @@ function Shell() {
           )}
         </AnimatePresence>
       </MotionConfig>
+      )}
     </>
   )
 }

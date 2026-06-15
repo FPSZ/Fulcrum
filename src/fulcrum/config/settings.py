@@ -22,3 +22,19 @@ class Settings(BaseSettings):
 
     # 审计/运行目录
     audit_db_path: str = "data/runtime/fulcrum.sqlite"
+
+    # ── 登录鉴权(账号口令 + 服务端会话)─────────────────────────────
+    # 用户/会话库(SQLite,与审计库分离,便于单独备份/审计)
+    auth_db_path: str = "data/runtime/auth.sqlite"
+    # 会话绝对有效期(小时);超过则强制重新登录
+    session_ttl_hours: int = 12
+    # 会话 Cookie:HttpOnly 恒开;Secure 在 TLS 反代后置 true;SameSite=strict 防 CSRF
+    session_cookie_name: str = "fulcrum_session"
+    session_cookie_secure: bool = False
+    session_cookie_samesite: str = "strict"
+    # 暴力破解防护:连续失败次数达阈值后锁定账号一段时间
+    login_max_failures: int = 5
+    login_lockout_minutes: int = 15
+    # 首次启动引导管理员:库内无用户时据此创建;口令留空则随机生成并打印一次
+    bootstrap_admin_username: str = "admin"
+    bootstrap_admin_password: str = ""

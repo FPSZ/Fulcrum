@@ -48,5 +48,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = load_capability_config(settings.capability_config)
     # 延迟导入,避免 core 测试时强依赖 fastapi。
     from .adapters.api import build_api
+    from .adapters.auth import build_auth_service
 
-    return build_api(build_pipeline(cfg))
+    return build_api(build_pipeline(cfg), build_auth_service(settings), settings)

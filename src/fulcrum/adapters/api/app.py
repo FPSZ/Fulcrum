@@ -22,7 +22,9 @@ from .schemas import (
 )
 
 if TYPE_CHECKING:
+    from ...config import Settings
     from ...core.pipeline import SecurityPipeline, ToolOutcome
+    from ..auth import AuthService
 
 
 def _output_of(result: object | None) -> str | None:
@@ -44,7 +46,11 @@ def _to_outcome_dto(outcome: ToolOutcome) -> OutcomeDTO:
     )
 
 
-def build_api(pipeline: SecurityPipeline) -> FastAPI:
+def build_api(
+    pipeline: SecurityPipeline,
+    auth: AuthService | None = None,
+    settings: Settings | None = None,
+) -> FastAPI:
     app = FastAPI(title="枢衡 Fulcrum API", version=__version__)
 
     @app.exception_handler(FulcrumError)
@@ -52,6 +58,12 @@ def build_api(pipeline: SecurityPipeline) -> FastAPI:
         return JSONResponse(
             status_code=400, content={"error": type(exc).__name__, "detail": str(exc)}
         )
+
+    # 鉴权路由(账号口令登录 + 会话);auth/settings 缺省时跳过,便于纯管线测试。
+    if auth is not None and settings is not None:
+        from .auth_routes import register_auth_routes
+
+        register_auth_routes(app, auth, settings)
 
     @app.get("/healthz", response_model=HealthResponse)
     async def healthz() -> HealthResponse:

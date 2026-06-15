@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings>=2.2",
     "pyyaml>=6.0",
     "httpx>=0.27",
+    "argon2-cffi>=23.1",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +38,10 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "W"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 依赖注入惯用法:Depends() 出现在参数默认值里属于框架约定,非 B008 误用。
+extend-immutable-calls = ["fastapi.Depends"]
 
 # ───────────────────────────── pyright ─────────────────────────────
 [tool.pyright]

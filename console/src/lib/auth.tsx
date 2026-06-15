@@ -1,42 +1,92 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
 /**
- * 控制台登录态(占位实现)。
+ * 控制台登录态 —— 对接后端服务端会话(HttpOnly Cookie)。
  *
- * 现状:后端 M0 尚无 /auth 接口,这里是**前端占位门禁**——接受任意非空账号+口令,
- * 仅用于把控制台挡在登录后并演示登录过场动画。
- * 接后端时:把 `login` 改为调用 OpenAPI 的鉴权接口、保存会话令牌(走 httpOnly cookie
- * 或内存),并在请求层带上;**密钥/令牌不写死、不入前端源码**(沿用安全红线)。
+ * 安全模型:会话令牌只存在后端签发的 HttpOnly Cookie 里,前端 JS 读不到、也不保存令牌
+ * (无 localStorage)。"登没登上"由 `GET /auth/me` 这一权威来源决定;前端只持有
+ * 用户名/显示名这类非敏感信息。口令仅在提交瞬间存在于内存,绝不落地。
  */
 
-const KEY = 'fulcrum.auth.v1'
+export interface SessionUser {
+  username: string
+  displayName: string
+}
 
 interface AuthValue {
+  /** 初次会话探测是否完成 —— 完成前不要决定显示登录页还是主控制台,避免闪烁 */
+  ready: boolean
   authed: boolean
+  user: SessionUser | null
   /** 失败时抛错(消息用于表单提示);成功后置 authed=true,触发登录页滑走 */
-  login: (account: string, password: string) => Promise<void>
-  logout: () => void
+  login: (username: string, password: string) => Promise<void>
+  logout: () => Promise<void>
 }
 
 const Ctx = createContext<AuthValue | null>(null)
 
+/** 统一解析后端的当事人响应 */
+async function readPrincipal(res: Response): Promise<SessionUser> {
+  const data = (await res.json()) as { username: string; display_name: string }
+  return { username: data.username, displayName: data.display_name }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [authed, setAuthed] = useState(() => localStorage.getItem(KEY) === '1')
+  const [ready, setReady] = useState(false)
+  const [user, setUser] = useState<SessionUser | null>(null)
 
-  const login = async (account: string, password: string) => {
-    if (!account.trim() || !password) throw new Error('请输入账号和口令')
-    // 模拟一次网络往返,让按钮的加载态可见
-    await new Promise((r) => setTimeout(r, 550))
-    localStorage.setItem(KEY, '1')
-    setAuthed(true)
+  // 挂载时向后端核实当前会话(Cookie 自动随同源请求携带)
+  useEffect(() => {
+    let alive = true
+    fetch('/auth/me', { credentials: 'include' })
+      .then(async (res) => (res.ok ? await readPrincipal(res) : null))
+      .catch(() => null)
+      .then((u) => {
+        if (alive) {
+          setUser(u)
+          setReady(true)
+        }
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const login = async (username: string, password: string) => {
+    if (!username.trim() || !password) throw new Error('请输入账号和口令')
+    let res: Response
+    try {
+      res = await fetch('/auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      })
+    } catch {
+      throw new Error('无法连接服务,请稍后再试')
+    }
+    if (res.ok) {
+      setUser(await readPrincipal(res))
+      return
+    }
+    if (res.status === 429) throw new Error('尝试过于频繁,账号已被临时锁定,请稍后再试')
+    if (res.status === 401) throw new Error('账号或口令错误')
+    throw new Error('登录失败,请稍后再试')
   }
 
-  const logout = () => {
-    localStorage.removeItem(KEY)
-    setAuthed(false)
+  const logout = async () => {
+    try {
+      await fetch('/auth/logout', { method: 'POST', credentials: 'include' })
+    } finally {
+      setUser(null)
+    }
   }
 
-  return <Ctx.Provider value={{ authed, login, logout }}>{children}</Ctx.Provider>
+  return (
+    <Ctx.Provider value={{ ready, authed: user !== null, user, login, logout }}>
+      {children}
+    </Ctx.Provider>
+  )
 }
 
 export function useAuth(): AuthValue {

@@ -20,8 +20,9 @@ export function Sidebar({
   active: string
   onNavigate: (id: string) => void
 }) {
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
   const features = getFeatures()
+  const displayName = user?.displayName || '未登录'
   const sections = FEATURE_GROUPS.map((group) => ({
     group,
     items: features.filter((f) => f.group === group),
@@ -134,10 +135,10 @@ export function Sidebar({
         {/* 用户 */}
         <div className="border-t border-line pt-2.5">
           <div className="flex w-full items-center gap-2.5 rounded-[10px] px-1.5 py-1.5 text-left transition-colors hover:bg-white/55">
-            <Avatar fallback="运" className="h-8 w-8 shrink-0 rounded-[10px]" />
+            <Avatar fallback={displayName.slice(0, 1)} className="h-8 w-8 shrink-0 rounded-[10px]" />
             <span className={fade('min-w-0 flex-1 whitespace-nowrap leading-tight')}>
-              <span className="block text-[14.5px] font-semibold">运营 · 林珩</span>
-              <span className="block text-[13px] text-ink-3">SecOps Operator</span>
+              <span className="block truncate text-[14.5px] font-semibold">{displayName}</span>
+              <span className="block text-[13px] text-ink-3">{user?.username ?? '—'}</span>
             </span>
             <Tooltip content="退出登录" side="top">
               <IconButton
