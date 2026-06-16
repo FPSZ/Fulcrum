@@ -4,13 +4,10 @@ import { eventsModule } from './events/module'
 import { overviewModule } from './overview/module'
 import { settingsModule } from './settings/module'
 import { usersModule } from './admin/module'
-import {
-  auditModule,
-  evalModule,
-  policiesModule,
-  supplyModule,
-  toolsModule,
-} from './placeholders'
+import { policiesModule } from './policies/module'
+import { auditModule } from './audit/module'
+import { evalModule } from './eval/module'
+import { supplyModule, toolsModule } from './placeholders'
 
 /**
  * 唯一的"装配清单" —— 类似后端 load_builtin_capabilities()。
