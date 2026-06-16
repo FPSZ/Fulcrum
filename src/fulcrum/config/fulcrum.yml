@@ -12,6 +12,6 @@ policy: yaml             # 声明式 YAML 策略引擎(data/policies/default.yml
 executor: echo
 tools:
   - echo
-scanner: noop
+scanner: manifest        # 供应链最小静态扫描(权限/描述/外联/依赖→评级);noop 为最小桩
 model: fake
 audit: memory

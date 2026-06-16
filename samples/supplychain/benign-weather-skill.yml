@@ -1,0 +1,12 @@
+# 良性 Skill 样例:只读、走 https 官方端点、依赖来自正规仓库 → 预期评级 allow。
+name: weather-query-skill
+version: 1.2.0
+description: 查询指定城市的天气预报,只读取公开气象数据并返回文本摘要。
+permissions:
+  - file.read
+  - network
+endpoints:
+  - https://api.weather.gov.cn/v1/forecast
+dependencies:
+  - requests==2.31.0
+  - pydantic>=2.6
