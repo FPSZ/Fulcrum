@@ -108,8 +108,12 @@ class AuthService:
             existing = self._store.get_role_by_key(seed.key)
             if existing is None:
                 self._store.create_role(
-                    seed.key, seed.name, seed.description, True,
-                    list(seed.permissions), now,
+                    seed.key,
+                    seed.name,
+                    seed.description,
+                    True,
+                    list(seed.permissions),
+                    now,
                 )
             else:
                 # 内置角色用户不可编辑 → 始终对齐代码种子:
@@ -136,7 +140,11 @@ class AuthService:
         role = self._store.get_role_by_key(DEFAULT_BOOTSTRAP_ROLE)
         root = next(iter(self._store.list_departments()), None)
         self._store.create_user(
-            username, "系统管理员", hash_password(pwd), STATUS_ACTIVE, self._now(),
+            username,
+            "系统管理员",
+            hash_password(pwd),
+            STATUS_ACTIVE,
+            self._now(),
             title="平台管理员",
             role_id=role.id if role else None,
             department_id=root.id if root else None,
@@ -159,8 +167,11 @@ class AuthService:
         if self._store.get_user(username) is not None:
             raise UsernameTaken()
         self._store.create_user(
-            username, display_name.strip(), hash_password(password),
-            STATUS_PENDING, self._now(),
+            username,
+            display_name.strip(),
+            hash_password(password),
+            STATUS_PENDING,
+            self._now(),
         )
         logger.info("收到账号申请:%s", username)
 

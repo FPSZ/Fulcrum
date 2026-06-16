@@ -145,8 +145,7 @@ class SQLiteAuthStore:
     def list_departments(self) -> list[Department]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT id, name, parent_id, sort_order FROM departments "
-                "ORDER BY sort_order, id"
+                "SELECT id, name, parent_id, sort_order FROM departments ORDER BY sort_order, id"
             ).fetchall()
         return [Department(r["id"], r["name"], r["parent_id"], r["sort_order"]) for r in rows]
 
@@ -155,16 +154,18 @@ class SQLiteAuthStore:
     ) -> Department:
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT INTO departments(name, parent_id, sort_order, created_at) "
-                "VALUES(?,?,?,?)",
+                "INSERT INTO departments(name, parent_id, sort_order, created_at) VALUES(?,?,?,?)",
                 (name, parent_id, sort_order, now),
             )
             did = int(cur.lastrowid or 0)
         return Department(did, name, parent_id, sort_order)
 
     def update_department(
-        self, dept_id: int, name: str | None = None,
-        parent_id: int | None | object = _UNSET, sort_order: int | None = None,
+        self,
+        dept_id: int,
+        name: str | None = None,
+        parent_id: int | None | object = _UNSET,
+        sort_order: int | None = None,
     ) -> None:
         sets: list[str] = []
         args: list[object] = []
@@ -216,8 +217,12 @@ class SQLiteAuthStore:
             ).fetchall()
             return [
                 Role(
-                    r["id"], r["key"], r["name"], r["description"],
-                    bool(r["is_system"]), self._role_perms(conn, r["id"]),
+                    r["id"],
+                    r["key"],
+                    r["name"],
+                    r["description"],
+                    bool(r["is_system"]),
+                    self._role_perms(conn, r["id"]),
                 )
                 for r in rows
             ]
@@ -231,8 +236,12 @@ class SQLiteAuthStore:
             if r is None:
                 return None
             return Role(
-                r["id"], r["key"], r["name"], r["description"],
-                bool(r["is_system"]), self._role_perms(conn, r["id"]),
+                r["id"],
+                r["key"],
+                r["name"],
+                r["description"],
+                bool(r["is_system"]),
+                self._role_perms(conn, r["id"]),
             )
 
     def get_role_by_key(self, key: str) -> Role | None:
@@ -241,8 +250,13 @@ class SQLiteAuthStore:
         return self.get_role(r["id"]) if r else None
 
     def create_role(
-        self, key: str, name: str, description: str, is_system: bool,
-        permissions: list[str], now: int,
+        self,
+        key: str,
+        name: str,
+        description: str,
+        is_system: bool,
+        permissions: list[str],
+        now: int,
     ) -> Role:
         with self._connect() as conn:
             cur = conn.execute(
@@ -258,7 +272,10 @@ class SQLiteAuthStore:
         return Role(rid, key, name, description, is_system, frozenset(permissions))
 
     def update_role(
-        self, role_id: int, name: str | None, description: str | None,
+        self,
+        role_id: int,
+        name: str | None,
+        description: str | None,
         permissions: list[str] | None,
     ) -> None:
         with self._connect() as conn:
@@ -282,9 +299,9 @@ class SQLiteAuthStore:
     def role_member_count(self, role_id: int) -> int:
         with self._connect() as conn:
             return int(
-                conn.execute(
-                    "SELECT COUNT(*) FROM users WHERE role_id = ?", (role_id,)
-                ).fetchone()[0]
+                conn.execute("SELECT COUNT(*) FROM users WHERE role_id = ?", (role_id,)).fetchone()[
+                    0
+                ]
             )
 
     # ── 用户 ──────────────────────────────────────────────────────
@@ -293,24 +310,54 @@ class SQLiteAuthStore:
             return int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 
     def create_user(
-        self, username: str, display_name: str, password_hash: str, status: str, now: int,
-        *, employee_no: str = "", email: str = "", phone: str = "", title: str = "",
-        department_id: int | None = None, role_id: int | None = None,
+        self,
+        username: str,
+        display_name: str,
+        password_hash: str,
+        status: str,
+        now: int,
+        *,
+        employee_no: str = "",
+        email: str = "",
+        phone: str = "",
+        title: str = "",
+        department_id: int | None = None,
+        role_id: int | None = None,
     ) -> User:
         with self._connect() as conn:
             cur = conn.execute(
                 "INSERT INTO users(username, display_name, password_hash, status, "
                 "employee_no, email, phone, title, department_id, role_id, created_at) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (username, display_name, password_hash, status, employee_no, email,
-                 phone, title, department_id, role_id, now),
+                (
+                    username,
+                    display_name,
+                    password_hash,
+                    status,
+                    employee_no,
+                    email,
+                    phone,
+                    title,
+                    department_id,
+                    role_id,
+                    now,
+                ),
             )
             uid = int(cur.lastrowid or 0)
         return User(
-            id=uid, username=username, display_name=display_name,
-            password_hash=password_hash, status=status, employee_no=employee_no,
-            email=email, phone=phone, title=title, department_id=department_id,
-            role_id=role_id, created_at=now, last_login_at=None,
+            id=uid,
+            username=username,
+            display_name=display_name,
+            password_hash=password_hash,
+            status=status,
+            employee_no=employee_no,
+            email=email,
+            phone=phone,
+            title=title,
+            department_id=department_id,
+            role_id=role_id,
+            created_at=now,
+            last_login_at=None,
         )
 
     def get_user(self, username: str) -> User | None:
@@ -328,8 +375,12 @@ class SQLiteAuthStore:
         return _to_user(row) if row else None
 
     def list_users(
-        self, *, department_ids: list[int] | None = None, status: str | None = None,
-        role_id: int | None = None, search: str | None = None,
+        self,
+        *,
+        department_ids: list[int] | None = None,
+        status: str | None = None,
+        role_id: int | None = None,
+        search: str | None = None,
     ) -> list[User]:
         where, args = [], []
         if department_ids is not None:
@@ -364,8 +415,14 @@ class SQLiteAuthStore:
 
     def update_user_profile(self, user_id: int, fields: dict[str, object]) -> None:
         allowed = {
-            "display_name", "employee_no", "email", "phone", "title",
-            "department_id", "role_id", "status",
+            "display_name",
+            "employee_no",
+            "email",
+            "phone",
+            "title",
+            "department_id",
+            "role_id",
+            "status",
         }
         sets = [f"{k} = ?" for k in fields if k in allowed]
         args = [fields[k] for k in fields if k in allowed]
@@ -424,8 +481,7 @@ class SQLiteAuthStore:
     ) -> None:
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO sessions(token_hash, user_id, created_at, expires_at) "
-                "VALUES(?,?,?,?)",
+                "INSERT INTO sessions(token_hash, user_id, created_at, expires_at) VALUES(?,?,?,?)",
                 (token_hash, user_id, created_at, expires_at),
             )
 

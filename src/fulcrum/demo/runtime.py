@@ -85,20 +85,30 @@ class GovRuntime:
         return self._sessions[session_id]
 
     def _emit(
-        self, session_id: str, etype: AuditEventType, *, subject: str | None = None,
-        decision: Disposition | None = None, evidence: dict | None = None,
+        self,
+        session_id: str,
+        etype: AuditEventType,
+        *,
+        subject: str | None = None,
+        decision: Disposition | None = None,
+        evidence: dict | None = None,
     ) -> None:
         self.audit.append(
             AuditEvent(
-                session_id=session_id, event_type=etype, subject_id=subject,
-                decision=decision, evidence=evidence or {},
+                session_id=session_id,
+                event_type=etype,
+                subject_id=subject,
+                decision=decision,
+                evidence=evidence or {},
             )
         )
 
     async def _call_model(self, history: list[dict]) -> dict[str, Any]:
         payload = {
-            "model": self._model, "messages": history,
-            "tools": gov.TOOL_SCHEMAS, "temperature": 0.3,
+            "model": self._model,
+            "messages": history,
+            "tools": gov.TOOL_SCHEMAS,
+            "temperature": 0.3,
         }
         headers = {"Content-Type": "application/json"}
         if self._key:
@@ -121,7 +131,9 @@ class GovRuntime:
         self._emit(session_id, AuditEventType.TOOL_INTENT_DETECTED, subject=intent.intent_id)
         decision = self.policy.decide(intent, ctx)
         self._emit(
-            session_id, AuditEventType.POLICY_DECIDED, subject=intent.intent_id,
+            session_id,
+            AuditEventType.POLICY_DECIDED,
+            subject=intent.intent_id,
             decision=decision.decision,
             evidence={"rule": decision.matched_policy_id, "reason": decision.reason},
         )
@@ -135,14 +147,18 @@ class GovRuntime:
             if tool == "doc.read" and ok:
                 # 读入的文档内容视为不可信来源 → 回注上下文 + 立即检测(间接注入)。
                 span = SourceSpan(
-                    source_type=SourceType.DOCUMENT, trust_level=TrustLevel.UNTRUSTED,
-                    content_hash=_hash(output), excerpt=output[:600],
+                    source_type=SourceType.DOCUMENT,
+                    trust_level=TrustLevel.UNTRUSTED,
+                    content_hash=_hash(output),
+                    excerpt=output[:600],
                 )
                 ctx.spans.append(span)
                 doc_findings = self.detector.detect([span], ctx)
                 if doc_findings:
                     self._emit(
-                        session_id, AuditEventType.INPUT_DETECTED, subject=span.source_id,
+                        session_id,
+                        AuditEventType.INPUT_DETECTED,
+                        subject=span.source_id,
                         evidence={"findings": [f.model_dump() for f in doc_findings]},
                     )
             result_text = output
@@ -199,19 +215,24 @@ class GovRuntime:
 
         self._emit(session_id, AuditEventType.REQUEST_RECEIVED)
         user_span = SourceSpan(
-            source_type=SourceType.USER, trust_level=TrustLevel.TRUSTED,
-            content_hash=_hash(user_text), excerpt=user_text,
+            source_type=SourceType.USER,
+            trust_level=TrustLevel.TRUSTED,
+            content_hash=_hash(user_text),
+            excerpt=user_text,
         )
         spans.append(user_span)
         in_findings = self.detector.detect([user_span], ctx)
         self._emit(
-            session_id, AuditEventType.INPUT_DETECTED, subject=user_span.source_id,
+            session_id,
+            AuditEventType.INPUT_DETECTED,
+            subject=user_span.source_id,
             evidence={"findings": [f.model_dump() for f in in_findings]},
         )
 
         steps: list[dict[str, Any]] = [
             {
-                "type": "input", "text": user_text,
+                "type": "input",
+                "text": user_text,
                 "findings": [_finding_dict(f) for f in in_findings],
             }
         ]
@@ -229,7 +250,8 @@ class GovRuntime:
             if tool_calls:
                 sess["history"].append(
                     {
-                        "role": "assistant", "content": msg.get("content") or "",
+                        "role": "assistant",
+                        "content": msg.get("content") or "",
                         "tool_calls": tool_calls,
                     }
                 )
@@ -243,7 +265,8 @@ class GovRuntime:
                     steps.append(gated["step"])
                     sess["history"].append(
                         {
-                            "role": "tool", "tool_call_id": tc.get("id", ""),
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
                             "content": gated["result_text"],
                         }
                     )

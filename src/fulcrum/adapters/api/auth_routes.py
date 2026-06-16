@@ -58,9 +58,7 @@ def register_auth_routes(
         except AccountDisabled as exc:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
         except InvalidCredentials as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
         response.set_cookie(
             key=cookie_name,
             value=token,
@@ -79,9 +77,7 @@ def register_auth_routes(
         try:
             auth.register(body.username, body.password, body.display_name)
         except (UsernameTaken, WeakPassword, InvalidCredentials) as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         return {"detail": "申请已提交,等待管理员审批"}
 
     @app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)

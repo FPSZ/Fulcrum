@@ -76,8 +76,13 @@ class RoleSeed:
 # 低信任访客绝不该看到系统设置和成员目录)
 _BOARD_VIEW = frozenset(
     {
-        "overview.view", "events.view", "policies.view",
-        "tools.view", "supply.view", "audit.view", "eval.view",
+        "overview.view",
+        "events.view",
+        "policies.view",
+        "tools.view",
+        "supply.view",
+        "audit.view",
+        "eval.view",
     }
 )
 
@@ -100,10 +105,18 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
         "统筹研判:看全局、审批高危处置与账号申请、发起评测",
         frozenset(
             {
-                "overview.view", "events.view", "events.handle",
-                "policies.view", "policies.manage", "tools.view",
-                "supply.view", "audit.view", "eval.view", "eval.run",
-                "users.view", "account.approve",
+                "overview.view",
+                "events.view",
+                "events.handle",
+                "policies.view",
+                "policies.manage",
+                "tools.view",
+                "supply.view",
+                "audit.view",
+                "eval.view",
+                "eval.run",
+                "users.view",
+                "account.approve",
             }
         ),
     ),
@@ -113,8 +126,13 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
         "一线值班:监测处置事件、看管控与取证",
         frozenset(
             {
-                "overview.view", "events.view", "events.handle",
-                "tools.view", "supply.view", "audit.view", "eval.view",
+                "overview.view",
+                "events.view",
+                "events.handle",
+                "tools.view",
+                "supply.view",
+                "audit.view",
+                "eval.view",
             }
         ),
     ),

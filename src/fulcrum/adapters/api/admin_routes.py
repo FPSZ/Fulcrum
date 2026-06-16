@@ -38,24 +38,40 @@ from .schemas import (
 
 def _dept_dto(d: Department, member_count: int) -> DepartmentDTO:
     return DepartmentDTO(
-        id=d.id, name=d.name, parent_id=d.parent_id,
-        sort_order=d.sort_order, member_count=member_count,
+        id=d.id,
+        name=d.name,
+        parent_id=d.parent_id,
+        sort_order=d.sort_order,
+        member_count=member_count,
     )
 
 
 def _role_dto(r: Role, member_count: int) -> RoleDTO:
     return RoleDTO(
-        id=r.id, key=r.key, name=r.name, description=r.description,
-        is_system=r.is_system, permissions=sorted(r.permissions), member_count=member_count,
+        id=r.id,
+        key=r.key,
+        name=r.name,
+        description=r.description,
+        is_system=r.is_system,
+        permissions=sorted(r.permissions),
+        member_count=member_count,
     )
 
 
 def _user_dto(u: User) -> UserDTO:
     return UserDTO(
-        id=u.id, username=u.username, display_name=u.display_name, status=u.status,
-        employee_no=u.employee_no, email=u.email, phone=u.phone, title=u.title,
-        department_id=u.department_id, role_id=u.role_id,
-        created_at=u.created_at, last_login_at=u.last_login_at,
+        id=u.id,
+        username=u.username,
+        display_name=u.display_name,
+        status=u.status,
+        employee_no=u.employee_no,
+        email=u.email,
+        phone=u.phone,
+        title=u.title,
+        department_id=u.department_id,
+        role_id=u.role_id,
+        created_at=u.created_at,
+        last_login_at=u.last_login_at,
     )
 
 
@@ -100,17 +116,18 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
     ) -> DepartmentDTO:
         try:
             d = directory.update_department(
-                dept_id, name=body.name, parent_id=body.parent_id,
-                sort_order=body.sort_order, change_parent=True,
+                dept_id,
+                name=body.name,
+                parent_id=body.parent_id,
+                sort_order=body.sort_order,
+                change_parent=True,
             )
         except (NotFound, Conflict) as exc:
             _raise(exc)
         return _dept_dto(d, directory.department_member_count(d.id))
 
     @app.delete("/admin/departments/{dept_id}", status_code=204)
-    async def delete_department(
-        dept_id: int, _: Principal = Depends(can_manage_dept)
-    ) -> None:
+    async def delete_department(dept_id: int, _: Principal = Depends(can_manage_dept)) -> None:
         try:
             directory.delete_department(dept_id)
         except (NotFound, Conflict) as exc:
@@ -119,14 +136,10 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
     # ── 角色与权限 ────────────────────────────────────────────────
     @app.get("/admin/roles", response_model=list[RoleDTO])
     async def list_roles(_: Principal = Depends(can_view)) -> list[RoleDTO]:
-        return [
-            _role_dto(r, directory.role_member_count(r.id)) for r in directory.list_roles()
-        ]
+        return [_role_dto(r, directory.role_member_count(r.id)) for r in directory.list_roles()]
 
     @app.post("/admin/roles", response_model=RoleDTO, status_code=201)
-    async def create_role(
-        body: RoleWrite, _: Principal = Depends(can_manage_roles)
-    ) -> RoleDTO:
+    async def create_role(body: RoleWrite, _: Principal = Depends(can_manage_roles)) -> RoleDTO:
         try:
             r = directory.create_role(body.name, body.description, body.permissions)
         except (NotFound, Conflict) as exc:
@@ -139,7 +152,9 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
     ) -> RoleDTO:
         try:
             r = directory.update_role(
-                role_id, name=body.name, description=body.description,
+                role_id,
+                name=body.name,
+                description=body.description,
                 permissions=body.permissions,
             )
         except (NotFound, Conflict) as exc:
@@ -177,10 +192,15 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
     ) -> TempPasswordResponse:
         try:
             user, temp = directory.create_user(
-                username=body.username, display_name=body.display_name,
-                role_id=body.role_id, department_id=body.department_id,
-                password=body.password, employee_no=body.employee_no,
-                email=body.email, phone=body.phone, title=body.title,
+                username=body.username,
+                display_name=body.display_name,
+                role_id=body.role_id,
+                department_id=body.department_id,
+                password=body.password,
+                employee_no=body.employee_no,
+                email=body.email,
+                phone=body.phone,
+                title=body.title,
             )
         except (NotFound, Conflict) as exc:
             _raise(exc)

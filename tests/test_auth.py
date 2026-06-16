@@ -192,7 +192,10 @@ def test_delete_role_in_use_refused(tmp_path: Path) -> None:
     auth, directory = _build(tmp_path, clock)
     role = directory.create_role("临时", "", ["overview.view"])
     directory.create_user(
-        username="u1", display_name="员工一", role_id=role.id, department_id=None,
+        username="u1",
+        display_name="员工一",
+        role_id=role.id,
+        department_id=None,
         password="member-pw-123",
     )
     with pytest.raises(Conflict):
@@ -204,7 +207,10 @@ def test_create_user_temp_password_then_login(tmp_path: Path) -> None:
     clock = _Clock()
     auth, directory = _build(tmp_path, clock)
     user, temp = directory.create_user(
-        username="zhao", display_name="赵六", role_id=None, department_id=None,
+        username="zhao",
+        display_name="赵六",
+        role_id=None,
+        department_id=None,
     )
     assert temp and len(temp) >= 8
     token = auth.login("zhao", temp)  # 临时口令可登录
@@ -216,7 +222,10 @@ def test_role_change_kicks_sessions(tmp_path: Path) -> None:
     auth, directory = _build(tmp_path, clock)
     role = directory.create_role("R", "", ["overview.view"])
     user, temp = directory.create_user(
-        username="qian", display_name="钱七", role_id=role.id, department_id=None,
+        username="qian",
+        display_name="钱七",
+        role_id=role.id,
+        department_id=None,
     )
     token = auth.login("qian", temp or "")
     assert auth.authenticate(token) is not None
@@ -229,7 +238,10 @@ def test_disable_kicks_and_blocks_login(tmp_path: Path) -> None:
     clock = _Clock()
     auth, directory = _build(tmp_path, clock)
     user, temp = directory.create_user(
-        username="sun", display_name="孙八", role_id=None, department_id=None,
+        username="sun",
+        display_name="孙八",
+        role_id=None,
+        department_id=None,
     )
     token = auth.login("sun", temp or "")
     directory.set_status(user.id, "disabled")
@@ -250,7 +262,10 @@ def test_reset_password_invalidates_and_sets_new(tmp_path: Path) -> None:
     clock = _Clock()
     auth, directory = _build(tmp_path, clock)
     user, temp = directory.create_user(
-        username="zhou", display_name="周九", role_id=None, department_id=None,
+        username="zhou",
+        display_name="周九",
+        role_id=None,
+        department_id=None,
     )
     token = auth.login("zhou", temp or "")
     new_temp = directory.reset_password(user.id)

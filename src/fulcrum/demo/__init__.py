@@ -75,13 +75,17 @@ def _print_findings(pipe: SecurityPipeline, sid: str) -> None:
         ev = f.get("evidence", {})
         rules = "、".join(ev.get("matched_rules", [])[:3])
         print(
-            f"  • {f['kind']:<14} 分值 {f['score']:<5} 级别 {ev.get('severity','?'):<8}"
-            f" 来源 {ev.get('source_type','?')}  命中:{rules}"
+            f"  • {f['kind']:<14} 分值 {f['score']:<5} 级别 {ev.get('severity', '?'):<8}"
+            f" 来源 {ev.get('source_type', '?')}  命中:{rules}"
         )
 
 
 async def _run_scenario(
-    pipe: SecurityPipeline, *, title: str, sid: str, messages: list[Message],
+    pipe: SecurityPipeline,
+    *,
+    title: str,
+    sid: str,
+    messages: list[Message],
     sources: list[SourceSpan],
 ) -> None:
     print(f"\n{_BAR}\n▶ 剧本:{title}\n{_BAR}")

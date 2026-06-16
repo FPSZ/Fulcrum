@@ -70,9 +70,7 @@ class YamlPolicyEngine:
         for rule in data.get("rules", []):
             unknown = set(rule.get("when", {})) - _PREDICATES
             if unknown:
-                raise ConfigError(
-                    f"策略规则 {rule.get('id')!r} 含未知条件:{sorted(unknown)}"
-                )
+                raise ConfigError(f"策略规则 {rule.get('id')!r} 含未知条件:{sorted(unknown)}")
         return data
 
     def decide(self, intent: ToolIntent, ctx: Context) -> PolicyDecision:
@@ -80,9 +78,7 @@ class YamlPolicyEngine:
         for rule in self._policy.get("rules", []):
             if self._matches(rule.get("when", {}), facts):
                 level = (
-                    RiskLevel(rule["risk_level"])
-                    if "risk_level" in rule
-                    else facts["risk_level"]
+                    RiskLevel(rule["risk_level"]) if "risk_level" in rule else facts["risk_level"]
                 )
                 return PolicyDecision(
                     decision=Disposition(rule["decision"]),
@@ -117,9 +113,7 @@ class YamlPolicyEngine:
     @staticmethod
     def _worst_trust(intent: ToolIntent, ctx: Context) -> str | None:
         by_id = {s.source_id: s for s in ctx.spans}
-        trusts = [
-            by_id[sid].trust_level for sid in intent.derived_from_sources if sid in by_id
-        ]
+        trusts = [by_id[sid].trust_level for sid in intent.derived_from_sources if sid in by_id]
         if trusts:
             return max(trusts, key=lambda t: _TRUST_RANK[t]).value
         # 有声明来源却无 span 可核验(工具网关路径)→ fail-closed 视为不可信。

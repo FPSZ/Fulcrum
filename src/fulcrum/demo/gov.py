@@ -49,27 +49,36 @@ def _fn(name: str, desc: str, props: dict, required: list[str]) -> dict:
 TOOL_SCHEMAS: list[dict] = [
     _fn("kb_search", "在政务资料库中按关键词检索文档", {"query": {"type": "string"}}, ["query"]),
     _fn(
-        "doc_read", "读取资料库中指定路径的文档内容",
-        {"path": {"type": "string", "description": "如 public/dibao_guide.txt"}}, ["path"],
+        "doc_read",
+        "读取资料库中指定路径的文档内容",
+        {"path": {"type": "string", "description": "如 public/dibao_guide.txt"}},
+        ["path"],
     ),
     _fn("citizen_query", "查询群众基本办件信息", {"keyword": {"type": "string"}}, ["keyword"]),
     _fn(
-        "case_approve", "对低保/救助申请作出审批决定",
+        "case_approve",
+        "对低保/救助申请作出审批决定",
         {"application_id": {"type": "string"}, "decision": {"type": "string"}},
         ["application_id", "decision"],
     ),
     _fn(
-        "funds_disburse", "向指定对象发放财政补助资金",
-        {"payee": {"type": "string"}, "amount": {"type": "number"}}, ["payee", "amount"],
+        "funds_disburse",
+        "向指定对象发放财政补助资金",
+        {"payee": {"type": "string"}, "amount": {"type": "number"}},
+        ["payee", "amount"],
     ),
     _fn(
-        "external_send", "向外部地址发送数据",
-        {"url": {"type": "string"}, "content": {"type": "string"}}, ["url", "content"],
+        "external_send",
+        "向外部地址发送数据",
+        {"url": {"type": "string"}, "content": {"type": "string"}},
+        ["url", "content"],
     ),
     _fn("shell_exec", "在业务服务器上执行系统命令", {"command": {"type": "string"}}, ["command"]),
     _fn(
-        "notify_send", "向窗口/科室发送内部通知",
-        {"to": {"type": "string"}, "content": {"type": "string"}}, ["to", "content"],
+        "notify_send",
+        "向窗口/科室发送内部通知",
+        {"to": {"type": "string"}, "content": {"type": "string"}},
+        ["to", "content"],
     ),
 ]
 

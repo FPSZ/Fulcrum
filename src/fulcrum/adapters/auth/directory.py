@@ -45,9 +45,7 @@ def _slugify(name: str) -> str:
 
 
 class DirectoryService:
-    def __init__(
-        self, store: SQLiteAuthStore, *, clock: Callable[[], float] = time.time
-    ) -> None:
+    def __init__(self, store: SQLiteAuthStore, *, clock: Callable[[], float] = time.time) -> None:
         self._store = store
         self._clock = clock
 
@@ -79,8 +77,12 @@ class DirectoryService:
         return self._store.create_department(name, parent_id, sort_order, self._now())
 
     def update_department(
-        self, dept_id: int, *, name: str | None = None,
-        parent_id: int | None | object = None, sort_order: int | None = None,
+        self,
+        dept_id: int,
+        *,
+        name: str | None = None,
+        parent_id: int | None | object = None,
+        sort_order: int | None = None,
         change_parent: bool = False,
     ) -> Department:
         if self._get_dept(dept_id) is None:
@@ -89,7 +91,8 @@ class DirectoryService:
             if parent_id == dept_id or self._is_descendant(parent_id, dept_id):
                 raise Conflict("不能把部门移动到自己或其子部门下")
         self._store.update_department(
-            dept_id, name=name,
+            dept_id,
+            name=name,
             parent_id=parent_id if change_parent else _STORE_UNSET,
             sort_order=sort_order,
         )
@@ -158,7 +161,11 @@ class DirectoryService:
         return f"{base}-{secrets.token_hex(4)}"
 
     def update_role(
-        self, role_id: int, *, name: str | None = None, description: str | None = None,
+        self,
+        role_id: int,
+        *,
+        name: str | None = None,
+        description: str | None = None,
         permissions: list[str] | None = None,
     ) -> Role:
         role = self._store.get_role(role_id)
@@ -167,7 +174,8 @@ class DirectoryService:
         if role.is_system:
             raise Conflict("内置角色不可修改,如需调整请新建自定义角色")
         self._store.update_role(
-            role_id, name.strip() if name else None,
+            role_id,
+            name.strip() if name else None,
             description.strip() if description is not None else None,
             valid_permissions(permissions) if permissions is not None else None,
         )
@@ -187,8 +195,12 @@ class DirectoryService:
 
     # ── 成员 ──────────────────────────────────────────────────────
     def list_users(
-        self, *, department_id: int | None = None, status: str | None = None,
-        role_id: int | None = None, search: str | None = None,
+        self,
+        *,
+        department_id: int | None = None,
+        status: str | None = None,
+        role_id: int | None = None,
+        search: str | None = None,
     ) -> list[User]:
         dept_ids = self.subtree_ids(department_id) if department_id is not None else None
         return self._store.list_users(
@@ -202,9 +214,17 @@ class DirectoryService:
         return self._store.get_user_by_id(user_id)
 
     def create_user(
-        self, *, username: str, display_name: str, role_id: int | None,
-        department_id: int | None, password: str | None = None,
-        employee_no: str = "", email: str = "", phone: str = "", title: str = "",
+        self,
+        *,
+        username: str,
+        display_name: str,
+        role_id: int | None,
+        department_id: int | None,
+        password: str | None = None,
+        employee_no: str = "",
+        email: str = "",
+        phone: str = "",
+        title: str = "",
     ) -> tuple[User, str | None]:
         """管理员直建成员。无 password 则生成临时口令一次性返回。"""
         username = username.strip()
@@ -222,14 +242,25 @@ class DirectoryService:
         else:
             pwd = temp = self._gen_temp_password()
         user = self._store.create_user(
-            username, display_name, hash_password(pwd), STATUS_ACTIVE, self._now(),
-            employee_no=employee_no.strip(), email=email.strip(), phone=phone.strip(),
-            title=title.strip(), department_id=department_id, role_id=role_id,
+            username,
+            display_name,
+            hash_password(pwd),
+            STATUS_ACTIVE,
+            self._now(),
+            employee_no=employee_no.strip(),
+            email=email.strip(),
+            phone=phone.strip(),
+            title=title.strip(),
+            department_id=department_id,
+            role_id=role_id,
         )
         return user, temp
 
     def update_user(
-        self, user_id: int, *, fields: dict[str, object],
+        self,
+        user_id: int,
+        *,
+        fields: dict[str, object],
     ) -> User:
         user = self._require_user(user_id)
         role_changed = "role_id" in fields and fields["role_id"] != user.role_id

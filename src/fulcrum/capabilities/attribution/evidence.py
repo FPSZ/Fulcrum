@@ -25,11 +25,10 @@ _MIN_TOKEN = 4
 
 @capability("attributor", "evidence")
 class EvidenceAttributor:
-    def attribute(
-        self, intent: ToolIntent, spans: list[SourceSpan], ctx: Context
-    ) -> Attribution:
+    def attribute(self, intent: ToolIntent, spans: list[SourceSpan], ctx: Context) -> Attribution:
         arg_vals = [
-            v for v in (str(x).lower().strip() for x in intent.arguments.values())
+            v
+            for v in (str(x).lower().strip() for x in intent.arguments.values())
             if len(v) >= _MIN_TOKEN
         ]
         derived: list[str] = []
