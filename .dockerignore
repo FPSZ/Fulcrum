@@ -1,0 +1,40 @@
+# 构建上下文裁剪:加速 docker build、避免把本机产物/密钥带进镜像。
+
+# 版本控制 / 编辑器 / agent
+.git
+.gitignore
+.claude
+.local
+.vscode
+.idea
+
+# Python 本机环境与缓存
+.venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+*.egg-info
+
+# 前端:依赖与产物均在镜像内重新生成
+console/node_modules
+console/dist
+node_modules
+
+# 运行期数据与日志(运行时挂卷,绝不进镜像)
+data/runtime
+data/raw
+data/interim
+*.log
+
+# 机密:绝不进镜像(仅保留 .env.example 占位)
+.env
+.env.*
+!.env.example
+
+# 与运行镜像无关的资产
+docs
+tests
+try
+deploy/README.md
