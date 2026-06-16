@@ -49,7 +49,7 @@ _GOV_CONFIG: dict[str, Any] = {
     "detectors": ["keyword_rules"],
     "attributor": "evidence",
     "risk_scorer": "heuristic",
-    "chain_analyzer": "noop",
+    "chain_analyzer": "sequence",
     "policy": "yaml",
     "options": {"yaml": {"path": "data/policies/gov_demo.yml"}},
     "executor": "echo",

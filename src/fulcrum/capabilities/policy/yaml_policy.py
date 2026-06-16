@@ -29,6 +29,7 @@ _PREDICATES = frozenset(
         "source_trust",
         "risk_at_least",
         "attribution_at_least",
+        "chain_risk_at_least",
         "risk_level",
         "path_sensitive",
         "path_outside_workspace",
@@ -103,12 +104,28 @@ class YamlPolicyEngine:
             "risk_score": intent.risk_score,
             "risk_level": _risk_level(intent.risk_score),
             "attribution_confidence": intent.attribution_confidence,
+            "chain_risk": self._chain_risk(intent, ctx),
             "source_trust": self._worst_trust(intent, ctx),
             "path_sensitive": argrisk.path_sensitive(args),
             "path_outside_workspace": argrisk.path_outside_workspace(args, workspace),
             "domain_allowed": argrisk.domain_allowed(args, allow_domains),
             "command_dangerous": argrisk.command_dangerous(args),
         }
+
+    @staticmethod
+    def _chain_risk(intent: ToolIntent, ctx: Context) -> float:
+        """当前调用的任务链风险 = 由本次调用触发的链 finding(chain.*)的最高分。
+
+        按 evidence.intent_id 过滤,确保只对"当前这步"判链,不被会话中其它步的链 finding 误伤。
+        """
+        return max(
+            (
+                f.score
+                for f in ctx.findings
+                if f.kind.startswith("chain.") and f.evidence.get("intent_id") == intent.intent_id
+            ),
+            default=0.0,
+        )
 
     @staticmethod
     def _worst_trust(intent: ToolIntent, ctx: Context) -> str | None:
@@ -136,6 +153,8 @@ class YamlPolicyEngine:
             return facts["risk_score"] >= float(expected)
         if key == "attribution_at_least":
             return facts["attribution_confidence"] >= float(expected)
+        if key == "chain_risk_at_least":
+            return facts["chain_risk"] >= float(expected)
         if key == "risk_level":
             return facts["risk_level"].value == expected
         if key in _BOOL_FACTS:

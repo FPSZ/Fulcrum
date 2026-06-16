@@ -15,7 +15,7 @@ def load_builtin_capabilities() -> None:
     from .policy import allow_all, yaml_policy  # noqa: F401
     from .sandbox import echo_executor  # noqa: F401
     from .supplychain import noop as supplychain_noop  # noqa: F401
-    from .toolguard import heuristic, noop_chain, zero_scorer  # noqa: F401
+    from .toolguard import heuristic, noop_chain, sequence_chain, zero_scorer  # noqa: F401
     from .tools import echo_tool, file_tools  # noqa: F401
 
 
