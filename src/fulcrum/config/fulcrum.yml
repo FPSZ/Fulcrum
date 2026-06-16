@@ -2,7 +2,7 @@
 # 队友加了新实现?在这里按注册名启用即可,核心管线零改动。
 # M0 默认全部为桩实现(keyword_rules 为示例检测器);M1+ 逐个替换为真实现。
 
-labeler: passthrough
+labeler: role_trust      # 真·多源信任标注(角色归类 + 嵌入来源抽取);passthrough 为最小桩
 detectors:
   - keyword_rules        # 多源规则检测器(六类风险 + 来源加权 + 分级)
 attributor: evidence     # 证据化来源归因(参数片段 × 来源信任)

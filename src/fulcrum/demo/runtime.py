@@ -23,6 +23,8 @@ from ..core.domain import (
     Context,
     Disposition,
     Finding,
+    Message,
+    ModelRequest,
     SourceSpan,
     SourceType,
     ToolIntent,
@@ -60,6 +62,7 @@ def _finding_dict(f: Finding) -> dict[str, Any]:
 class GovRuntime:
     def __init__(self) -> None:
         load_builtin_capabilities()
+        self.labeler = registry.create("labeler", "role_trust")
         self.detector = registry.create("detector", "keyword_rules")
         self.attributor = registry.create("attributor", "evidence")
         self.scorer = registry.create("risk_scorer", "heuristic")
@@ -198,14 +201,18 @@ class GovRuntime:
         ctx = Context(session_id=session_id, spans=spans)
 
         self._emit(session_id, AuditEventType.REQUEST_RECEIVED)
-        user_span = SourceSpan(
-            source_type=SourceType.USER, trust_level=TrustLevel.TRUSTED,
-            content_hash=_hash(user_text), excerpt=user_text,
+        # 经统一打标器:正确归类来源信任级,并抽出用户消息里夹带的外部资料(间接注入)。
+        input_spans = self.labeler.label(
+            ModelRequest(
+                session_id=session_id,
+                messages=[Message(role="user", content=user_text)],
+            )
         )
-        spans.append(user_span)
-        in_findings = self.detector.detect([user_span], ctx)
+        spans.extend(input_spans)
+        in_findings = self.detector.detect(input_spans, ctx)
         self._emit(
-            session_id, AuditEventType.INPUT_DETECTED, subject=user_span.source_id,
+            session_id, AuditEventType.INPUT_DETECTED,
+            subject=input_spans[0].source_id if input_spans else None,
             evidence={"findings": [f.model_dump() for f in in_findings]},
         )
 
