@@ -7,7 +7,7 @@ detectors:
   - keyword_rules        # 多源规则检测器(六类风险 + 来源加权 + 分级)
 attributor: evidence     # 证据化来源归因(参数片段 × 来源信任)
 risk_scorer: heuristic   # 工具动作固有风险评分
-chain_analyzer: noop
+chain_analyzer: sequence # 任务链异常检测(敏感读取→对外发送 等外泄链);noop 为最小桩
 policy: yaml             # 声明式 YAML 策略引擎(data/policies/default.yml)
 executor: echo
 tools:

@@ -9,6 +9,22 @@ allow_domains:                   # http.request 外联白名单(含子域)
   - xiongan.gov.cn
 
 rules:
+  # 0a) 任务链:敏感数据读取 → 对外发送 —— 数据外泄链,直接阻断(单步各自合规,组合才危险)。
+  - id: block-exfil-chain
+    when:
+      chain_risk_at_least: 0.8
+    decision: block
+    risk_level: critical
+    reason: 检测到「敏感数据读取 → 对外发送」异常动作链,疑似数据外泄
+
+  # 0b) 任务链:一般读取 → 对外发送 —— 转人工复核。
+  - id: approve-readsend-chain
+    when:
+      chain_risk_at_least: 0.4
+    decision: approve
+    risk_level: high
+    reason: 检测到「读取 → 对外发送」动作链,须人工复核
+
   # 1) 敏感文件/密钥/凭据路径的读写 —— 直接阻断(不论来源)。
   - id: block-sensitive-path
     when:
