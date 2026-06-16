@@ -466,7 +466,7 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
                   className="cursor-pointer border-b border-line transition-colors last:border-0 hover:bg-white/55"
                 >
                   <td colSpan={8} className="px-5 py-3">
-                    <span className="flex h-[42px] items-center justify-center gap-1.5 text-[14px] font-semibold text-accent-ink">
+                    <span className="flex h-[41px] items-center justify-center gap-1.5 text-[14px] font-semibold text-accent-ink">
                       查看更多
                       <ArrowRight className="h-4 w-4" strokeWidth={2} />
                     </span>
