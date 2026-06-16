@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from .enums import RiskLevel
 from .models import Finding, SourceSpan, ToolIntent
 
 
@@ -29,4 +28,3 @@ class Context(BaseModel):
     # 请求级动作序列(非跨请求!命名特意不叫 session_trace,见上方生命周期说明)。
     request_trace: list[ToolIntent] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
-    risk_level: RiskLevel = RiskLevel.LOW

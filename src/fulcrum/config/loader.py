@@ -11,6 +11,9 @@ from ..core.errors import ConfigError
 
 _DEFAULT_CONFIG = Path(__file__).with_name("fulcrum.yml")
 
+# 请求级安全管线的装配字段。供应链扫描(scanner port)是**组件登记/上线时**的离线关切,
+# 不在每请求管线里(否则等于每次工具调用都重扫供应链),故不列入此处;其端口/实现保留,
+# 待供应链能力真实化时由独立流程单独装配。
 _REQUIRED_KEYS = (
     "labeler",
     "detectors",
@@ -20,7 +23,6 @@ _REQUIRED_KEYS = (
     "policy",
     "executor",
     "tools",
-    "scanner",
     "model",
     "audit",
 )

@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import hashlib
-import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -23,7 +22,10 @@ from .domain import (
     ModelResponse,
     PolicyDecision,
     RiskLevel,
+    SourceSpan,
+    SourceType,
     ToolIntent,
+    TrustLevel,
 )
 from .gateway import GateVerdict, screen
 
@@ -47,7 +49,7 @@ class ToolOutcome:
     intent: ToolIntent
     decision: PolicyDecision
     executed: bool = False
-    result: object | None = None
+    result: ExecResult | None = None  # 执行/降级结果;未执行(审批/阻断)时为 None
 
 
 @dataclass(slots=True)
@@ -90,6 +92,19 @@ class SecurityPipeline:
         """只读访问审计 sink(供审计查询端点使用)。"""
         return self._audit
 
+    def model_tool_schemas(self) -> list[dict]:
+        """装配工具里声明了 model_schema 的 OpenAI function 规格列表。
+
+        供 agent 适配器据此**只**向模型暴露管线实际管控的工具——单一真源,加工具自动同步,
+        不再各处手抄一份工具声明。无 model_schema 的工具(如内部 echo)不对模型暴露。
+        """
+        out: list[dict] = []
+        for tool in self._tools.values():
+            schema = getattr(tool, "model_schema", None)
+            if schema is not None:
+                out.append(schema)
+        return out
+
     # ---- 流程 1:模型请求(/v1/chat/completions)----
     async def handle_model_request(self, req: ModelRequest) -> PipelineResult:
         ctx = Context(session_id=req.session_id, request_id=req.request_id)
@@ -98,12 +113,7 @@ class SecurityPipeline:
         ctx.spans = self._labeler.label(req)
         self._emit(ctx, AuditEventType.SOURCE_LABELED, evidence={"span_count": len(ctx.spans)})
 
-        self._run_detectors(ctx)
-        self._emit(
-            ctx,
-            AuditEventType.INPUT_DETECTED,
-            evidence={"findings": [f.model_dump() for f in ctx.findings]},
-        )
+        self.detect_inputs(ctx, ctx.spans)
 
         resp = await self._model.chat(req)
         self._emit(ctx, AuditEventType.MODEL_FORWARDED, subject_id=resp.response_id)
@@ -129,8 +139,6 @@ class SecurityPipeline:
         喂的"信任标注",不是检测算法本身;passthrough/keyword_rules 均零改动。
         (内部沙盘把窗口人员标 TRUSTED 是另一套场景,二者并存、互不影响。)
         """
-        from .domain import SourceSpan, SourceType, TrustLevel
-
         req = ModelRequest(session_id=session_id, messages=[Message(role="user", content=message)])
         ctx = Context(session_id=session_id, request_id=req.request_id)
         self._emit(ctx, AuditEventType.REQUEST_RECEIVED, subject_id=req.request_id)
@@ -145,12 +153,7 @@ class SecurityPipeline:
         ]
         self._emit(ctx, AuditEventType.SOURCE_LABELED, evidence={"span_count": len(ctx.spans)})
 
-        self._run_detectors(ctx)
-        self._emit(
-            ctx,
-            AuditEventType.INPUT_DETECTED,
-            evidence={"findings": [f.model_dump() for f in ctx.findings]},
-        )
+        self.detect_inputs(ctx, ctx.spans)
 
         verdict = screen(ctx.findings)
         self._emit(
@@ -186,8 +189,20 @@ class SecurityPipeline:
         )
         return await self._process_intent(intent, ctx)
 
+    # ---- 供 agent 循环适配器复用:对单个意图做完整评估(调用方持有并复用 ctx)----
+    async def evaluate_intent(self, intent: ToolIntent, ctx: Context) -> ToolOutcome:
+        """完整安全评估与处置(归因→评分→链→策略→fail-closed→执行→审计)。
+
+        与 handle_tool_call 的区别:**调用方提供并复用 ctx**,使多轮 agent 循环里跨轮累积的
+        spans / request_trace 能被归因与链分析看见。demo 与真实网关都经此单一真源——
+        fail-closed 等内核保证对它们一视同仁,适配器不再各自手撸评估链。
+        """
+        return await self._process_intent(intent, ctx)
+
     # ---- 共用:对单个工具意图做 归因 -> 评分 -> 策略 -> 处置 -> 审计 ----
     async def _process_intent(self, intent: ToolIntent, ctx: Context) -> ToolOutcome:
+        # 工具一处查定,贯穿评分(盖戳基础风险)与执行(ALLOW 分支),不重复查表。
+        tool = self._tools.get(intent.tool_name)
         # 安全关键评估段(归因/评分/链分析/策略):任一阶段抛错 → fail-closed 阻断 + 留痕。
         # 编排层亲自拥有 fail-closed,不把"插件实现永不抛异常"这个不成立的信任下放出去。
         try:
@@ -196,6 +211,11 @@ class SecurityPipeline:
                 attribution.derived_from_sources or intent.derived_from_sources
             )
             intent.attribution_confidence = attribution.confidence
+            intent.attribution_rationale = attribution.rationale
+            # 评分前盖戳工具固有基础风险(工具未注册 → 留 None,评分器用兜底);
+            # 由此评分器无需枚举工具名,加工具零改评分器。
+            if tool is not None:
+                intent.base_risk = getattr(tool, "base_risk", None)
             intent.risk_score = self._risk_scorer.score(intent, ctx)
             ctx.request_trace.append(intent)
             ctx.findings.extend(await self._chain_analyzer.analyze(ctx.request_trace, ctx))
@@ -214,7 +234,6 @@ class SecurityPipeline:
 
         outcome = ToolOutcome(intent=intent, decision=decision)
         if decision.decision == Disposition.ALLOW:
-            tool = self._tools.get(intent.tool_name)
             if tool is None:
                 # fail-closed:策略放行了,但工具未知 —— 显式阻断 + 审计,绝不静默跳过。
                 outcome.result = ExecResult(ok=False, error=f"unknown tool: {intent.tool_name}")
@@ -281,14 +300,26 @@ class SecurityPipeline:
         )
         return ToolOutcome(intent=intent, decision=decision)
 
+    # ---- 输入检测(供 agent 循环复用:用户输入 / 工具返回间接注入 走同一套检测器)----
+    def detect_inputs(self, ctx: Context, spans: list[SourceSpan]) -> list[Finding]:
+        """对一批新输入 span 跑全部检测器(逐个 fail-closed),累积进 ctx + 落审计,返回新增。"""
+        new = self._run_detectors(ctx, spans)
+        self._emit(
+            ctx,
+            AuditEventType.INPUT_DETECTED,
+            evidence={"findings": [f.model_dump() for f in new]},
+        )
+        return new
+
     # ---- 检测:逐个检测器 fail-closed(某检测器崩溃 → 合成高危 Finding,绝不静默放行)----
-    def _run_detectors(self, ctx: Context) -> None:
+    def _run_detectors(self, ctx: Context, spans: list[SourceSpan]) -> list[Finding]:
+        new: list[Finding] = []
         for detector in self._detectors:
             try:
-                ctx.findings.extend(detector.detect(ctx.spans, ctx))
+                new.extend(detector.detect(spans, ctx))
             except Exception as exc:  # noqa: BLE001 —— 检测器崩溃当作高危信号,不得 fail-open
                 name = getattr(detector, "name", detector.__class__.__name__)
-                ctx.findings.append(
+                new.append(
                     Finding(
                         kind="detector_error",
                         score=1.0,  # critical:让 screen()/策略按高危拦截
@@ -300,6 +331,8 @@ class SecurityPipeline:
                     AuditEventType.INPUT_DETECTED,
                     evidence={"reason": "detector_error", "detector": name, "error": str(exc)},
                 )
+        ctx.findings.extend(new)
+        return new
 
     # ---- 审计 helper ----
     def _emit(
@@ -320,6 +353,15 @@ class SecurityPipeline:
         )
         self._audit.append(event)
 
-    @staticmethod
-    def _new_id() -> str:
-        return uuid.uuid4().hex
+    # ---- 供 agent 循环适配器把"循环级"审计事件写入同一条链 ----
+    def record(
+        self,
+        ctx: Context,
+        event_type: AuditEventType,
+        *,
+        subject_id: str | None = None,
+        decision: Disposition | None = None,
+        evidence: dict | None = None,
+    ) -> None:
+        """循环级事件(收到请求 / 已转发模型 等)入审计链。逐意图事件由 evaluate_intent 自己落。"""
+        self._emit(ctx, event_type, subject_id=subject_id, decision=decision, evidence=evidence)

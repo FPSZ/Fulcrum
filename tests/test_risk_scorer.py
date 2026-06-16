@@ -8,9 +8,16 @@ from fulcrum.core.domain import Context, ToolIntent
 _CTX = Context(session_id="s")
 _SCORER = HeuristicRiskScorer()
 
+# 各工具的固有基础风险(评分器不再枚举工具名;实运行时由管线从 Tool.base_risk 盖戳,
+# 此处显式提供以隔离测试评分器本身:评分 = base + 参数加权)。
+_BASE = {"echo": 0.0, "file.read": 0.25, "file.write": 0.45, "http.request": 0.4, "shell.exec": 0.6}
+
 
 def _score(tool: str, args: dict) -> float:
-    return _SCORER.score(ToolIntent(session_id="s", tool_name=tool, arguments=args), _CTX)
+    intent = ToolIntent(
+        session_id="s", tool_name=tool, arguments=args, base_risk=_BASE.get(tool, 0.3)
+    )
+    return _SCORER.score(intent, _CTX)
 
 
 def test_echo_is_zero_risk() -> None:

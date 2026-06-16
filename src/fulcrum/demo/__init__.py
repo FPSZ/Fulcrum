@@ -36,7 +36,6 @@ _CONFIG = {
     "policy": "yaml",
     "executor": "echo",
     "tools": ["file.read", "file.write", "echo"],
-    "scanner": "noop",
     "model": "openai",
     "audit": "memory",
 }

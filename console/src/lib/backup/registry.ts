@@ -17,6 +17,8 @@ export interface ResourceSpec {
 const specs = new Map<string, ResourceSpec>()
 
 export function registerResource(spec: ResourceSpec): void {
+  // 与 registerFeature 一致:重复 kind 抛错,避免静默覆盖丢资源(潜在数据 bug)。
+  if (specs.has(spec.kind)) throw new Error(`重复注册备份资源: ${spec.kind}`)
   specs.set(spec.kind, spec)
 }
 

@@ -117,7 +117,11 @@ class Executor(Protocol):
 
 @runtime_checkable
 class SupplyChainScanner(Protocol):
-    """供应链扫描:对 manifest/组件给出评级。对应赛题目标 3。"""
+    """供应链扫描:对 manifest/组件给出评级。对应赛题目标 3。
+
+    定位:**组件登记/上线时**的离线关切,不在每请求安全管线里(故不进 SecurityPipeline 装配与
+    fulcrum.yml 必填字段)。真实化时由独立的供应链流程装配调用,接口保持不变。
+    """
 
     def scan(self, manifest: dict, ctx: Context) -> ScanReport: ...
 

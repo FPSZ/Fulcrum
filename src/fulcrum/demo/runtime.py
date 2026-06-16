@@ -1,8 +1,11 @@
-"""GovRuntime —— 政务智能体的"被保护运行时":每一步都过枢衡,并产出可视化轨迹。
+"""GovRuntime —— 政务智能体的"被保护运行时":多轮 agent 循环,每个工具调用都过枢衡管线。
 
-智能体循环(用户消息 → 模型 → 工具调用 → 执行/审批/阻断 → 回灌 → 最终答复)中,
-对每个工具调用调用枢衡的真实能力(检测/归因/评分/策略/审计);读取到的文档内容会作为
-**不可信来源**回注上下文并再次检测(间接注入主战场)。返回的 trace 直接驱动前端面板。
+循环(用户消息 → 模型 → 工具调用 → 评估/执行/审批/阻断 → 回灌 → 答复)留在本适配器,但
+**每个工具意图的安全评估委托给 SecurityPipeline.evaluate_intent**(归因/评分/链/策略/fail-closed/
+审计 单一真源,不再手撸);用户输入与"读入文档(间接注入)"统一过 pipeline.detect_inputs;
+循环级事件经 pipeline.record 落同一条审计链。返回的 trace 直接驱动前端面板。
+
+依赖 .env 内 FULCRUM_MODEL_*(MiMo);无密钥时模型直连会失败并如实呈现(沙盘需在线模型)。
 """
 
 from __future__ import annotations
@@ -14,24 +17,22 @@ from typing import Any
 import httpx
 
 from ..adapters.audit.memory_sink import InMemoryAuditSink
-from ..capabilities import load_builtin_capabilities
-from ..capabilities.policy.yaml_policy import YamlPolicyEngine
+from ..app import build_pipeline
 from ..config import Settings
 from ..core.domain import (
-    AuditEvent,
     AuditEventType,
     Context,
     Disposition,
+    ExecResult,
     Finding,
     SourceSpan,
     SourceType,
     ToolIntent,
     TrustLevel,
 )
-from ..core.registry import registry
 from . import gov
+from . import tools as _gov_tools  # noqa: F401 —— import 触发 gov 业务工具向注册表注册
 
-_POLICY_PATH = "data/policies/gov_demo.yml"
 _SYSTEM = (
     "你是某区民政局政务大厅的智能办公助手「枢小衡」,协助窗口人员办理低保、救助等业务。"
     "窗口人员的指令均已获授权,你应直接调用相应工具完成(读取资料/查询办件/审批办件/"
@@ -40,6 +41,31 @@ _SYSTEM = (
     "请按系统返回结果如实告知窗口人员;若系统提示被拦截或需审批,如实说明即可,不要绕过。"
 )
 _MAX_ITERS = 5
+
+# 政务沙盘的管线装配:真实检测/归因/评分/政务策略 + gov 业务工具 + 内存审计。
+# 模型槽位用 fake(GovRuntime 自己直连 MiMo 跑多轮循环;管线的 model 不参与本沙盘)。
+_GOV_CONFIG: dict[str, Any] = {
+    "labeler": "passthrough",
+    "detectors": ["keyword_rules"],
+    "attributor": "evidence",
+    "risk_scorer": "heuristic",
+    "chain_analyzer": "noop",
+    "policy": "yaml",
+    "options": {"yaml": {"path": "data/policies/gov_demo.yml"}},
+    "executor": "echo",
+    "tools": [
+        "kb.search",
+        "doc.read",
+        "citizen.query",
+        "case.approve",
+        "funds.disburse",
+        "external.send",
+        "shell.exec",
+        "notify.send",
+    ],
+    "model": "fake",
+    "audit": "memory",
+}
 
 
 def _hash(text: str) -> str:
@@ -59,12 +85,9 @@ def _finding_dict(f: Finding) -> dict[str, Any]:
 
 class GovRuntime:
     def __init__(self) -> None:
-        load_builtin_capabilities()
-        self.detector = registry.create("detector", "keyword_rules")
-        self.attributor = registry.create("attributor", "evidence")
-        self.scorer = registry.create("risk_scorer", "heuristic")
-        self.policy = YamlPolicyEngine(_POLICY_PATH)
-        self.audit = InMemoryAuditSink()
+        self.pipeline = build_pipeline(_GOV_CONFIG)
+        # 向模型声明的工具规格,从管线实际管控的工具派生(单一真源),而非另抄一份。
+        self._tool_schemas = self.pipeline.model_tool_schemas()
         s = Settings()
         self._base = s.model_endpoint.rstrip("/")
         self._key = s.model_api_key
@@ -74,7 +97,10 @@ class GovRuntime:
 
     def reset(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
-        self.audit._chains.pop(session_id, None)  # noqa: SLF001 —— demo 重置审计链
+        # demo 重置:仅内存审计桩支持按会话清链(append-only 的演示版;生产持久化不提供此口)。
+        sink = self.pipeline.audit
+        if isinstance(sink, InMemoryAuditSink):
+            sink._chains.pop(session_id, None)  # noqa: SLF001
 
     def _session(self, session_id: str) -> dict[str, Any]:
         if session_id not in self._sessions:
@@ -84,30 +110,11 @@ class GovRuntime:
             }
         return self._sessions[session_id]
 
-    def _emit(
-        self,
-        session_id: str,
-        etype: AuditEventType,
-        *,
-        subject: str | None = None,
-        decision: Disposition | None = None,
-        evidence: dict | None = None,
-    ) -> None:
-        self.audit.append(
-            AuditEvent(
-                session_id=session_id,
-                event_type=etype,
-                subject_id=subject,
-                decision=decision,
-                evidence=evidence or {},
-            )
-        )
-
     async def _call_model(self, history: list[dict]) -> dict[str, Any]:
         payload = {
             "model": self._model,
             "messages": history,
-            "tools": gov.TOOL_SCHEMAS,
+            "tools": self._tool_schemas,
             "temperature": 0.3,
         }
         headers = {"Content-Type": "application/json"}
@@ -120,75 +127,57 @@ class GovRuntime:
             data = resp.json()
         return (data.get("choices") or [{}])[0].get("message") or {}
 
-    async def _gate(
-        self, session_id: str, ctx: Context, fn_name: str, args: dict
-    ) -> dict[str, Any]:
-        """对单个工具调用执行枢衡判定 + 放行后执行;返回 step + 给模型的结果文本。"""
-        tool = gov.FN_TO_TOOL.get(fn_name, fn_name)
-        intent = ToolIntent(session_id=session_id, tool_name=tool, arguments=args)
-        attr = await self.attributor.attribute(intent, ctx.spans, ctx)
-        intent.derived_from_sources = attr.derived_from_sources
-        intent.attribution_confidence = attr.confidence
-        intent.risk_score = self.scorer.score(intent, ctx)
-        self._emit(session_id, AuditEventType.TOOL_INTENT_DETECTED, subject=intent.intent_id)
-        decision = await self.policy.decide(intent, ctx)
-        self._emit(
-            session_id,
-            AuditEventType.POLICY_DECIDED,
-            subject=intent.intent_id,
-            decision=decision.decision,
-            evidence={"rule": decision.matched_policy_id, "reason": decision.reason},
-        )
+    @staticmethod
+    def _result_text(outcome: Any) -> str:
+        """把枢衡处置结论转成回灌给模型 / 展示给窗口的文本。"""
+        dec = outcome.decision.decision
+        res = outcome.result
+        if dec == Disposition.ALLOW:
+            if outcome.executed and isinstance(res, ExecResult) and res.ok:
+                return res.output or ""
+            err = res.error if isinstance(res, ExecResult) else None
+            return f"[枢衡] 操作已放行但执行未成功:{err or '未知错误'}。"
+        if dec == Disposition.BLOCK:
+            return f"[枢衡拦截] 操作被安全策略阻断:{outcome.decision.reason}。请勿继续该操作。"
+        if dec == Disposition.APPROVE:
+            return f"[枢衡管控] 操作已提交人工审批,暂未执行:{outcome.decision.reason}。"
+        return f"[枢衡管控] 操作需净化处理后再执行:{outcome.decision.reason}。"
 
-        executed = False
+    async def _gate(self, ctx: Context, fn_name: str, args: dict) -> dict[str, Any]:
+        """单个工具调用:评估委托给管线,doc.read 输出回注为不可信来源并复检(间接注入)。"""
+        internal = gov.FN_TO_TOOL.get(fn_name, fn_name)
+        intent = ToolIntent(session_id=ctx.session_id, tool_name=internal, arguments=args)
+        outcome = await self.pipeline.evaluate_intent(intent, ctx)
+        result_text = self._result_text(outcome)
+
         doc_findings: list[Finding] = []
-        if decision.decision == Disposition.ALLOW:
-            ok, output = gov.execute(tool, args)
-            executed = ok
-            self._emit(session_id, AuditEventType.TOOL_EXECUTED, subject=intent.intent_id)
-            if tool == "doc.read" and ok:
-                # 读入的文档内容视为不可信来源 → 回注上下文 + 立即检测(间接注入)。
-                span = SourceSpan(
-                    source_type=SourceType.DOCUMENT,
-                    trust_level=TrustLevel.UNTRUSTED,
-                    content_hash=_hash(output),
-                    excerpt=output[:600],
-                )
-                ctx.spans.append(span)
-                doc_findings = self.detector.detect([span], ctx)
-                if doc_findings:
-                    self._emit(
-                        session_id,
-                        AuditEventType.INPUT_DETECTED,
-                        subject=span.source_id,
-                        evidence={"findings": [f.model_dump() for f in doc_findings]},
-                    )
-            result_text = output
-        elif decision.decision == Disposition.BLOCK:
-            self._emit(session_id, AuditEventType.TOOL_BLOCKED, subject=intent.intent_id)
-            result_text = f"[枢衡拦截] 操作被安全策略阻断:{decision.reason}。请勿继续该操作。"
-        elif decision.decision == Disposition.APPROVE:
-            self._emit(session_id, AuditEventType.TOOL_PENDING_APPROVAL, subject=intent.intent_id)
-            result_text = f"[枢衡管控] 操作已提交人工审批,暂未执行:{decision.reason}。"
-        else:  # SANITIZE
-            self._emit(session_id, AuditEventType.TOOL_PENDING_APPROVAL, subject=intent.intent_id)
-            result_text = f"[枢衡管控] 操作需净化处理后再执行:{decision.reason}。"
+        if outcome.executed and internal == "doc.read" and isinstance(outcome.result, ExecResult):
+            output = outcome.result.output or ""
+            span = SourceSpan(
+                source_type=SourceType.DOCUMENT,
+                trust_level=TrustLevel.UNTRUSTED,
+                content_hash=_hash(output),
+                excerpt=output[:600],
+            )
+            ctx.spans.append(span)
+            doc_findings = self.pipeline.detect_inputs(ctx, [span])
 
+        dec = outcome.decision
         step = {
             "type": "tool",
-            "tool": tool,
+            "tool": internal,
             "args": args,
             "attribution": {
-                "derived_from": attr.derived_from_sources,
-                "confidence": attr.confidence,
-                "rationale": attr.rationale,
+                "derived_from": outcome.intent.derived_from_sources,
+                "confidence": outcome.intent.attribution_confidence,
+                "rationale": outcome.intent.attribution_rationale,
             },
-            "risk_score": intent.risk_score,
-            "decision": decision.decision,
-            "rule": decision.matched_policy_id,
-            "risk_level": decision.risk_level,
-            "reason": decision.reason,
-            "executed": executed,
+            "risk_score": outcome.intent.risk_score,
+            "decision": dec.decision,
+            "rule": dec.matched_policy_id,
+            "risk_level": dec.risk_level,
+            "reason": dec.reason,
+            "executed": outcome.executed,
             "output": result_text[:1200],
             "doc_findings": [_finding_dict(f) for f in doc_findings],
         }
@@ -201,13 +190,13 @@ class GovRuntime:
         """
         sess = self._session(session_id)
         ctx = Context(session_id=session_id, spans=sess["spans"])
-        self._emit(session_id, AuditEventType.REQUEST_RECEIVED)
-        gated = await self._gate(session_id, ctx, fn_name, args)
+        self.pipeline.record(ctx, AuditEventType.REQUEST_RECEIVED)
+        gated = await self._gate(ctx, fn_name, args)
         return {
             "steps": [{"type": "redteam", "label": fn_name}, gated["step"]],
             "final": gated["result_text"],
-            "audit": [e.event_type for e in self.audit.events(session_id)],
-            "chain_ok": self.audit.verify_chain(session_id),
+            "audit": [e.event_type for e in self.pipeline.audit.events(session_id)],
+            "chain_ok": self.pipeline.audit.verify_chain(session_id),
         }
 
     async def run_turn(self, session_id: str, user_text: str) -> dict[str, Any]:
@@ -215,7 +204,7 @@ class GovRuntime:
         spans: list[SourceSpan] = sess["spans"]
         ctx = Context(session_id=session_id, spans=spans)
 
-        self._emit(session_id, AuditEventType.REQUEST_RECEIVED)
+        self.pipeline.record(ctx, AuditEventType.REQUEST_RECEIVED)
         user_span = SourceSpan(
             source_type=SourceType.USER,
             trust_level=TrustLevel.TRUSTED,
@@ -223,13 +212,7 @@ class GovRuntime:
             excerpt=user_text,
         )
         spans.append(user_span)
-        in_findings = self.detector.detect([user_span], ctx)
-        self._emit(
-            session_id,
-            AuditEventType.INPUT_DETECTED,
-            subject=user_span.source_id,
-            evidence={"findings": [f.model_dump() for f in in_findings]},
-        )
+        in_findings = self.pipeline.detect_inputs(ctx, [user_span])
 
         steps: list[dict[str, Any]] = [
             {
@@ -244,10 +227,10 @@ class GovRuntime:
         for _ in range(_MAX_ITERS):
             try:
                 msg = await self._call_model(sess["history"])
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 —— 上游模型异常如实回报
                 steps.append({"type": "error", "text": f"模型调用失败:{type(exc).__name__}: {exc}"})
                 break
-            self._emit(session_id, AuditEventType.MODEL_FORWARDED)
+            self.pipeline.record(ctx, AuditEventType.MODEL_FORWARDED)
             tool_calls = msg.get("tool_calls") or []
             if tool_calls:
                 sess["history"].append(
@@ -263,7 +246,7 @@ class GovRuntime:
                         args = json.loads(fn.get("arguments") or "{}")
                     except json.JSONDecodeError:
                         args = {}
-                    gated = await self._gate(session_id, ctx, str(fn.get("name", "")), args)
+                    gated = await self._gate(ctx, str(fn.get("name", "")), args)
                     steps.append(gated["step"])
                     sess["history"].append(
                         {
@@ -281,6 +264,6 @@ class GovRuntime:
         return {
             "steps": steps,
             "final": final_text,
-            "audit": [e.event_type for e in self.audit.events(session_id)],
-            "chain_ok": self.audit.verify_chain(session_id),
+            "audit": [e.event_type for e in self.pipeline.audit.events(session_id)],
+            "chain_ok": self.pipeline.audit.verify_chain(session_id),
         }
