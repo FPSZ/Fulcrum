@@ -160,7 +160,7 @@ class GovRuntime:
                 excerpt=output[:600],
             )
             ctx.spans.append(span)
-            doc_findings = self.pipeline.detect_inputs(ctx, [span])
+            doc_findings = await self.pipeline.detect_inputs(ctx, [span])
 
         dec = outcome.decision
         step = {
@@ -190,13 +190,13 @@ class GovRuntime:
         """
         sess = self._session(session_id)
         ctx = Context(session_id=session_id, spans=sess["spans"])
-        self.pipeline.record(ctx, AuditEventType.REQUEST_RECEIVED)
+        await self.pipeline.record(ctx, AuditEventType.REQUEST_RECEIVED)
         gated = await self._gate(ctx, fn_name, args)
         return {
             "steps": [{"type": "redteam", "label": fn_name}, gated["step"]],
             "final": gated["result_text"],
-            "audit": [e.event_type for e in self.pipeline.audit.events(session_id)],
-            "chain_ok": self.pipeline.audit.verify_chain(session_id),
+            "audit": [e.event_type for e in await self.pipeline.audit.events(session_id)],
+            "chain_ok": await self.pipeline.audit.verify_chain(session_id),
         }
 
     async def run_turn(self, session_id: str, user_text: str) -> dict[str, Any]:
@@ -204,7 +204,7 @@ class GovRuntime:
         spans: list[SourceSpan] = sess["spans"]
         ctx = Context(session_id=session_id, spans=spans)
 
-        self.pipeline.record(ctx, AuditEventType.REQUEST_RECEIVED)
+        await self.pipeline.record(ctx, AuditEventType.REQUEST_RECEIVED)
         user_span = SourceSpan(
             source_type=SourceType.USER,
             trust_level=TrustLevel.TRUSTED,
@@ -212,7 +212,7 @@ class GovRuntime:
             excerpt=user_text,
         )
         spans.append(user_span)
-        in_findings = self.pipeline.detect_inputs(ctx, [user_span])
+        in_findings = await self.pipeline.detect_inputs(ctx, [user_span])
 
         steps: list[dict[str, Any]] = [
             {
@@ -230,7 +230,7 @@ class GovRuntime:
             except Exception as exc:  # noqa: BLE001 —— 上游模型异常如实回报
                 steps.append({"type": "error", "text": f"模型调用失败:{type(exc).__name__}: {exc}"})
                 break
-            self.pipeline.record(ctx, AuditEventType.MODEL_FORWARDED)
+            await self.pipeline.record(ctx, AuditEventType.MODEL_FORWARDED)
             tool_calls = msg.get("tool_calls") or []
             if tool_calls:
                 sess["history"].append(
@@ -264,6 +264,6 @@ class GovRuntime:
         return {
             "steps": steps,
             "final": final_text,
-            "audit": [e.event_type for e in self.pipeline.audit.events(session_id)],
-            "chain_ok": self.pipeline.audit.verify_chain(session_id),
+            "audit": [e.event_type for e in await self.pipeline.audit.events(session_id)],
+            "chain_ok": await self.pipeline.audit.verify_chain(session_id),
         }

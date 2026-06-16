@@ -59,7 +59,7 @@ def test_allow_unknown_tool_is_blocked_fail_closed() -> None:
     assert isinstance(outcome.result, ExecResult)
     assert outcome.result.ok is False
     assert "unknown tool" in (outcome.result.error or "")
-    types = [e.event_type for e in pipe.audit.events("s")]
+    types = [e.event_type for e in asyncio.run(pipe.audit.events("s"))]
     assert AuditEventType.TOOL_BLOCKED in types
 
 
@@ -72,7 +72,7 @@ def test_sanitize_records_stub_and_not_executed() -> None:
         pipe.handle_tool_call(session_id="s2", tool_name="echo", arguments={"text": "x"})
     )
     assert outcome.executed is False
-    types = [e.event_type for e in pipe.audit.events("s2")]
+    types = [e.event_type for e in asyncio.run(pipe.audit.events("s2"))]
     assert AuditEventType.TOOL_PENDING_APPROVAL in types
 
 
@@ -85,6 +85,6 @@ def test_stage_exception_fails_closed_and_audited() -> None:
     assert outcome.decision.decision == Disposition.BLOCK
     assert outcome.decision.matched_policy_id == "fail-closed"
     assert outcome.executed is False
-    types = [e.event_type for e in pipe.audit.events("s3")]
+    types = [e.event_type for e in asyncio.run(pipe.audit.events("s3"))]
     assert AuditEventType.TOOL_BLOCKED in types
-    assert pipe.audit.verify_chain("s3") is True
+    assert asyncio.run(pipe.audit.verify_chain("s3")) is True

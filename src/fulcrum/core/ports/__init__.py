@@ -25,7 +25,14 @@ from ..domain import (
 
 @runtime_checkable
 class ModelClient(Protocol):
-    """出站:真实大模型(OpenAI 兼容)。"""
+    """出站:真实大模型(OpenAI 兼容)。
+
+    **立场:缓冲式、非流式(刻意为之,已定契约)。** 安全网关的价值在于"缓冲到可判定单元
+    再放行"(arch §7):必须拿到**完整**的模型响应(含完整 tool_calls)才能做归因/评分/策略
+    判定与分级处置。逐 token 流式转发会让"边出边检"无法 fail-closed。故 chat() 一次性返回
+    完整 ModelResponse,**不提供 chat_stream**。若未来确需对接流式上游,应在**适配器内部**
+    缓冲到完整响应后再交给本端口,绝不把流式语义引入管线契约。
+    """
 
     async def chat(self, req: ModelRequest) -> ModelResponse: ...
 
@@ -128,13 +135,18 @@ class SupplyChainScanner(Protocol):
 
 @runtime_checkable
 class AuditSink(Protocol):
-    """防篡改审计落库(hash-chain)。对应赛题目标 4。"""
+    """防篡改审计落库(hash-chain)。对应赛题目标 4。
 
-    def append(self, event: AuditEvent) -> AuditEvent: ...
+    async:append 是安全关键写入,落库(SQLite/PG)是 IO;且架构 §7 要求"审计写入失败 →
+    高危动作默认阻断",故必须 await 到「写成功与否」才放行,不能 fire-and-forget。
+    events/verify 同为存储读取,统一 async,免得 P1 落库时回头改全链。
+    """
 
-    def events(self, session_id: str) -> list[AuditEvent]: ...
+    async def append(self, event: AuditEvent) -> AuditEvent: ...
 
-    def verify_chain(self, session_id: str) -> bool: ...
+    async def events(self, session_id: str) -> list[AuditEvent]: ...
+
+    async def verify_chain(self, session_id: str) -> bool: ...
 
 
 __all__ = [

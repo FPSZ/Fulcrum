@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from fulcrum.adapters.audit.memory_sink import _HASHED_FIELDS, InMemoryAuditSink, _canonical
@@ -10,28 +11,34 @@ from fulcrum.core.domain import AuditEvent, AuditEventType
 
 def _sink_with_events(n: int) -> InMemoryAuditSink:
     sink = InMemoryAuditSink()
-    for _ in range(n):
-        sink.append(AuditEvent(session_id="s", event_type=AuditEventType.REQUEST_RECEIVED))
+
+    async def _build() -> None:
+        for _ in range(n):
+            await sink.append(
+                AuditEvent(session_id="s", event_type=AuditEventType.REQUEST_RECEIVED)
+            )
+
+    asyncio.run(_build())
     return sink
 
 
 def test_chain_verifies() -> None:
     sink = _sink_with_events(3)
-    assert sink.verify_chain("s") is True
-    events = sink.events("s")
+    assert asyncio.run(sink.verify_chain("s")) is True
+    events = asyncio.run(sink.events("s"))
     assert events[0].prev_hash == "GENESIS"
     assert events[1].prev_hash == events[0].event_hash
 
 
 def test_tamper_detected() -> None:
     sink = _sink_with_events(3)
-    sink.events("s")[1].evidence = {"tampered": True}
-    assert sink.verify_chain("s") is False
+    asyncio.run(sink.events("s"))[1].evidence = {"tampered": True}
+    assert asyncio.run(sink.verify_chain("s")) is False
 
 
 def test_events_carry_schema_version() -> None:
     sink = _sink_with_events(1)
-    assert sink.events("s")[0].schema_version == 1
+    assert asyncio.run(sink.events("s"))[0].schema_version == 1
 
 
 def test_canonical_only_covers_whitelisted_fields() -> None:
@@ -46,5 +53,5 @@ def test_canonical_only_covers_whitelisted_fields() -> None:
 def test_unknown_schema_version_fails_verification() -> None:
     """未知 schema_version(格式损坏/越级写入)→ 视为不可验证,fail-closed 返回 False。"""
     sink = _sink_with_events(2)
-    sink.events("s")[1].schema_version = 99
-    assert sink.verify_chain("s") is False
+    asyncio.run(sink.events("s"))[1].schema_version = 99
+    assert asyncio.run(sink.verify_chain("s")) is False

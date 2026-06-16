@@ -134,7 +134,7 @@ def build_api(
     @app.post("/gateway/chat", response_model=GatewayChatResponse)
     async def gateway_chat(body: GatewayChatRequest) -> GatewayChatResponse:
         """前置网关:判恶意 → 拦截/审核/放行;仅放行时转发企业智能体并回传其真实回复。"""
-        verdict = pipeline.screen_input(body.session_id, body.message)
+        verdict = await pipeline.screen_input(body.session_id, body.message)
         resp = GatewayChatResponse(
             session_id=body.session_id,
             decision=verdict.decision,
@@ -158,10 +158,10 @@ def build_api(
 
     @app.get("/audit/{session_id}", response_model=AuditResponse)
     async def audit(session_id: str) -> AuditResponse:
-        events = pipeline.audit.events(session_id)
+        events = await pipeline.audit.events(session_id)
         return AuditResponse(
             session_id=session_id,
-            verified=pipeline.audit.verify_chain(session_id),
+            verified=await pipeline.audit.verify_chain(session_id),
             events=[e.model_dump(mode="json") for e in events],
         )
 

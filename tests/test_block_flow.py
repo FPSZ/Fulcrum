@@ -45,11 +45,11 @@ def test_sensitive_read_blocked_and_audited() -> None:
     assert outcome.executed is False
     assert outcome.decision.matched_policy_id == "block-sensitive-path"
 
-    events = audit.events("s1")
+    events = asyncio.run(audit.events("s1"))
     types = [e.event_type for e in events]
     assert AuditEventType.POLICY_DECIDED in types
     assert AuditEventType.TOOL_BLOCKED in types
-    assert audit.verify_chain("s1") is True
+    assert asyncio.run(audit.verify_chain("s1")) is True
 
 
 def test_benign_workspace_read_allowed() -> None:
@@ -62,4 +62,4 @@ def test_benign_workspace_read_allowed() -> None:
     )
     # 工作区内普通读取 → 放行(但本测试未注册工具,放行后 fail-closed 记 unknown_tool)。
     assert outcome.decision.decision == Disposition.ALLOW
-    assert audit.verify_chain("s2") is True
+    assert asyncio.run(audit.verify_chain("s2")) is True

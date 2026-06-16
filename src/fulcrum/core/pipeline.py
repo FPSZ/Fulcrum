@@ -108,15 +108,17 @@ class SecurityPipeline:
     # ---- 流程 1:模型请求(/v1/chat/completions)----
     async def handle_model_request(self, req: ModelRequest) -> PipelineResult:
         ctx = Context(session_id=req.session_id, request_id=req.request_id)
-        self._emit(ctx, AuditEventType.REQUEST_RECEIVED, subject_id=req.request_id)
+        await self._emit(ctx, AuditEventType.REQUEST_RECEIVED, subject_id=req.request_id)
 
         ctx.spans = self._labeler.label(req)
-        self._emit(ctx, AuditEventType.SOURCE_LABELED, evidence={"span_count": len(ctx.spans)})
+        await self._emit(
+            ctx, AuditEventType.SOURCE_LABELED, evidence={"span_count": len(ctx.spans)}
+        )
 
-        self.detect_inputs(ctx, ctx.spans)
+        await self.detect_inputs(ctx, ctx.spans)
 
         resp = await self._model.chat(req)
-        self._emit(ctx, AuditEventType.MODEL_FORWARDED, subject_id=resp.response_id)
+        await self._emit(ctx, AuditEventType.MODEL_FORWARDED, subject_id=resp.response_id)
 
         result = PipelineResult(session_id=req.session_id, response=resp)
         for call in resp.tool_calls:
@@ -129,7 +131,7 @@ class SecurityPipeline:
         return result
 
     # ---- 流程 1b:前置输入闸门(/gateway/chat 用)----
-    def screen_input(self, session_id: str, message: str) -> GateVerdict:
+    async def screen_input(self, session_id: str, message: str) -> GateVerdict:
         """对一条用户输入做"标注 → 检测 → 闸门",产出拦截/审核/放行结论并落审计。
 
         只用检测器既有结论(judgment 不变),闸门映射见 core.gateway.screen。
@@ -141,7 +143,7 @@ class SecurityPipeline:
         """
         req = ModelRequest(session_id=session_id, messages=[Message(role="user", content=message)])
         ctx = Context(session_id=session_id, request_id=req.request_id)
-        self._emit(ctx, AuditEventType.REQUEST_RECEIVED, subject_id=req.request_id)
+        await self._emit(ctx, AuditEventType.REQUEST_RECEIVED, subject_id=req.request_id)
 
         ctx.spans = [
             SourceSpan(
@@ -151,12 +153,14 @@ class SecurityPipeline:
                 excerpt=message[:600],
             )
         ]
-        self._emit(ctx, AuditEventType.SOURCE_LABELED, evidence={"span_count": len(ctx.spans)})
+        await self._emit(
+            ctx, AuditEventType.SOURCE_LABELED, evidence={"span_count": len(ctx.spans)}
+        )
 
-        self.detect_inputs(ctx, ctx.spans)
+        await self.detect_inputs(ctx, ctx.spans)
 
         verdict = screen(ctx.findings)
-        self._emit(
+        await self._emit(
             ctx,
             AuditEventType.POLICY_DECIDED,
             subject_id=req.request_id,
@@ -164,11 +168,11 @@ class SecurityPipeline:
             evidence={"reason": verdict.reason, "risk_level": verdict.risk_level},
         )
         if verdict.decision == Disposition.BLOCK:
-            self._emit(ctx, AuditEventType.TOOL_BLOCKED, subject_id=req.request_id)
+            await self._emit(ctx, AuditEventType.TOOL_BLOCKED, subject_id=req.request_id)
         elif verdict.decision == Disposition.APPROVE:
-            self._emit(ctx, AuditEventType.TOOL_PENDING_APPROVAL, subject_id=req.request_id)
+            await self._emit(ctx, AuditEventType.TOOL_PENDING_APPROVAL, subject_id=req.request_id)
         else:
-            self._emit(ctx, AuditEventType.MODEL_FORWARDED, subject_id=req.request_id)
+            await self._emit(ctx, AuditEventType.MODEL_FORWARDED, subject_id=req.request_id)
         return verdict
 
     # ---- 流程 2:直接工具调用(/tools/call)----
@@ -219,12 +223,12 @@ class SecurityPipeline:
             intent.risk_score = self._risk_scorer.score(intent, ctx)
             ctx.request_trace.append(intent)
             ctx.findings.extend(await self._chain_analyzer.analyze(ctx.request_trace, ctx))
-            self._emit(ctx, AuditEventType.TOOL_INTENT_DETECTED, subject_id=intent.intent_id)
+            await self._emit(ctx, AuditEventType.TOOL_INTENT_DETECTED, subject_id=intent.intent_id)
             decision = await self._policy.decide(intent, ctx)
         except Exception as exc:  # noqa: BLE001 —— 安全边界:任何异常都必须 fail-closed
-            return self._fail_closed(ctx, intent, "risk_assessment", exc)
+            return await self._fail_closed(ctx, intent, "risk_assessment", exc)
 
-        self._emit(
+        await self._emit(
             ctx,
             AuditEventType.POLICY_DECIDED,
             subject_id=intent.intent_id,
@@ -237,7 +241,7 @@ class SecurityPipeline:
             if tool is None:
                 # fail-closed:策略放行了,但工具未知 —— 显式阻断 + 审计,绝不静默跳过。
                 outcome.result = ExecResult(ok=False, error=f"unknown tool: {intent.tool_name}")
-                self._emit(
+                await self._emit(
                     ctx,
                     AuditEventType.TOOL_BLOCKED,
                     subject_id=intent.intent_id,
@@ -247,11 +251,11 @@ class SecurityPipeline:
                 try:
                     outcome.result = await self._executor.execute(tool, intent, ctx)
                     outcome.executed = True
-                    self._emit(ctx, AuditEventType.TOOL_EXECUTED, subject_id=intent.intent_id)
+                    await self._emit(ctx, AuditEventType.TOOL_EXECUTED, subject_id=intent.intent_id)
                 except Exception as exc:  # noqa: BLE001 —— 执行抛错不得 fail-open
                     # 动作已被策略允许,但执行崩溃 → 记错误结果 + 留痕,绝不静默 500。
                     outcome.result = ExecResult(ok=False, error=f"executor error: {exc}")
-                    self._emit(
+                    await self._emit(
                         ctx,
                         AuditEventType.TOOL_BLOCKED,
                         subject_id=intent.intent_id,
@@ -259,20 +263,20 @@ class SecurityPipeline:
                     )
         elif decision.decision == Disposition.SANITIZE:
             # M0 未实现真实净化:记录桩并按 fail-closed 暂不执行(等同 pending)。
-            self._emit(
+            await self._emit(
                 ctx,
                 AuditEventType.TOOL_PENDING_APPROVAL,
                 subject_id=intent.intent_id,
                 evidence={"reason": "sanitize_stub"},
             )
         elif decision.decision == Disposition.APPROVE:
-            self._emit(ctx, AuditEventType.TOOL_PENDING_APPROVAL, subject_id=intent.intent_id)
+            await self._emit(ctx, AuditEventType.TOOL_PENDING_APPROVAL, subject_id=intent.intent_id)
         elif decision.decision == Disposition.BLOCK:
-            self._emit(ctx, AuditEventType.TOOL_BLOCKED, subject_id=intent.intent_id)
+            await self._emit(ctx, AuditEventType.TOOL_BLOCKED, subject_id=intent.intent_id)
         return outcome
 
     # ---- fail-closed:安全关键阶段抛错时的统一降级处置 ----
-    def _fail_closed(
+    async def _fail_closed(
         self, ctx: Context, intent: ToolIntent, stage: str, exc: Exception
     ) -> ToolOutcome:
         """风险评估/策略阶段抛错 → 合成 BLOCK 处置 + 双重留痕,绝不让请求 fail-open。
@@ -285,14 +289,14 @@ class SecurityPipeline:
             matched_policy_id="fail-closed",
             risk_level=RiskLevel.CRITICAL,
         )
-        self._emit(
+        await self._emit(
             ctx,
             AuditEventType.POLICY_DECIDED,
             subject_id=intent.intent_id,
             decision=decision.decision,
             evidence={"reason": decision.reason, "stage": stage, "error": str(exc)},
         )
-        self._emit(
+        await self._emit(
             ctx,
             AuditEventType.TOOL_BLOCKED,
             subject_id=intent.intent_id,
@@ -301,10 +305,10 @@ class SecurityPipeline:
         return ToolOutcome(intent=intent, decision=decision)
 
     # ---- 输入检测(供 agent 循环复用:用户输入 / 工具返回间接注入 走同一套检测器)----
-    def detect_inputs(self, ctx: Context, spans: list[SourceSpan]) -> list[Finding]:
+    async def detect_inputs(self, ctx: Context, spans: list[SourceSpan]) -> list[Finding]:
         """对一批新输入 span 跑全部检测器(逐个 fail-closed),累积进 ctx + 落审计,返回新增。"""
-        new = self._run_detectors(ctx, spans)
-        self._emit(
+        new = await self._run_detectors(ctx, spans)
+        await self._emit(
             ctx,
             AuditEventType.INPUT_DETECTED,
             evidence={"findings": [f.model_dump() for f in new]},
@@ -312,7 +316,7 @@ class SecurityPipeline:
         return new
 
     # ---- 检测:逐个检测器 fail-closed(某检测器崩溃 → 合成高危 Finding,绝不静默放行)----
-    def _run_detectors(self, ctx: Context, spans: list[SourceSpan]) -> list[Finding]:
+    async def _run_detectors(self, ctx: Context, spans: list[SourceSpan]) -> list[Finding]:
         new: list[Finding] = []
         for detector in self._detectors:
             try:
@@ -326,7 +330,7 @@ class SecurityPipeline:
                         evidence={"detector": name, "error": str(exc)},
                     )
                 )
-                self._emit(
+                await self._emit(
                     ctx,
                     AuditEventType.INPUT_DETECTED,
                     evidence={"reason": "detector_error", "detector": name, "error": str(exc)},
@@ -335,7 +339,7 @@ class SecurityPipeline:
         return new
 
     # ---- 审计 helper ----
-    def _emit(
+    async def _emit(
         self,
         ctx: Context,
         event_type: AuditEventType,
@@ -351,10 +355,10 @@ class SecurityPipeline:
             decision=decision,
             evidence=evidence or {},
         )
-        self._audit.append(event)
+        await self._audit.append(event)
 
     # ---- 供 agent 循环适配器把"循环级"审计事件写入同一条链 ----
-    def record(
+    async def record(
         self,
         ctx: Context,
         event_type: AuditEventType,
@@ -364,4 +368,6 @@ class SecurityPipeline:
         evidence: dict | None = None,
     ) -> None:
         """循环级事件(收到请求 / 已转发模型 等)入审计链。逐意图事件由 evaluate_intent 自己落。"""
-        self._emit(ctx, event_type, subject_id=subject_id, decision=decision, evidence=evidence)
+        await self._emit(
+            ctx, event_type, subject_id=subject_id, decision=decision, evidence=evidence
+        )

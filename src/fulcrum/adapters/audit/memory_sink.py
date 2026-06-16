@@ -60,7 +60,8 @@ class InMemoryAuditSink:
     def __init__(self) -> None:
         self._chains: dict[str, list[AuditEvent]] = {}
 
-    def append(self, event: AuditEvent) -> AuditEvent:
+    # async:与 AuditSink 端口一致(内存桩无真实 IO,故体内无 await;SQLite 实现将有)。
+    async def append(self, event: AuditEvent) -> AuditEvent:
         chain = self._chains.setdefault(event.session_id, [])
         event.index = len(chain)
         event.prev_hash = chain[-1].event_hash if chain else _GENESIS
@@ -68,10 +69,10 @@ class InMemoryAuditSink:
         chain.append(event)
         return event
 
-    def events(self, session_id: str) -> list[AuditEvent]:
+    async def events(self, session_id: str) -> list[AuditEvent]:
         return list(self._chains.get(session_id, []))
 
-    def verify_chain(self, session_id: str) -> bool:
+    async def verify_chain(self, session_id: str) -> bool:
         prev = _GENESIS
         for event in self._chains.get(session_id, []):
             try:

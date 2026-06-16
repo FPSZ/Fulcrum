@@ -63,8 +63,8 @@ def _disposition_label(d: Disposition) -> str:
     }[d]
 
 
-def _print_findings(pipe: SecurityPipeline, sid: str) -> None:
-    events = pipe.audit.events(sid)
+async def _print_findings(pipe: SecurityPipeline, sid: str) -> None:
+    events = await pipe.audit.events(sid)
     detected = next((e for e in events if e.event_type == AuditEventType.INPUT_DETECTED), None)
     findings = (detected.evidence.get("findings") if detected else None) or []
     if not findings:
@@ -96,7 +96,7 @@ async def _run_scenario(
         return
 
     print("\n【1. 输入检测】枢衡对多源输入的风险判定:")
-    _print_findings(pipe, sid)
+    await _print_findings(pipe, sid)
 
     resp = result.response
     print("\n【2. 模型意图】MiMo 的响应:")
@@ -129,9 +129,10 @@ async def _run_scenario(
             print("    执行:挂起,等待人工审批(默认不执行)。")
 
     print(f"\n【4. 审计链】会话 {sid}(防篡改 hash-chain):")
-    events = pipe.audit.events(sid)
+    events = await pipe.audit.events(sid)
     print("  " + " → ".join(e.event_type for e in events))
-    print(f"  hash-chain 校验:{'✅ 完整' if pipe.audit.verify_chain(sid) else '❌ 被篡改'}")
+    ok = await pipe.audit.verify_chain(sid)
+    print(f"  hash-chain 校验:{'✅ 完整' if ok else '❌ 被篡改'}")
 
 
 async def main() -> None:

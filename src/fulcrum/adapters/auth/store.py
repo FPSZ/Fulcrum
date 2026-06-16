@@ -11,10 +11,10 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager
 from pathlib import Path
 
+from ..sqlite_support import Migration, connect, run_migrations
 from .models import (
     STATUS_ACTIVE,
     Department,
@@ -108,38 +108,38 @@ def _to_user(row: sqlite3.Row) -> User:
     )
 
 
+def _migrate_v1(conn: sqlite3.Connection) -> None:
+    """v1:建全部表 + 把旧 users 表补齐到当前列集(幂等;既有库首启被补迁并打版本戳,不丢数据)。"""
+    conn.executescript(_SCHEMA)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    for name, decl in _USER_MIGRATIONS.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {name} {decl}")
+    # v1 旧行:有 is_active 但 status 仍是默认,据 is_active 归一到 status
+    if "is_active" in cols and "status" not in cols:
+        conn.execute(
+            "UPDATE users SET status = CASE WHEN is_active=0 THEN 'disabled' ELSE 'active' END"
+        )
+    # 索引在补齐 department_id 列之后再建(兼容旧表)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_users_dept ON users(department_id)")
+
+
+# 有序迁移清单(只进不退;加 schema 变更 = 追加更高 version,绝不改历史迁移)。见 sqlite_support。
+_MIGRATIONS = (Migration(1, _migrate_v1),)
+
+
 class SQLiteAuthStore:
     def __init__(self, db_path: str) -> None:
         self._path = Path(db_path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, isolation_level=None)
-        try:
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-            yield conn
-        finally:
-            conn.close()
+    def _connect(self) -> AbstractContextManager[sqlite3.Connection]:
+        return connect(self._path)
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
-            conn.executescript(_SCHEMA)
-            cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
-            for name, decl in _USER_MIGRATIONS.items():
-                if name not in cols:
-                    conn.execute(f"ALTER TABLE users ADD COLUMN {name} {decl}")
-            # v1 旧行:有 is_active 但 status 仍是默认,据 is_active 归一到 status
-            if "is_active" in cols and "status" not in cols:
-                conn.execute(
-                    "UPDATE users SET status = CASE WHEN is_active=0 THEN 'disabled' "
-                    "ELSE 'active' END"
-                )
-            # 索引在补齐 department_id 列之后再建(兼容 v1 旧表)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_users_dept ON users(department_id)")
+            run_migrations(conn, _MIGRATIONS)
 
     # ── 部门 ──────────────────────────────────────────────────────
     def list_departments(self) -> list[Department]:
