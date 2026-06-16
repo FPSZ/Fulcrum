@@ -146,7 +146,7 @@ export function MembersTab({ departments, roles, canManage, onChanged }: Props) 
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto rounded-[12px] border border-line">
-          <table className="w-full border-collapse text-[14px]">
+          <table className="hidden w-full border-collapse text-[14px] md:table">
             <thead className="sticky top-0 z-[1] bg-subtle text-[13px] text-ink-3">
               <tr className="[&>th]:px-3 [&>th]:py-2.5 [&>th]:text-left [&>th]:font-medium">
                 <th>成员</th>
@@ -199,6 +199,46 @@ export function MembersTab({ departments, roles, canManage, onChanged }: Props) 
               ))}
             </tbody>
           </table>
+
+          {/* 移动端:成员卡片流(不横滑) */}
+          <div className="divide-y divide-line md:hidden">
+            {members.map((m) => (
+              <div key={m.id} className="flex items-start gap-3 px-3 py-3">
+                <Avatar fallback={m.display_name.slice(0, 1)} className="mt-0.5 h-9 w-9 shrink-0 rounded-[10px]" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-medium text-ink">{m.display_name}</span>
+                    {m.title && <span className="shrink-0 text-[12px] text-ink-mute">{m.title}</span>}
+                  </div>
+                  <div className="truncate font-data text-[12px] text-ink-mute">{m.username}</div>
+                  <div className="mt-1 flex items-center gap-2 text-[12.5px] text-ink-2">
+                    <StatusBadge status={m.status} />
+                    <span className="truncate">
+                      {deptName(departments, m.department_id)} · {roleName(roles, m.role_id)}
+                    </span>
+                  </div>
+                </div>
+                {canManage && (
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <IconButton label="编辑" onClick={() => setEditing(m)}>
+                      <Pencil className="h-[15px] w-[15px]" />
+                    </IconButton>
+                    <IconButton label="重置口令" onClick={() => reset(m)}>
+                      <KeyRound className="h-[15px] w-[15px]" />
+                    </IconButton>
+                    <IconButton
+                      label={m.status === 'active' ? '停用' : '启用'}
+                      onClick={() => toggleStatus(m)}
+                      className={m.status === 'active' ? 'hover:text-crit' : 'hover:text-ok'}
+                    >
+                      <Power className="h-[15px] w-[15px]" />
+                    </IconButton>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
           {!loading && members.length === 0 && (
             <EmptyState icon={Users} title="暂无成员" hint="当前筛选条件下没有成员。" />
           )}

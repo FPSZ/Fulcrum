@@ -1,5 +1,23 @@
 /** 总览图表:纯 SVG 矢量,低 DPI 锐利。颜色取设计令牌 CSS 变量。 */
 
+import { useEffect, useRef, useState } from 'react'
+
+/** 测量容器实际像素宽:让 viewBox 宽 = 容器宽,1 单位=1px,绝不letterbox压扁(手机关键) */
+function useWidth(): [React.RefObject<HTMLDivElement>, number] {
+  const ref = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState(0)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => setW(el.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return [ref, w]
+}
+
 /** 柱形路径:只圆顶、底部直角(柱从基线向上生长,圆角随高度自适应不变形) */
 function topRoundedBar(x: number, y: number, w: number, h: number, r: number): string {
   const rr = Math.max(0, Math.min(r, w / 2, h))
@@ -15,10 +33,11 @@ export function BarChart({
   labels: string[]
   highlight: number
 }) {
-  const W = 640
-  const H = 212
-  const padL = 36
-  const padT = 24
+  const [ref, cw] = useWidth()
+  const W = cw || 640
+  const H = 200
+  const padL = 32
+  const padT = 22
   const padB = 26
   const innerH = H - padT - padB
   const innerW = W - padL
@@ -34,7 +53,8 @@ export function BarChart({
   })
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="xMidYMid meet">
+   <div ref={ref} className="w-full">
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none">
       {grid.map((g, i) => (
         <g key={i}>
           <line x1={padL} y1={g.y} x2={W} y2={g.y} stroke="var(--color-line)" strokeDasharray="3 5" />
@@ -77,6 +97,7 @@ export function BarChart({
         )
       })}
     </svg>
+   </div>
   )
 }
 
@@ -105,9 +126,10 @@ export function LiveChart({
   windowSec: number
   bucketSec: number
 }) {
-  const W = 640
-  const H = 212
-  const padL = 30
+  const [ref, cw] = useWidth()
+  const W = cw || 640
+  const H = 200
+  const padL = 28
   const padT = 16
   const padB = 26
   const innerH = H - padT - padB
@@ -125,7 +147,8 @@ export function LiveChart({
   })
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="xMidYMid meet">
+   <div ref={ref} className="w-full">
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none">
       {grid.map((g, i) => (
         <g key={i}>
           <line x1={padL} y1={g.y} x2={W} y2={g.y} stroke="var(--color-line)" strokeDasharray="3 5" />
@@ -161,6 +184,7 @@ export function LiveChart({
         </text>
       ))}
     </svg>
+   </div>
   )
 }
 

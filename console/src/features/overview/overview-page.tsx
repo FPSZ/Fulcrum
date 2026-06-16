@@ -106,19 +106,21 @@ function StatCard({ s, live, deltaLabel = '较上月' }: { s: OverviewStat; live
   const Icon = STAT_ICON[s.key]
   const tone = TONE[s.tone]
   return (
-    <motion.div variants={item} className="glass-card rounded-[16px] p-[18px]">
-      <div className="flex items-center gap-3">
-        <span className={cn('grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[11px]', tone.wrap)}>
-          <Icon className={cn('h-[19px] w-[19px]', tone.icon)} strokeWidth={1.8} />
+    <motion.div variants={item} className="glass-card rounded-[16px] p-4 md:p-[18px]">
+      <div className="flex items-center justify-between">
+        <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-[11px] md:h-[38px] md:w-[38px]', tone.wrap)}>
+          <Icon className={cn('h-[18px] w-[18px] md:h-[19px] md:w-[19px]', tone.icon)} strokeWidth={1.8} />
         </span>
-        <span className="flex-1 text-[15.5px] font-bold tracking-[-0.01em] text-ink">{s.label}</span>
         <Info className="h-[15px] w-[15px] shrink-0 text-ink-mute" strokeWidth={1.7} />
       </div>
-      <div className="tabnum mt-3.5 text-[30px] font-bold leading-none tracking-[-0.02em] text-ink">
-        {s.value}
-        {s.unit && <span className="text-[18px] font-semibold text-ink-3">{s.unit}</span>}
+      <div className="mt-2.5 text-[13.5px] font-bold leading-snug tracking-[-0.01em] text-ink md:text-[15.5px]">
+        {s.label}
       </div>
-      <div className="mt-2.5 flex items-center gap-2 text-[13.5px] text-ink-mute">
+      <div className="tabnum mt-1 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink md:mt-1.5 md:text-[30px]">
+        {s.value}
+        {s.unit && <span className="text-[16px] font-semibold text-ink-3 md:text-[18px]">{s.unit}</span>}
+      </div>
+      <div className="mt-2 flex items-center gap-2 text-[13px] text-ink-mute md:text-[13.5px]">
         {live ? (
           <span className="flex items-center gap-1.5 font-semibold text-accent-ink">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" style={{ animation: 'pulse-ring 2s infinite' }} />
@@ -388,7 +390,8 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
             </Button>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        {/* 桌面:表格 */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-[14.5px]">
             <thead>
               <tr className="border-y border-line text-[13.5px] text-ink-mute">
@@ -454,6 +457,42 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* 移动端:卡片流(不横滑) */}
+        <div className="divide-y divide-line md:hidden">
+          {recent.map((e) => {
+            const SrcIcon = e.srcIcon
+            const riskColor = e.risk > 75 ? 'bg-crit' : e.risk > 50 ? 'bg-high' : 'bg-ok'
+            return (
+              <div key={e.id} className={cn('px-4 py-3', freshIds.has(e.id) && 'row-flash')}>
+                <div className="flex items-center gap-2.5">
+                  <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] border border-line bg-surface-2">
+                    <SrcIcon className="h-[16px] w-[16px] text-ink-2" strokeWidth={1.7} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[14.5px] font-semibold text-ink">{e.title}</div>
+                    <div className="truncate text-[12.5px] text-ink-mute">
+                      {e.src} · {e.type}
+                    </div>
+                  </div>
+                  <Badge tone={e.status.tone} dot>
+                    {e.status.label}
+                  </Badge>
+                </div>
+                <div className="mt-2 flex items-center gap-2.5 text-[12px] text-ink-mute">
+                  <span className="font-data">{e.time}</span>
+                  <span className="font-data rounded-[5px] bg-surface-2 px-1.5 py-0.5 text-ink-2">{e.tool}</span>
+                  <span className="ml-auto flex items-center gap-1.5">
+                    <span className="h-1.5 w-12 overflow-hidden rounded-full bg-surface-2">
+                      <span className={cn('block h-full rounded-full', riskColor)} style={{ width: `${e.risk}%` }} />
+                    </span>
+                    <b className="tabnum font-bold text-ink">{e.risk}</b>
+                  </span>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>

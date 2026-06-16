@@ -35,12 +35,20 @@ export function SettingRow({
   className?: string
 }) {
   return (
-    <div className={cn('flex items-start justify-between gap-6 py-3.5', className)}>
+    <div
+      className={cn(
+        // 移动端:标签在上、控件占满整行;桌面端:左标签右控件
+        'flex flex-col gap-2 py-3.5 sm:flex-row sm:items-start sm:justify-between sm:gap-6',
+        className,
+      )}
+    >
       <div className="min-w-0">
         <div className="text-[15px] font-medium text-ink">{label}</div>
         {hint && <div className="mt-0.5 text-[14px] leading-relaxed text-ink-3">{hint}</div>}
       </div>
-      <div className="flex shrink-0 items-center gap-2 pt-0.5">{children}</div>
+      <div className="flex max-w-full shrink-0 items-center gap-2 sm:pt-0.5 [&_input]:max-w-full">
+        {children}
+      </div>
     </div>
   )
 }
