@@ -63,6 +63,7 @@ class GovRuntime:
         self.detector = registry.create("detector", "keyword_rules")
         self.attributor = registry.create("attributor", "evidence")
         self.scorer = registry.create("risk_scorer", "heuristic")
+        self.chain = registry.create("chain_analyzer", "sequence")
         self.policy = YamlPolicyEngine(_POLICY_PATH)
         self.audit = InMemoryAuditSink()
         s = Settings()
@@ -81,24 +82,35 @@ class GovRuntime:
             self._sessions[session_id] = {
                 "history": [{"role": "system", "content": _SYSTEM}],
                 "spans": [],
+                "trace": [],
             }
         return self._sessions[session_id]
 
     def _emit(
-        self, session_id: str, etype: AuditEventType, *, subject: str | None = None,
-        decision: Disposition | None = None, evidence: dict | None = None,
+        self,
+        session_id: str,
+        etype: AuditEventType,
+        *,
+        subject: str | None = None,
+        decision: Disposition | None = None,
+        evidence: dict | None = None,
     ) -> None:
         self.audit.append(
             AuditEvent(
-                session_id=session_id, event_type=etype, subject_id=subject,
-                decision=decision, evidence=evidence or {},
+                session_id=session_id,
+                event_type=etype,
+                subject_id=subject,
+                decision=decision,
+                evidence=evidence or {},
             )
         )
 
     async def _call_model(self, history: list[dict]) -> dict[str, Any]:
         payload = {
-            "model": self._model, "messages": history,
-            "tools": gov.TOOL_SCHEMAS, "temperature": 0.3,
+            "model": self._model,
+            "messages": history,
+            "tools": gov.TOOL_SCHEMAS,
+            "temperature": 0.3,
         }
         headers = {"Content-Type": "application/json"}
         if self._key:
@@ -118,10 +130,21 @@ class GovRuntime:
         intent.derived_from_sources = attr.derived_from_sources
         intent.attribution_confidence = attr.confidence
         intent.risk_score = self.scorer.score(intent, ctx)
-        self._emit(session_id, AuditEventType.TOOL_INTENT_DETECTED, subject=intent.intent_id)
+        # 任务链分析:把本次调用并入会话轨迹,判断是否构成"读取→外发"等异常链。
+        ctx.session_trace.append(intent)
+        chain_findings = self.chain.analyze(ctx.session_trace, ctx)
+        ctx.findings.extend(chain_findings)  # 策略据 chain_risk_at_least 消费(见 yaml_policy)
+        self._emit(
+            session_id,
+            AuditEventType.TOOL_INTENT_DETECTED,
+            subject=intent.intent_id,
+            evidence={"chain": [f.model_dump() for f in chain_findings]} if chain_findings else {},
+        )
         decision = self.policy.decide(intent, ctx)
         self._emit(
-            session_id, AuditEventType.POLICY_DECIDED, subject=intent.intent_id,
+            session_id,
+            AuditEventType.POLICY_DECIDED,
+            subject=intent.intent_id,
             decision=decision.decision,
             evidence={"rule": decision.matched_policy_id, "reason": decision.reason},
         )
@@ -135,14 +158,18 @@ class GovRuntime:
             if tool == "doc.read" and ok:
                 # 读入的文档内容视为不可信来源 → 回注上下文 + 立即检测(间接注入)。
                 span = SourceSpan(
-                    source_type=SourceType.DOCUMENT, trust_level=TrustLevel.UNTRUSTED,
-                    content_hash=_hash(output), excerpt=output[:600],
+                    source_type=SourceType.DOCUMENT,
+                    trust_level=TrustLevel.UNTRUSTED,
+                    content_hash=_hash(output),
+                    excerpt=output[:600],
                 )
                 ctx.spans.append(span)
                 doc_findings = self.detector.detect([span], ctx)
                 if doc_findings:
                     self._emit(
-                        session_id, AuditEventType.INPUT_DETECTED, subject=span.source_id,
+                        session_id,
+                        AuditEventType.INPUT_DETECTED,
+                        subject=span.source_id,
                         evidence={"findings": [f.model_dump() for f in doc_findings]},
                     )
             result_text = output
@@ -173,6 +200,16 @@ class GovRuntime:
             "executed": executed,
             "output": result_text[:1200],
             "doc_findings": [_finding_dict(f) for f in doc_findings],
+            "chain": [
+                {
+                    "pattern": f.evidence.get("pattern"),
+                    "score": f.score,
+                    "severity": f.evidence.get("severity"),
+                    "read_tools": f.evidence.get("read_tools"),
+                    "exfil_tool": f.evidence.get("exfil_tool"),
+                }
+                for f in chain_findings
+            ],
         }
         return {"step": step, "result_text": result_text}
 
@@ -182,7 +219,10 @@ class GovRuntime:
         不经模型,确定性地展示枢衡对高危动作的处置——证明安全不依赖模型自觉。
         """
         sess = self._session(session_id)
-        ctx = Context(session_id=session_id, spans=sess["spans"])
+        ctx = Context(session_id=session_id)
+        # 用同一列表引用,使来源与轨迹跨调用累积(pydantic 构造会拷贝 list,故构造后绑定)。
+        ctx.spans = sess["spans"]
+        ctx.session_trace = sess["trace"]
         self._emit(session_id, AuditEventType.REQUEST_RECEIVED)
         gated = self._gate(session_id, ctx, fn_name, args)
         return {
@@ -195,23 +235,31 @@ class GovRuntime:
     async def run_turn(self, session_id: str, user_text: str) -> dict[str, Any]:
         sess = self._session(session_id)
         spans: list[SourceSpan] = sess["spans"]
-        ctx = Context(session_id=session_id, spans=spans)
+        ctx = Context(session_id=session_id)
+        # 用同一列表引用,使来源与轨迹跨调用累积(pydantic 构造会拷贝 list,故构造后绑定)。
+        ctx.spans = spans
+        ctx.session_trace = sess["trace"]
 
         self._emit(session_id, AuditEventType.REQUEST_RECEIVED)
         user_span = SourceSpan(
-            source_type=SourceType.USER, trust_level=TrustLevel.TRUSTED,
-            content_hash=_hash(user_text), excerpt=user_text,
+            source_type=SourceType.USER,
+            trust_level=TrustLevel.TRUSTED,
+            content_hash=_hash(user_text),
+            excerpt=user_text,
         )
         spans.append(user_span)
         in_findings = self.detector.detect([user_span], ctx)
         self._emit(
-            session_id, AuditEventType.INPUT_DETECTED, subject=user_span.source_id,
+            session_id,
+            AuditEventType.INPUT_DETECTED,
+            subject=user_span.source_id,
             evidence={"findings": [f.model_dump() for f in in_findings]},
         )
 
         steps: list[dict[str, Any]] = [
             {
-                "type": "input", "text": user_text,
+                "type": "input",
+                "text": user_text,
                 "findings": [_finding_dict(f) for f in in_findings],
             }
         ]
@@ -229,7 +277,8 @@ class GovRuntime:
             if tool_calls:
                 sess["history"].append(
                     {
-                        "role": "assistant", "content": msg.get("content") or "",
+                        "role": "assistant",
+                        "content": msg.get("content") or "",
                         "tool_calls": tool_calls,
                     }
                 )
@@ -243,7 +292,8 @@ class GovRuntime:
                     steps.append(gated["step"])
                     sess["history"].append(
                         {
-                            "role": "tool", "tool_call_id": tc.get("id", ""),
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
                             "content": gated["result_text"],
                         }
                     )
