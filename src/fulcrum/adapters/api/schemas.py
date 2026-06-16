@@ -35,6 +35,59 @@ class ChatResponse(BaseModel):
     outcomes: list[OutcomeDTO] = Field(default_factory=list)
 
 
+# ---- /gateway/chat(前置网关:判恶意 → 拦截/审核/放行 → 转发企业智能体)----
+class GatewayChatRequest(BaseModel):
+    session_id: str = "anon"
+    message: str = Field(min_length=1, max_length=8000)
+
+
+class GatewayFindingDTO(BaseModel):
+    kind: str
+    score: float
+    severity: str | None = None
+    source_type: str | None = None
+    matched: list[str] = Field(default_factory=list)
+
+
+class GatewayChatResponse(BaseModel):
+    session_id: str
+    decision: Disposition  # allow=放行 / approve=审核挂起 / block=拦截
+    risk_level: str
+    forwarded: bool  # 是否真正转发给了企业智能体
+    reason: str
+    max_score: float
+    findings: list[GatewayFindingDTO] = Field(default_factory=list)
+    reply: str = ""  # 仅放行时为企业智能体的真实回复
+    tools: list[dict] = Field(default_factory=list)  # 企业智能体本轮执行的工具轨迹
+    upstream_error: str | None = None
+
+
+# ---- /admin/gateway-config(网关上游接入,设置页可配)----
+class GatewayConfigWrite(BaseModel):
+    """更新上游接入配置。auth_value 为 None=保持不变、""=清空、其它=替换。"""
+
+    enabled: bool = True
+    name: str = Field(default="默认上游", max_length=64)
+    protocol: str = Field(pattern="^(openai|rest|native)$")
+    endpoint: str = Field(min_length=1, max_length=512)
+    path: str = Field(default="", max_length=256)
+    model: str = Field(default="", max_length=128)
+    auth_type: str = Field(default="none", pattern="^(none|bearer|header)$")
+    auth_header: str = Field(default="Authorization", max_length=64)
+    auth_value: str | None = Field(default=None, max_length=2048)
+    timeout_seconds: float = Field(default=60.0, ge=1, le=600)
+    verify_tls: bool = True
+    rest_message_field: str = Field(default="message", max_length=64)
+    rest_response_path: str = Field(default="reply", max_length=128)
+
+
+class GatewayProbeResponse(BaseModel):
+    ok: bool
+    latency_ms: int
+    detail: str
+    status_code: int | None = None
+
+
 # ---- /tools/call ----
 class ToolCallRequest(BaseModel):
     session_id: str

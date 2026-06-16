@@ -28,17 +28,25 @@ def _load_builtins() -> None:
 def build_pipeline(config: dict[str, Any] | None = None) -> SecurityPipeline:
     _load_builtins()
     cfg = config if config is not None else load_capability_config()
+
+    # per-capability 参数注入:options.<注册名> → registry.create(kind, name, **那些参数)。
+    # 统一约定,避免各队友各自发明配置侧门(env/硬编码);无条目=无参构造,向后兼容。
+    opts: dict[str, Any] = cfg.get("options") or {}
+
+    def make(kind: str, name: str) -> Any:
+        return registry.create(kind, name, **(opts.get(name) or {}))
+
     return SecurityPipeline(
-        labeler=registry.create("labeler", cfg["labeler"]),
-        detectors=[registry.create("detector", name) for name in cfg["detectors"]],
-        attributor=registry.create("attributor", cfg["attributor"]),
-        risk_scorer=registry.create("risk_scorer", cfg["risk_scorer"]),
-        chain_analyzer=registry.create("chain_analyzer", cfg["chain_analyzer"]),
-        policy=registry.create("policy", cfg["policy"]),
-        executor=registry.create("executor", cfg["executor"]),
-        tools={name: registry.create("tool", name) for name in cfg["tools"]},
-        audit=registry.create("audit", cfg["audit"]),
-        model_client=registry.create("model", cfg["model"]),
+        labeler=make("labeler", cfg["labeler"]),
+        detectors=[make("detector", name) for name in cfg["detectors"]],
+        attributor=make("attributor", cfg["attributor"]),
+        risk_scorer=make("risk_scorer", cfg["risk_scorer"]),
+        chain_analyzer=make("chain_analyzer", cfg["chain_analyzer"]),
+        policy=make("policy", cfg["policy"]),
+        executor=make("executor", cfg["executor"]),
+        tools={name: make("tool", name) for name in cfg["tools"]},
+        audit=make("audit", cfg["audit"]),
+        model_client=make("model", cfg["model"]),
     )
 
 
@@ -49,5 +57,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 延迟导入,避免 core 测试时强依赖 fastapi。
     from .adapters.api import build_api
     from .adapters.auth import build_auth_bundle
+    from .adapters.gateway import GatewayConfig, GatewayConfigStore, UpstreamForwarder
 
-    return build_api(build_pipeline(cfg), build_auth_bundle(settings), settings)
+    # 上游接入配置:首启以 .env 的 upstream_agent_endpoint 作默认地址,
+    # 之后以落盘配置为准(设置页可改、热加载)。
+    seed = GatewayConfig(endpoint=settings.upstream_agent_endpoint, protocol="native")
+    store = GatewayConfigStore(settings.gateway_config_path, seed=seed)
+    upstream = UpstreamForwarder(store)
+    return build_api(build_pipeline(cfg), build_auth_bundle(settings), settings, upstream, store)

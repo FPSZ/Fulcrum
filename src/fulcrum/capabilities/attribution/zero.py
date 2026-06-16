@@ -11,5 +11,7 @@ from ...core.registry import capability
 
 @capability("attributor", "zero")
 class ZeroAttributor:
-    def attribute(self, intent: ToolIntent, spans: list[SourceSpan], ctx: Context) -> Attribution:
+    async def attribute(
+        self, intent: ToolIntent, spans: list[SourceSpan], ctx: Context
+    ) -> Attribution:
         return Attribution(derived_from_sources=[], confidence=0.0, rationale="M0 stub")

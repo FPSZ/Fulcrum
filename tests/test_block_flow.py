@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fulcrum.adapters.audit.memory_sink import InMemoryAuditSink
@@ -35,8 +36,10 @@ def _real_pipeline(audit: InMemoryAuditSink) -> SecurityPipeline:
 def test_sensitive_read_blocked_and_audited() -> None:
     audit = InMemoryAuditSink()
     pipe = _real_pipeline(audit)
-    outcome = pipe.handle_tool_call(
-        session_id="s1", tool_name="file.read", arguments={"path": "/etc/passwd"}
+    outcome = asyncio.run(
+        pipe.handle_tool_call(
+            session_id="s1", tool_name="file.read", arguments={"path": "/etc/passwd"}
+        )
     )
     assert outcome.decision.decision == Disposition.BLOCK
     assert outcome.executed is False
@@ -52,8 +55,10 @@ def test_sensitive_read_blocked_and_audited() -> None:
 def test_benign_workspace_read_allowed() -> None:
     audit = InMemoryAuditSink()
     pipe = _real_pipeline(audit)
-    outcome = pipe.handle_tool_call(
-        session_id="s2", tool_name="file.read", arguments={"path": "data/workspace/notice.txt"}
+    outcome = asyncio.run(
+        pipe.handle_tool_call(
+            session_id="s2", tool_name="file.read", arguments={"path": "data/workspace/notice.txt"}
+        )
     )
     # 工作区内普通读取 → 放行(但本测试未注册工具,放行后 fail-closed 记 unknown_tool)。
     assert outcome.decision.decision == Disposition.ALLOW

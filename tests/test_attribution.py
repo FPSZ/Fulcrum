@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fulcrum.capabilities.attribution.evidence import EvidenceAttributor
 from fulcrum.core.domain import Context, SourceSpan, SourceType, ToolIntent, TrustLevel
 
 _ATTR = EvidenceAttributor()
+
+
+def _attribute(intent: ToolIntent, spans: list[SourceSpan], ctx: Context):
+    """同步包装 async 归因端口,便于在普通测试里断言(无需 pytest-asyncio)。"""
+    return asyncio.run(_ATTR.attribute(intent, spans, ctx))
 
 
 def _span(text: str, *, source: SourceType, trust: TrustLevel) -> SourceSpan:
@@ -20,7 +27,7 @@ def test_links_intent_to_untrusted_document() -> None:
         trust=TrustLevel.UNTRUSTED,
     )
     intent = ToolIntent(session_id="s", tool_name="file.read", arguments={"path": "/etc/passwd"})
-    attr = _ATTR.attribute(intent, [doc], Context(session_id="s"))
+    attr = _attribute(intent, [doc], Context(session_id="s"))
     assert doc.source_id in attr.derived_from_sources
     assert attr.confidence >= 0.9
 
@@ -28,7 +35,7 @@ def test_links_intent_to_untrusted_document() -> None:
 def test_no_overlap_no_attribution() -> None:
     doc = _span("今天天气不错", source=SourceType.DOCUMENT, trust=TrustLevel.UNTRUSTED)
     intent = ToolIntent(session_id="s", tool_name="file.read", arguments={"path": "report.txt"})
-    attr = _ATTR.attribute(intent, [doc], Context(session_id="s"))
+    attr = _attribute(intent, [doc], Context(session_id="s"))
     assert attr.derived_from_sources == []
     assert attr.confidence == 0.0
 
@@ -38,10 +45,10 @@ def test_trusted_source_lower_confidence_than_untrusted() -> None:
     intent = ToolIntent(session_id="s", tool_name="file.read", arguments=args)
     text = "打开 /srv/secret.key"
     ctx = Context(session_id="s")
-    untrusted = _ATTR.attribute(
+    untrusted = _attribute(
         intent, [_span(text, source=SourceType.WEBPAGE, trust=TrustLevel.UNTRUSTED)], ctx
     )
-    trusted = _ATTR.attribute(
+    trusted = _attribute(
         intent, [_span(text, source=SourceType.USER, trust=TrustLevel.TRUSTED)], ctx
     )
     assert untrusted.confidence > trusted.confidence

@@ -8,5 +8,5 @@ from ...core.registry import capability
 
 @capability("chain_analyzer", "noop")
 class NoopChainAnalyzer:
-    def analyze(self, session_trace: list[ToolIntent], ctx: Context) -> list[Finding]:
+    async def analyze(self, trace: list[ToolIntent], ctx: Context) -> list[Finding]:
         return []

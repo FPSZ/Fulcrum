@@ -35,9 +35,9 @@ def create_demo_app() -> FastAPI:
         return await rt.run_turn(str(body.get("session_id", "s")), str(body.get("message", "")))
 
     @app.post("/api/tool")
-    def tool(body: dict) -> dict[str, Any]:
+    async def tool(body: dict) -> dict[str, Any]:
         """红队直连:不经模型,直接把一个高危工具调用送进枢衡闸门。"""
-        return rt.gate_direct(
+        return await rt.gate_direct(
             str(body.get("session_id", "s")),
             str(body.get("tool", "")),
             dict(body.get("args") or {}),

@@ -16,5 +16,6 @@ if TYPE_CHECKING:
 
 @capability("executor", "echo")
 class EchoExecutor:
-    def execute(self, tool: Tool, intent: ToolIntent, ctx: Context) -> ExecResult:
+    async def execute(self, tool: Tool, intent: ToolIntent, ctx: Context) -> ExecResult:
+        # Tool 端口仍同步(file IO 用 sqlite3 同等同步即可);真沙箱落地后这里 await 子进程。
         return tool.call(intent.arguments, ctx)

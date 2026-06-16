@@ -13,6 +13,7 @@ import {
 import { Badge, Button, Input, Select, SettingRow, SettingSection, Switch } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { BackupSettings } from '../backup/backup-settings'
+import { GatewayUpstreamPanel } from './gateway-upstream'
 
 interface Cat {
   id: string
@@ -145,32 +146,34 @@ function GeneralPanel() {
 
 function GatewayPanel() {
   return (
-    <SettingSection title="安全网关" desc="透明安全网关的边界与默认处置策略。">
-      <SettingRow
-        label="失败模式 fail-closed"
-        hint="安全关键路径出错即拦截(架构红线,强制开启)"
-      >
-        <Switch defaultChecked disabled />
-      </SettingRow>
-      <SettingRow label="默认处置" hint="未命中放行策略时的兜底动作">
-        <Select
-          defaultValue="block"
-          options={[
-            { value: 'block', label: '阻断' },
-            { value: 'approve', label: '转人工审批' },
-          ]}
-        />
-      </SettingRow>
-      <SettingRow label="OpenAI 兼容入口" hint="经管线的模型请求入口">
-        <Input defaultValue="/v1/chat/completions" readOnly className="w-[240px]" />
-      </SettingRow>
-      <SettingRow label="MCP 工具边界" hint="拦截并归因 MCP 工具调用">
-        <Switch defaultChecked />
-      </SettingRow>
-      <SettingRow label="非 MCP 适配器" hint="为非 MCP 工具接入适配层">
-        <Switch />
-      </SettingRow>
-    </SettingSection>
+    <>
+      {/* 真实可配:上游接入(对接后端 /admin/gateway-config) */}
+      <GatewayUpstreamPanel />
+      {/* 网关边界与默认处置(规划项) */}
+      <SettingSection title="网关边界" desc="透明安全网关的边界与默认处置策略。">
+        <SettingRow
+          label="失败模式 fail-closed"
+          hint="安全关键路径出错即拦截(架构红线,强制开启)"
+        >
+          <Switch defaultChecked disabled />
+        </SettingRow>
+        <SettingRow label="默认处置" hint="未命中放行策略时的兜底动作">
+          <Select
+            defaultValue="block"
+            options={[
+              { value: 'block', label: '阻断' },
+              { value: 'approve', label: '转人工审批' },
+            ]}
+          />
+        </SettingRow>
+        <SettingRow label="MCP 工具边界" hint="拦截并归因 MCP 工具调用">
+          <Switch defaultChecked />
+        </SettingRow>
+        <SettingRow label="非 MCP 适配器" hint="为非 MCP 工具接入适配层">
+          <Switch />
+        </SettingRow>
+      </SettingSection>
+    </>
   )
 }
 

@@ -38,6 +38,19 @@ def _resolve(raw: str) -> Path | None:
 @capability("tool", "file.read")
 class FileReadTool:
     name = "file.read"
+    base_risk = 0.25  # 读取本身风险中低,真正的危险度由路径敏感/越界参数抬升
+    model_schema = {
+        "type": "function",
+        "function": {
+            "name": "file_read",
+            "description": "读取受控工作区内的文本文件并返回内容",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "文件路径"}},
+                "required": ["path"],
+            },
+        },
+    }
 
     def call(self, arguments: dict, ctx: Context) -> ExecResult:
         raw = str(arguments.get("path", ""))
@@ -60,6 +73,22 @@ class FileReadTool:
 @capability("tool", "file.write")
 class FileWriteTool:
     name = "file.write"
+    base_risk = 0.45  # 写入有副作用,基础风险高于读取
+    model_schema = {
+        "type": "function",
+        "function": {
+            "name": "file_write",
+            "description": "向受控工作区写入文本文件",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    }
 
     def call(self, arguments: dict, ctx: Context) -> ExecResult:
         raw = str(arguments.get("path", ""))

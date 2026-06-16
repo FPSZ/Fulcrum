@@ -15,3 +15,10 @@ tools:
 scanner: noop
 model: fake
 audit: memory
+
+# ── 每能力可选参数(统一注入通道)──────────────────────────────
+# 约定:options.<注册名>.<k> → registry.create(kind, name, k=v)。
+# 队友给实现加配置走这里,别各自发明 env/硬编码侧门。无条目=无参构造。
+options:
+  yaml:
+    path: data/policies/default.yml   # 策略文件路径(原为实现内硬编码,现经此通道注入)

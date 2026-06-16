@@ -40,12 +40,16 @@ src/
       feedback/            Skeleton · EmptyState · Toaster(+toast)
       layout/              Card · Separator · SettingSection/Row
       index.ts             统一出口
-    app/                   AppShell · Sidebar · Placeholder
+    app/                   AppShell · Sidebar · Topbar · MobileDrawer · Placeholder
+                           AppFooter · FooterReveal(统一页脚 + 下滑揭示交互)
+    auth/                  LoginPage(门禁过场 + 下滑揭示页脚)
   features/
     register.ts            ★ 唯一装配清单:加页面在此加一行
     placeholders.tsx       未实现页面的占位模块
-    events/                实时事件页(master-detail)
+    overview/              实时总览(KPI/图表 + 实时事件流 + 查看更多跳转)
+    events/                实时事件页(master-detail + 证据归因链)
       module.tsx · backup.ts · evidence-chain.tsx · events-page.tsx …
+    admin/                 用户管理(部门树 · 成员 · 自定义角色 · 申请审批,RBAC)
     settings/              系统设置(8 类二级导航)+ module.tsx
     backup/                备份导入 UI(导入按钮 / 数据与备份面板)
 ```
@@ -84,8 +88,10 @@ src/
 - ✅ 倒 L 外壳 + 可收缩侧栏
 - ✅ 功能模块插件系统(`lib/module` + `features/register.ts`)
 - ✅ 备份导入系统(`lib/backup`,版本化容器 + 资源注册表)
-- ✅ 实时事件页(master-detail + 证据归因链)、系统设置页(8 类)
-- 🚧 总览 / 策略中心 / 工具网关 / 供应链 / 审计溯源 / 评测验证(占位)
+- ✅ 登录鉴权页(门禁过场)+ 统一页脚(下滑揭示 · rAF 丝滑惯性 · 生产力页免揭示)
+- ✅ 实时总览页(KPI/图表 + 实时事件流)、实时事件页(master-detail + 证据归因链)
+- ✅ 用户管理页(部门树 · 成员 · 自定义角色 · 申请审批,RBAC)、系统设置页(8 类)
+- 🚧 策略中心 / 工具网关 / 供应链 / 审计溯源 / 评测验证(占位)
 - ⏳ 接后端 OpenAPI(当前为备份导入的 mock 数据)
 
 > 跨前后端的完整进度以 [docs/plan/03-进度看板.md](../docs/plan/03-进度看板.md) 为准。

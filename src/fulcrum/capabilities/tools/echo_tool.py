@@ -12,6 +12,8 @@ from ...core.registry import capability
 @capability("tool", "echo")
 class EchoTool:
     name = "echo"
+    base_risk = 0.0  # 纯回显,无副作用
+    model_schema = None
 
     def call(self, arguments: dict, ctx: Context) -> ExecResult:
         return ExecResult(ok=True, output=str(arguments.get("text", "")))

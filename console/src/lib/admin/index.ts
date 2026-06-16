@@ -144,3 +144,55 @@ export const approveMember = (id: number, b: { role_id: number | null; departmen
   api<Member>(`/admin/users/${id}/approve`, j(b))
 export const rejectMember = (id: number) =>
   api<void>(`/admin/users/${id}/reject`, { method: 'POST' })
+
+// ── 网关上游接入(设置页:配置企业智能体 + 测试连接)──────────────
+export type GatewayProtocol = 'openai' | 'rest' | 'native'
+export type GatewayAuthType = 'none' | 'bearer' | 'header'
+
+/** GET 返回:密钥已脱敏,只暴露掩码与"是否已设置"。 */
+export interface GatewayConfig {
+  enabled: boolean
+  name: string
+  protocol: GatewayProtocol
+  endpoint: string
+  path: string
+  model: string
+  auth_type: GatewayAuthType
+  auth_header: string
+  auth_value_masked: string
+  auth_value_set: boolean
+  timeout_seconds: number
+  verify_tls: boolean
+  rest_message_field: string
+  rest_response_path: string
+}
+
+/** PUT / 测试连接 提交体:auth_value=null 表示不改密钥,""=清空,其它=替换。 */
+export interface GatewayConfigWrite {
+  enabled: boolean
+  name: string
+  protocol: GatewayProtocol
+  endpoint: string
+  path: string
+  model: string
+  auth_type: GatewayAuthType
+  auth_header: string
+  auth_value: string | null
+  timeout_seconds: number
+  verify_tls: boolean
+  rest_message_field: string
+  rest_response_path: string
+}
+
+export interface GatewayProbeResult {
+  ok: boolean
+  latency_ms: number
+  detail: string
+  status_code: number | null
+}
+
+export const getGatewayConfig = () => api<GatewayConfig>('/admin/gateway-config')
+export const saveGatewayConfig = (b: GatewayConfigWrite) =>
+  api<GatewayConfig>('/admin/gateway-config', { method: 'PUT', body: JSON.stringify(b) })
+export const testGatewayConfig = (b: GatewayConfigWrite) =>
+  api<GatewayProbeResult>('/admin/gateway-config/test', j(b))

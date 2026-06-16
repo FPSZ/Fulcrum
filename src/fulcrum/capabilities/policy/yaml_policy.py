@@ -73,7 +73,7 @@ class YamlPolicyEngine:
                 raise ConfigError(f"策略规则 {rule.get('id')!r} 含未知条件:{sorted(unknown)}")
         return data
 
-    def decide(self, intent: ToolIntent, ctx: Context) -> PolicyDecision:
+    async def decide(self, intent: ToolIntent, ctx: Context) -> PolicyDecision:
         facts = self._facts(intent, ctx)
         for rule in self._policy.get("rules", []):
             if self._matches(rule.get("when", {}), facts):

@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     model_api_key: str = ""
     model_name: str = "mimo-v2.5-pro"
 
+    # 被保护的企业智能体:网关放行后把请求转发到此。首启用作上游配置的默认地址。
+    # 运行期真正生效的接入配置存于 gateway_config_path(设置页可改、热加载),不再依赖本项。
+    upstream_agent_endpoint: str = "http://127.0.0.1:8800"
+    # 网关上游接入配置落盘路径(JSON);Docker 部署挂卷于 data/runtime 即持久化。
+    gateway_config_path: str = "data/runtime/gateway.json"
+
     # 装配清单路径(None 用包内默认 fulcrum.yml)
     capability_config: str | None = None
 

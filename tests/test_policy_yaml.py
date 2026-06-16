@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fulcrum.capabilities.policy.yaml_policy import YamlPolicyEngine
@@ -19,7 +20,8 @@ _POLICY = YamlPolicyEngine(_POLICY_PATH)
 
 
 def _decide(intent: ToolIntent, ctx: Context | None = None) -> Disposition:
-    return _POLICY.decide(intent, ctx or Context(session_id="s")).decision
+    # 同步包装 async 策略端口(无需 pytest-asyncio)。
+    return asyncio.run(_POLICY.decide(intent, ctx or Context(session_id="s"))).decision
 
 
 def test_sensitive_path_blocked_regardless_of_source() -> None:

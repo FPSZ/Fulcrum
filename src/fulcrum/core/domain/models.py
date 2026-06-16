@@ -73,6 +73,9 @@ class ToolIntent(BaseModel):
     arguments: dict = Field(default_factory=dict)
     derived_from_sources: list[str] = Field(default_factory=list)
     attribution_confidence: float = 0.0
+    attribution_rationale: str = ""  # 归因依据(可解释),由管线从 Attribution 盖戳供溯源/展示
+    # 工具固有基础风险(0~1):评分前由管线从 Tool.base_risk 盖戳;None=工具未知/未声明,评分器用兜底。
+    base_risk: float | None = None
     risk_score: float = 0.0
 
 
@@ -105,8 +108,15 @@ class ScanReport(BaseModel):
 
 
 class AuditEvent(BaseModel):
-    """审计事件;hash-chain 字段由 AuditSink 落库时填充。"""
+    """审计事件;hash-chain 字段由 AuditSink 落库时填充。
 
+    `schema_version` 标记"受哈希保护的字段集"的版本:AuditSink 的 canonical 表示
+    只覆盖一份**白名单字段**(见 adapters/audit),与本模型的后续演进解耦——日后给
+    AuditEvent 加字段不会改变历史事件的哈希,因而不破坏既有链的可验证性。要把新字段
+    纳入哈希保护,必须 bump 此版本号并在 sink 端分支新的字段集 + 迁移既有链。
+    """
+
+    schema_version: int = 1
     event_id: str = Field(default_factory=_uuid)
     session_id: str
     event_type: AuditEventType

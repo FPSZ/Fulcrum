@@ -48,9 +48,13 @@ class Detector(Protocol):
 
 @runtime_checkable
 class Attributor(Protocol):
-    """证据化来源归因(枢衡脊柱)。"""
+    """证据化来源归因(枢衡脊柱)。
 
-    def attribute(
+    async:既定路线里要接 LLM-judge 后置增强(arch §5),归因是 IO-bound。
+    现在统一 async,免得 P3 接模型时回头改整条管线 + 所有实现 + 所有测试。
+    """
+
+    async def attribute(
         self, intent: ToolIntent, spans: list[SourceSpan], ctx: Context
     ) -> Attribution: ...
 
@@ -64,32 +68,51 @@ class RiskScorer(Protocol):
 
 @runtime_checkable
 class ChainAnalyzer(Protocol):
-    """任务链 / 轨迹分析(异常链)。对应赛题目标 2。"""
+    """任务链 / 轨迹分析(异常链)。对应赛题目标 2。
 
-    def analyze(self, session_trace: list[ToolIntent], ctx: Context) -> list[Finding]: ...
+    async:终局可能查向量库 / 调模型识别异常序列,IO-bound,统一 async。
+    入参 `trace` 是**请求级**动作序列(见 Context 生命周期说明);真正的跨请求
+    会话状态待 ChainAnalyzer 真实化时引入 SessionStore port 承载,现在不预建。
+    """
+
+    async def analyze(self, trace: list[ToolIntent], ctx: Context) -> list[Finding]: ...
 
 
 @runtime_checkable
 class PolicyEngine(Protocol):
-    """策略判定 -> 分级处置。对应赛题目标 1/2。"""
+    """策略判定 -> 分级处置。对应赛题目标 1/2。
 
-    def decide(self, intent: ToolIntent, ctx: Context) -> PolicyDecision: ...
+    async:终局可能远程策略服务 / 查向量库,统一 async 留出空间。
+    """
+
+    async def decide(self, intent: ToolIntent, ctx: Context) -> PolicyDecision: ...
 
 
 @runtime_checkable
 class Tool(Protocol):
-    """受控工具。"""
+    """受控工具。
+
+    base_risk:工具的**固有基础风险**(0~1)。管线在评分前把它盖戳到 ToolIntent,评分器据此
+    叠加参数风险即可,**不再枚举工具名**——加工具零改评分器(加工具 = 写一个 Tool 实现并注册)。
+    model_schema:可选的 OpenAI function 声明。有则作为"喂给模型的工具规格"的唯一真源,
+    与执行入口共用同一处定义,避免 schema 与实现两处漂移。无需暴露给模型的工具置 None。
+    """
 
     name: str
+    base_risk: float
+    model_schema: dict | None
 
     def call(self, arguments: dict, ctx: Context) -> ExecResult: ...
 
 
 @runtime_checkable
 class Executor(Protocol):
-    """沙箱执行器:在受控边界内执行高危工具。对应赛题目标 2。"""
+    """沙箱执行器:在受控边界内执行高危工具。对应赛题目标 2。
 
-    def execute(self, tool: Tool, intent: ToolIntent, ctx: Context) -> ExecResult: ...
+    async:P3 真沙箱(容器 / 受限子进程 + 超时)必然 IO-bound,统一 async。
+    """
+
+    async def execute(self, tool: Tool, intent: ToolIntent, ctx: Context) -> ExecResult: ...
 
 
 @runtime_checkable

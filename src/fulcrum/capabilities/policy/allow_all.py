@@ -12,7 +12,7 @@ from ...core.registry import capability
 
 @capability("policy", "allow_all")
 class AllowAllPolicy:
-    def decide(self, intent: ToolIntent, ctx: Context) -> PolicyDecision:
+    async def decide(self, intent: ToolIntent, ctx: Context) -> PolicyDecision:
         return PolicyDecision(
             decision=Disposition.ALLOW,
             reason="M0 stub: allow-all",

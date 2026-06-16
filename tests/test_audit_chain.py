@@ -1,8 +1,10 @@
-"""审计 hash-chain:正常校验通过,篡改后校验失败。"""
+"""审计 hash-chain:正常校验通过,篡改后校验失败,canonical 与模型演进解耦。"""
 
 from __future__ import annotations
 
-from fulcrum.adapters.audit.memory_sink import InMemoryAuditSink
+import json
+
+from fulcrum.adapters.audit.memory_sink import _HASHED_FIELDS, InMemoryAuditSink, _canonical
 from fulcrum.core.domain import AuditEvent, AuditEventType
 
 
@@ -24,4 +26,25 @@ def test_chain_verifies() -> None:
 def test_tamper_detected() -> None:
     sink = _sink_with_events(3)
     sink.events("s")[1].evidence = {"tampered": True}
+    assert sink.verify_chain("s") is False
+
+
+def test_events_carry_schema_version() -> None:
+    sink = _sink_with_events(1)
+    assert sink.events("s")[0].schema_version == 1
+
+
+def test_canonical_only_covers_whitelisted_fields() -> None:
+    """冻结契约:canonical 只含白名单字段。日后给 AuditEvent 加字段不得改变哈希口径——
+    若有人误把新字段纳入(或改用全量 model_dump),此断言立即失败。"""
+    ev = AuditEvent(session_id="s", event_type=AuditEventType.REQUEST_RECEIVED)
+    keys = set(json.loads(_canonical(ev)).keys())
+    assert keys == set(_HASHED_FIELDS[ev.schema_version])
+    assert "event_hash" not in keys  # event_hash 永不参与自身哈希
+
+
+def test_unknown_schema_version_fails_verification() -> None:
+    """未知 schema_version(格式损坏/越级写入)→ 视为不可验证,fail-closed 返回 False。"""
+    sink = _sink_with_events(2)
+    sink.events("s")[1].schema_version = 99
     assert sink.verify_chain("s") is False

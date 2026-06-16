@@ -120,16 +120,18 @@ class GovRuntime:
             data = resp.json()
         return (data.get("choices") or [{}])[0].get("message") or {}
 
-    def _gate(self, session_id: str, ctx: Context, fn_name: str, args: dict) -> dict[str, Any]:
+    async def _gate(
+        self, session_id: str, ctx: Context, fn_name: str, args: dict
+    ) -> dict[str, Any]:
         """对单个工具调用执行枢衡判定 + 放行后执行;返回 step + 给模型的结果文本。"""
         tool = gov.FN_TO_TOOL.get(fn_name, fn_name)
         intent = ToolIntent(session_id=session_id, tool_name=tool, arguments=args)
-        attr = self.attributor.attribute(intent, ctx.spans, ctx)
+        attr = await self.attributor.attribute(intent, ctx.spans, ctx)
         intent.derived_from_sources = attr.derived_from_sources
         intent.attribution_confidence = attr.confidence
         intent.risk_score = self.scorer.score(intent, ctx)
         self._emit(session_id, AuditEventType.TOOL_INTENT_DETECTED, subject=intent.intent_id)
-        decision = self.policy.decide(intent, ctx)
+        decision = await self.policy.decide(intent, ctx)
         self._emit(
             session_id,
             AuditEventType.POLICY_DECIDED,
@@ -192,7 +194,7 @@ class GovRuntime:
         }
         return {"step": step, "result_text": result_text}
 
-    def gate_direct(self, session_id: str, fn_name: str, args: dict) -> dict[str, Any]:
+    async def gate_direct(self, session_id: str, fn_name: str, args: dict) -> dict[str, Any]:
         """红队直连:模拟被诱导/越权的智能体**直接发起**某高危工具调用,只过枢衡闸门。
 
         不经模型,确定性地展示枢衡对高危动作的处置——证明安全不依赖模型自觉。
@@ -200,7 +202,7 @@ class GovRuntime:
         sess = self._session(session_id)
         ctx = Context(session_id=session_id, spans=sess["spans"])
         self._emit(session_id, AuditEventType.REQUEST_RECEIVED)
-        gated = self._gate(session_id, ctx, fn_name, args)
+        gated = await self._gate(session_id, ctx, fn_name, args)
         return {
             "steps": [{"type": "redteam", "label": fn_name}, gated["step"]],
             "final": gated["result_text"],
@@ -261,7 +263,7 @@ class GovRuntime:
                         args = json.loads(fn.get("arguments") or "{}")
                     except json.JSONDecodeError:
                         args = {}
-                    gated = self._gate(session_id, ctx, str(fn.get("name", "")), args)
+                    gated = await self._gate(session_id, ctx, str(fn.get("name", "")), args)
                     steps.append(gated["step"])
                     sess["history"].append(
                         {

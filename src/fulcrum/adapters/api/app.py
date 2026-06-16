@@ -9,12 +9,15 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
 from ... import __version__
-from ...core.domain import ExecResult, Message, ModelRequest
+from ...core.domain import Disposition, ExecResult, Message, ModelRequest
 from ...core.errors import FulcrumError
 from .schemas import (
     AuditResponse,
     ChatRequest,
     ChatResponse,
+    GatewayChatRequest,
+    GatewayChatResponse,
+    GatewayFindingDTO,
     HealthResponse,
     OutcomeDTO,
     ToolCallRequest,
@@ -23,8 +26,10 @@ from .schemas import (
 
 if TYPE_CHECKING:
     from ...config import Settings
+    from ...core.gateway import GateVerdict
     from ...core.pipeline import SecurityPipeline, ToolOutcome
     from ..auth import AuthBundle
+    from ..gateway import GatewayConfigStore, UpstreamForwarder
 
 
 def _output_of(result: object | None) -> str | None:
@@ -46,10 +51,28 @@ def _to_outcome_dto(outcome: ToolOutcome) -> OutcomeDTO:
     )
 
 
+def _findings_dto(verdict: GateVerdict) -> list[GatewayFindingDTO]:
+    out: list[GatewayFindingDTO] = []
+    for f in verdict.findings:
+        ev = f.evidence
+        out.append(
+            GatewayFindingDTO(
+                kind=f.kind,
+                score=f.score,
+                severity=ev.get("severity"),
+                source_type=ev.get("source_type"),
+                matched=(ev.get("matched_rules") or [])[:3],
+            )
+        )
+    return out
+
+
 def build_api(
     pipeline: SecurityPipeline,
     auth: AuthBundle | None = None,
     settings: Settings | None = None,
+    upstream: UpstreamForwarder | None = None,
+    gateway_store: GatewayConfigStore | None = None,
 ) -> FastAPI:
     app = FastAPI(title="枢衡 Fulcrum API", version=__version__)
 
@@ -68,6 +91,10 @@ def build_api(
         deps = AuthDeps(auth.auth, settings.session_cookie_name)
         register_auth_routes(app, auth.auth, settings, deps)
         register_admin_routes(app, auth.directory, deps)
+        if upstream is not None and gateway_store is not None:
+            from .gateway_routes import register_gateway_routes
+
+            register_gateway_routes(app, gateway_store, upstream, deps)
 
     @app.get("/healthz", response_model=HealthResponse)
     async def healthz() -> HealthResponse:
@@ -90,7 +117,7 @@ def build_api(
 
     @app.post("/tools/call", response_model=ToolCallResponse)
     async def tools_call(body: ToolCallRequest) -> ToolCallResponse:
-        outcome = pipeline.handle_tool_call(
+        outcome = await pipeline.handle_tool_call(
             session_id=body.session_id,
             tool_name=body.tool_name,
             arguments=body.arguments,
@@ -103,6 +130,31 @@ def build_api(
             output=_output_of(outcome.result),
             error=_error_of(outcome.result),
         )
+
+    @app.post("/gateway/chat", response_model=GatewayChatResponse)
+    async def gateway_chat(body: GatewayChatRequest) -> GatewayChatResponse:
+        """前置网关:判恶意 → 拦截/审核/放行;仅放行时转发企业智能体并回传其真实回复。"""
+        verdict = pipeline.screen_input(body.session_id, body.message)
+        resp = GatewayChatResponse(
+            session_id=body.session_id,
+            decision=verdict.decision,
+            risk_level=verdict.risk_level,
+            forwarded=False,
+            reason=verdict.reason,
+            max_score=verdict.max_score,
+            findings=_findings_dto(verdict),
+        )
+        if verdict.decision != Disposition.ALLOW or upstream is None:
+            if upstream is None and verdict.decision == Disposition.ALLOW:
+                resp.upstream_error = "未配置企业智能体端点(upstream_agent_endpoint)"
+            return resp
+
+        reply = await upstream.chat(body.session_id, body.message)
+        resp.forwarded = reply.ok
+        resp.reply = reply.reply
+        resp.tools = reply.tools
+        resp.upstream_error = reply.error
+        return resp
 
     @app.get("/audit/{session_id}", response_model=AuditResponse)
     async def audit(session_id: str) -> AuditResponse:
