@@ -174,10 +174,18 @@ def build_api(
 
 def _mount_frontend(app: FastAPI, frontend_dir: str) -> None:
     """把 console/dist 挂到根:/assets 等静态资源直出,其余路径回退 index.html(SPA)。"""
+    import mimetypes
     from pathlib import Path
 
     from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
+
+    # 修正 .js/.mjs 的 MIME:Windows 注册表常把 .js 映射成 text/plain,导致浏览器按
+    # 严格 MIME 规则拒绝执行 ES module(前端白屏)。显式登记,跨平台一致(StaticFiles /
+    # FileResponse 都走全局 mimetypes)。
+    mimetypes.add_type("application/javascript", ".js")
+    mimetypes.add_type("application/javascript", ".mjs")
+    mimetypes.add_type("text/css", ".css")
 
     root = Path(frontend_dir).resolve()
     index = root / "index.html"
