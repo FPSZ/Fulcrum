@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { AppShell } from './components/app/app-shell'
+import { FooterReveal } from './components/app/footer-reveal'
 import { Placeholder } from './components/app/placeholder'
 import { LoginPage } from './components/auth/login-page'
 import { Toaster, TooltipProvider } from './components/ui'
@@ -9,6 +10,7 @@ import { BackupProvider } from './lib/backup'
 import { BackgroundLayer, BackgroundProvider } from './lib/background'
 import { ease } from './lib/motion'
 import { getDefaultFeatureIdFor, getFeature } from './lib/module'
+import { NavProvider } from './lib/nav'
 
 /** 按功能模块注册表渲染当前页面 */
 function View({ id }: { id: string }) {
@@ -50,11 +52,13 @@ function AppView() {
   return (
     <BackupProvider>
       <TooltipProvider delayDuration={250}>
-        <AppShell active={view} onNavigate={setView}>
-          <PageTransition id={view}>
-            <View id={view} />
-          </PageTransition>
-        </AppShell>
+        <NavProvider value={setView}>
+          <AppShell active={view} onNavigate={setView}>
+            <PageTransition id={view}>
+              <View id={view} />
+            </PageTransition>
+          </AppShell>
+        </NavProvider>
         <Toaster />
       </TooltipProvider>
     </BackupProvider>
@@ -90,12 +94,15 @@ function Shell() {
           ) : (
             <motion.div
               key="login"
-              className="fixed inset-0 z-10"
+              className="fixed inset-0 z-10 flex"
               initial={{ y: '-100%' }}
               animate={{ y: 0, transition: { duration: 0.55, ease: ease.out } }}
               exit={{ y: '-100%', transition: { duration: 0.62, ease: ease.out } }}
             >
-              <LoginPage />
+              {/* 登录页同样支持下滑揭示统一页脚(无内部导航) */}
+              <FooterReveal navKey="login">
+                <LoginPage />
+              </FooterReveal>
             </motion.div>
           )}
         </AnimatePresence>

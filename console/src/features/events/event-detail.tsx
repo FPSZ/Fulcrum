@@ -38,18 +38,13 @@ export function EventDetail({
           : 'w-[640px] border-l max-[1440px]:w-[560px] max-[1200px]:w-[480px]',
       )}
     >
-      {/* 头:会话/事件 + 上下条(高度与左侧工具条 h-12 对齐) */}
+      {/* 头:页码 + 上下条(高度与左侧工具条 h-12 对齐) */}
       <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
         {onBack && (
           <IconButton label="返回列表" variant="ghost" className="-ml-1.5 h-9 w-9 shrink-0" onClick={onBack}>
             <ArrowLeft className="h-[18px] w-[18px]" />
           </IconButton>
         )}
-        <span className="truncate text-[14px] text-ink-3">
-          会话 <span className="font-data text-ink-2">{e.sess}</span>
-          <span className="mx-1.5 text-ink-mute">·</span>
-          事件 <span className="font-data text-ink-2">{e.id}</span>
-        </span>
         <span className="font-data ml-auto mr-1 text-[14px] text-ink-mute">
           {index + 1}/{total}
         </span>
@@ -61,6 +56,27 @@ export function EventDetail({
         </IconButton>
       </div>
 
+      {/* 操作条:提到顶部(原在底部) */}
+      <div className="flex shrink-0 gap-2.5 border-b border-line px-3.5 py-3">
+        {e.disp === 'approve' ? (
+          <>
+            <Button variant="primary" className="flex-1">
+              <Check className="h-3.5 w-3.5" /> 批准放行
+            </Button>
+            <Button className="flex-1">维持阻断</Button>
+          </>
+        ) : (
+          <>
+            <Button className="flex-1">
+              <FileSearch className="h-3.5 w-3.5" /> 查看完整链路
+            </Button>
+            <Button className="flex-1" disabled>
+              批量处置
+            </Button>
+          </>
+        )}
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         <AnimatePresence mode="wait">
           <motion.div
@@ -70,17 +86,26 @@ export function EventDetail({
             animate="animate"
             exit="exit"
           >
-            {/* 标题 + 徽标 */}
+            {/* 标题 + 会话/事件(右) + 徽标 */}
             <div className="px-[18px] pb-2 pt-4">
-              <h1 className="mb-2.5 text-[20px] font-semibold leading-snug tracking-[-0.02em]">
-                {e.risk}
-              </h1>
-              <Badge tone={LEVEL_BADGE[e.level]} dot>
-                {LEVEL_LABEL[e.level]}风险
-              </Badge>
-              <Badge tone={DISPOSITION_TONE[e.disp]} className="ml-1.5">
-                {DISPOSITION_LABEL[e.disp]}
-              </Badge>
+              <div className="flex items-start justify-between gap-3">
+                <h1 className="min-w-0 text-[20px] font-semibold leading-snug tracking-[-0.02em]">
+                  {e.risk}
+                </h1>
+                <span className="mt-1 shrink-0 text-right text-[13px] leading-snug text-ink-3">
+                  会话 <span className="font-data text-ink-2">{e.sess}</span>
+                  <span className="mx-1.5 text-ink-mute">·</span>
+                  事件 <span className="font-data text-ink-2">{e.id}</span>
+                </span>
+              </div>
+              <div className="mt-2.5">
+                <Badge tone={LEVEL_BADGE[e.level]} dot>
+                  {LEVEL_LABEL[e.level]}风险
+                </Badge>
+                <Badge tone={DISPOSITION_TONE[e.disp]} className="ml-1.5">
+                  {DISPOSITION_LABEL[e.disp]}
+                </Badge>
+              </div>
             </div>
 
             {/* 属性区 */}
@@ -112,27 +137,6 @@ export function EventDetail({
             <EvidenceChain event={e} />
           </motion.div>
         </AnimatePresence>
-      </div>
-
-      {/* 操作 */}
-      <div className="flex shrink-0 gap-2.5 border-t border-line px-3.5 py-3">
-        {e.disp === 'approve' ? (
-          <>
-            <Button variant="primary" className="flex-1">
-              <Check className="h-3.5 w-3.5" /> 批准放行
-            </Button>
-            <Button className="flex-1">维持阻断</Button>
-          </>
-        ) : (
-          <>
-            <Button className="flex-1">
-              <FileSearch className="h-3.5 w-3.5" /> 查看完整链路
-            </Button>
-            <Button className="flex-1" disabled>
-              批量处置
-            </Button>
-          </>
-        )}
       </div>
     </aside>
   )

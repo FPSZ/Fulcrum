@@ -76,7 +76,8 @@ export function UsersPage() {
   }, [canApprove, stats.pending])
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4 md:p-5">
+    // 用户/权限管理是生产力工作面:内部表格与面板滚动不牵动底部页脚
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4 md:p-5" data-no-reveal>
       {/* 概览统计 */}
       <div className="grid shrink-0 grid-cols-3 gap-2.5 sm:grid-cols-6">
         {statItems.map((s) => (

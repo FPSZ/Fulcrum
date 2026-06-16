@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion, type Variants } from 'motion/react'
 import {
+  ArrowRight,
   ArrowUp,
   ChevronDown,
   Download,
@@ -14,6 +15,8 @@ import {
 import { Badge, Button } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { ease } from '@/lib/motion'
+import { useAuth } from '@/lib/auth'
+import { useNavigateFeature } from '@/lib/nav'
 import { useResource } from '@/lib/backup'
 import { ImportBackupButtons } from '../backup/import-controls'
 import type { SecurityEvent } from '../events/types'
@@ -167,6 +170,8 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
   const { now, feed, freshIds, perSecond, added, pending } = useLive(seed, true)
   const [chartMode, setChartMode] = useState<'live' | 'month' | 'year'>('live')
   const [sliderVal, setSliderVal] = useState(DEFAULT_SLIDER)
+  const navigate = useNavigateFeature()
+  const canSeeEvents = useAuth().has('events.view')
 
   // 实时窗口:滑条 → 秒数(对数)→ nice 桶大小 → 分桶聚合(随 now 每秒重算 → 滚动)
   const windowSec = Math.round(sliderToSec(sliderVal))
@@ -455,6 +460,19 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
                   </tr>
                 )
               })}
+              {canSeeEvents && (
+                <tr
+                  onClick={() => navigate('events')}
+                  className="cursor-pointer border-b border-line transition-colors last:border-0 hover:bg-white/55"
+                >
+                  <td colSpan={8} className="px-5 py-3">
+                    <span className="flex h-[42px] items-center justify-center gap-1.5 text-[14px] font-semibold text-accent-ink">
+                      查看更多
+                      <ArrowRight className="h-4 w-4" strokeWidth={2} />
+                    </span>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -493,6 +511,16 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
               </div>
             )
           })}
+          {canSeeEvents && (
+            <button
+              type="button"
+              onClick={() => navigate('events')}
+              className="flex w-full items-center justify-center gap-1.5 px-4 py-3 text-[14px] font-semibold text-accent-ink transition-colors hover:bg-white/55"
+            >
+              查看更多
+              <ArrowRight className="h-4 w-4" strokeWidth={2} />
+            </button>
+          )}
         </div>
       </div>
     </div>

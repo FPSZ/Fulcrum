@@ -100,7 +100,8 @@ export function EventsPage() {
     })
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // 事件页是实时处置工作面:其内部滚动(清单/详情各自独立)不牵动底部页脚
+    <div className="flex min-h-0 flex-1 flex-col" data-no-reveal>
       {events.length === 0 ? (
         /* 空态:引导导入备份 */
         <div className="flex flex-1 flex-col items-center justify-center gap-5 p-10 text-center">
