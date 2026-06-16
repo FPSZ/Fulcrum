@@ -35,8 +35,32 @@ export function SettingsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1">
-        {/* 设置二级导航 */}
+      <div className="flex min-h-0 flex-1 flex-col min-[821px]:flex-row">
+        {/* 移动端:横向滚动分类条(纵向二级导航在窄屏放不下) */}
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line px-3 py-2 min-[821px]:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {CATS.map((c) => {
+            const Icon = c.icon
+            const active = cat === c.id
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setCat(c.id)}
+                className={cn(
+                  'focus-ring flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[14px] font-medium transition-colors',
+                  active
+                    ? 'border-accent/30 bg-accent/10 text-accent-ink'
+                    : 'border-line-2 text-ink-2 hover:bg-surface-2',
+                )}
+              >
+                <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-accent' : 'text-ink-3')} strokeWidth={1.8} />
+                {c.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* 桌面:纵向二级导航 */}
         <nav className="w-56 shrink-0 overflow-y-auto border-r border-line p-2 max-[820px]:hidden">
           {CATS.map((c) => {
             const Icon = c.icon
@@ -62,7 +86,7 @@ export function SettingsPage() {
         </nav>
 
         {/* 内容 */}
-        <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
+        <div className="min-w-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6">
           <div className="mx-auto w-full max-w-[720px]">
             {cat === 'general' && <GeneralPanel />}
             {cat === 'gateway' && <GatewayPanel />}

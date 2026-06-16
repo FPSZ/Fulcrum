@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Activity, Clock, Download, Inbox, Plus, SlidersHorizontal } from 'lucide-react'
 import { Button, EmptyState, Segmented, toast } from '@/components/ui'
 import { useResource } from '@/lib/backup'
+import { useMediaQuery } from '@/lib/use-media-query'
+import { cn } from '@/lib/utils'
 import { ImportBackupButtons } from '../backup/import-controls'
 import { EventDetail } from './event-detail'
 import { EventGroup } from './event-group'
@@ -18,6 +20,8 @@ const FILTERS: { value: Filter; label: string }[] = [
 
 export function EventsPage() {
   const events = useResource<SecurityEvent>('events')
+  // 列表+详情并排放不下时(≤1080)切换为栈式:列表 ↔ 全屏详情
+  const compact = useMediaQuery('(max-width: 1080px)')
   const [filter, setFilter] = useState<Filter>('all')
   const [collapsed, setCollapsed] = useState<Set<Disposition>>(new Set())
   const [selectedId, setSelectedId] = useState('')
@@ -51,10 +55,11 @@ export function EventsPage() {
     [events],
   )
 
-  // 筛选后若选中项不可见,回退到第一条
+  // 筛选后若选中项不可见,宽屏回退到第一条;窄屏不自动选(先停在列表,点了才进详情)
   useEffect(() => {
+    if (compact) return
     if (!items.some((e) => e.id === selectedId)) setSelectedId(items[0]?.id ?? '')
-  }, [items, selectedId])
+  }, [items, selectedId, compact])
 
   // 选中被篡改事件 → 错误 toast
   useEffect(() => {
@@ -109,18 +114,11 @@ export function EventsPage() {
           <ImportBackupButtons />
         </div>
       ) : (
-      /* 下方:左清单 + 右详情 */
+      /* 下方:左清单 + 右详情(移动端:选中后详情全屏接管,列表隐藏) */
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className={cn('flex min-w-0 flex-1 flex-col', compact && selected && 'hidden')}>
           {/* 工具条 */}
           <div className="flex h-12 shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xs bg-ok/14 px-2 py-0.5 text-[13px] font-medium text-ok">
-              <span
-                className="h-1.5 w-1.5 rounded-full bg-ok"
-                style={{ animation: 'pulse-ring 2s infinite' }}
-              />
-              实时
-            </span>
             <button
               type="button"
               className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-dashed border-line-2 px-2.5 py-1 text-[14px] text-ink-3 transition-colors hover:border-line-3 hover:text-ink-2"
@@ -146,8 +144,8 @@ export function EventsPage() {
             </div>
           </div>
 
-          {/* 分组清单 */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* 分组清单:每组一张柔性卡片浮在磨砂桌面上(软扁平 = 卡片承托 + 内部密集行) */}
+          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
             {groups.map((g) => (
               <EventGroup
                 key={g.disp}
@@ -167,6 +165,7 @@ export function EventsPage() {
             event={selected}
             index={idx}
             total={ordered.length}
+            onBack={compact ? () => setSelectedId('') : undefined}
             onPrev={idx > 0 ? () => setSelectedId(ordered[idx - 1]) : undefined}
             onNext={
               idx >= 0 && idx < ordered.length - 1
@@ -175,7 +174,8 @@ export function EventsPage() {
             }
           />
         ) : (
-          <aside className="flex w-[484px] shrink-0 border-l border-white/50 bg-white/48 backdrop-blur-xl max-[1080px]:hidden">
+          /* 桌面空态侧栏;移动端无选中时不渲染(列表占满) */
+          <aside className="hidden w-[640px] shrink-0 border-l border-white/50 bg-white/48 backdrop-blur-xl min-[1081px]:flex max-[1440px]:w-[560px] max-[1200px]:w-[480px]">
             <EmptyState icon={Activity} title="未选中事件" hint="从左侧清单选择一条以查看证据归因链" />
           </aside>
         )}

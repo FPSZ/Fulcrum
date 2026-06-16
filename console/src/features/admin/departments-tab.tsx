@@ -105,7 +105,7 @@ export function DepartmentsTab({ departments, canManage, onChanged }: Props) {
                 </span>
                 <span className="font-data text-[13px] text-ink-mute">{d.member_count} 人</span>
                 {canManage && (
-                  <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="flex items-center gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                     <IconButton label="添加子部门" onClick={() => openCreate(d.id)}>
                       <Plus className="h-[15px] w-[15px]" />
                     </IconButton>

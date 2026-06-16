@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { ChevronDown, ChevronUp, Check, FileSearch } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, Check, FileSearch } from 'lucide-react'
 import { Badge, Button, IconButton, KeyValue, StatusDot } from '@/components/ui'
+import { cn } from '@/lib/utils'
 import { detailSwap } from '@/lib/motion'
 import { EvidenceChain } from './evidence-chain'
 import {
@@ -17,20 +18,34 @@ export function EventDetail({
   event: e,
   index,
   total,
+  onBack,
   onPrev,
   onNext,
 }: {
   event: SecurityEvent
   index: number
   total: number
+  onBack?: () => void
   onPrev?: () => void
   onNext?: () => void
 }) {
   return (
-    <aside className="flex w-[560px] shrink-0 flex-col border-l border-white/50 bg-white/48 backdrop-blur-xl max-[1320px]:w-[480px] max-[1080px]:hidden">
+    <aside
+      className={cn(
+        'flex shrink-0 flex-col border-white/50 bg-white/48 backdrop-blur-xl',
+        onBack
+          ? 'w-full' // 窄屏:全屏接管
+          : 'w-[640px] border-l max-[1440px]:w-[560px] max-[1200px]:w-[480px]',
+      )}
+    >
       {/* 头:会话/事件 + 上下条(高度与左侧工具条 h-12 对齐) */}
       <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
-        <span className="text-[14px] text-ink-3">
+        {onBack && (
+          <IconButton label="返回列表" variant="ghost" className="-ml-1.5 h-9 w-9 shrink-0" onClick={onBack}>
+            <ArrowLeft className="h-[18px] w-[18px]" />
+          </IconButton>
+        )}
+        <span className="truncate text-[14px] text-ink-3">
           会话 <span className="font-data text-ink-2">{e.sess}</span>
           <span className="mx-1.5 text-ink-mute">·</span>
           事件 <span className="font-data text-ink-2">{e.id}</span>

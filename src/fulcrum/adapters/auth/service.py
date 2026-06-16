@@ -21,7 +21,6 @@ from .models import (
 )
 from .passwords import hash_password, needs_rehash, verify_password
 from .permissions import (
-    ALL_PERMISSION_KEYS,
     BUILTIN_DEPARTMENTS,
     BUILTIN_ROLES,
     DEFAULT_BOOTSTRAP_ROLE,
@@ -112,10 +111,11 @@ class AuthService:
                     seed.key, seed.name, seed.description, True,
                     list(seed.permissions), now,
                 )
-            elif seed.key == DEFAULT_BOOTSTRAP_ROLE:
-                # 超级管理员恒等于"全部权限":新增权限点后随版本自动补齐。
+            else:
+                # 内置角色用户不可编辑 → 始终对齐代码种子:
+                # 随版本自动补齐新权限点、纠正历史种子的偏差。
                 self._store.update_role(
-                    existing.id, None, None, sorted(ALL_PERMISSION_KEYS)
+                    existing.id, seed.name, seed.description, sorted(seed.permissions)
                 )
 
     def _seed_departments(self) -> None:

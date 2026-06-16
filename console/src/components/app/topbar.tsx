@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bell, HelpCircle, Images, PanelLeft, Radio, Search, Shield } from 'lucide-react'
+import { Bell, HelpCircle, Images, Menu, PanelLeft, Radio, Search, Shield } from 'lucide-react'
 import { IconButton, Kbd } from '@/components/ui'
 import { BACKGROUNDS, useBackground } from '@/lib/background'
 
@@ -30,25 +30,37 @@ export function Topbar({
   title,
   collapsed,
   onToggle,
+  onMenu,
 }: {
   title: string
   collapsed: boolean
   onToggle: () => void
+  onMenu: () => void
 }) {
   const { current, cycle } = useBackground()
   return (
-    <header className="flex h-20 shrink-0 items-center gap-3 pl-3 pr-4">
+    <header className="flex h-14 shrink-0 items-center gap-2.5 pl-2.5 pr-3 md:h-20 md:gap-3 md:pl-3 md:pr-4">
+      {/* 移动端:汉堡打开抽屉 */}
+      <IconButton
+        label="打开菜单"
+        variant="ghost"
+        className="h-9 w-9 rounded-[10px] md:hidden"
+        onClick={onMenu}
+      >
+        <Menu className="h-[20px] w-[20px]" strokeWidth={1.9} />
+      </IconButton>
+      {/* 桌面:收起/展开侧栏 */}
       <IconButton
         label={collapsed ? '展开侧栏' : '收起侧栏'}
         variant="ghost"
-        className="h-9 w-9 rounded-[10px]"
+        className="hidden h-9 w-9 rounded-[10px] md:inline-flex"
         onClick={onToggle}
       >
         <PanelLeft className="h-[18px] w-[18px]" strokeWidth={1.9} />
       </IconButton>
 
-      {/* 品牌 */}
-      <div className="flex items-center gap-2.5">
+      {/* 品牌:移动端隐藏(抽屉里已有),桌面显示 */}
+      <div className="hidden items-center gap-2.5 md:flex">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-accent shadow-[0_6px_14px_-6px_rgba(59,110,246,0.6)]">
           <Shield className="h-[19px] w-[19px] text-white" strokeWidth={1.9} />
         </span>
@@ -57,30 +69,36 @@ export function Topbar({
         </span>
       </div>
 
-      <span className="mx-1 h-5 w-px shrink-0 bg-line" />
+      <span className="mx-1 hidden h-5 w-px shrink-0 bg-line md:block" />
       <h1 className="truncate text-[16px] font-semibold tracking-[-0.01em] text-ink">{title}</h1>
 
       <div className="ml-auto flex items-center gap-2">
-        <LiveClock />
+        <span className="hidden md:block">
+          <LiveClock />
+        </span>
         <button
           type="button"
-          className="focus-ring flex h-9 w-[260px] max-w-[34vw] items-center gap-2 rounded-[11px] border border-line bg-surface/70 px-3 text-[14.5px] text-ink-mute transition-colors hover:border-line-2"
+          className="focus-ring hidden h-9 w-[260px] max-w-[34vw] items-center gap-2 rounded-[11px] border border-line bg-surface/70 px-3 text-[14.5px] text-ink-mute transition-colors hover:border-line-2 lg:flex"
         >
           <Search className="h-[15px] w-[15px] shrink-0" strokeWidth={1.9} />
           <span className="truncate">检索事件 / 会话 / trace_id…</span>
           <Kbd className="ml-auto">⌘K</Kbd>
         </button>
+        {/* 移动端:检索收成图标 */}
+        <IconButton label="检索" variant="secondary" className="h-9 w-9 rounded-full lg:hidden">
+          <Search className="h-[17px] w-[17px]" strokeWidth={1.9} />
+        </IconButton>
         {BACKGROUNDS.length > 1 && (
           <IconButton
             label={`切换背景 · ${current.name}`}
             variant="secondary"
-            className="h-9 w-9 rounded-full"
+            className="hidden h-9 w-9 rounded-full md:inline-flex"
             onClick={cycle}
           >
             <Images className="h-[17px] w-[17px]" strokeWidth={1.9} />
           </IconButton>
         )}
-        <IconButton label="帮助" variant="secondary" className="h-9 w-9 rounded-full">
+        <IconButton label="帮助" variant="secondary" className="hidden h-9 w-9 rounded-full md:inline-flex">
           <HelpCircle className="h-[17px] w-[17px]" strokeWidth={1.9} />
         </IconButton>
         <span className="relative">

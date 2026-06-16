@@ -100,8 +100,8 @@ export function MembersTab({ departments, roles, canManage, onChanged }: Props) 
 
   return (
     <div className="flex min-h-0 flex-1 gap-4">
-      {/* 左:组织架构树(点击筛选) */}
-      <aside className="flex w-60 shrink-0 flex-col gap-1 overflow-y-auto rounded-[12px] border border-line bg-surface/60 p-2">
+      {/* 左:组织架构树(点击筛选);移动端隐藏,表格占满 */}
+      <aside className="hidden w-60 shrink-0 flex-col gap-1 overflow-y-auto rounded-[12px] border border-line bg-surface/60 p-2 md:flex">
         <TreeItem label="全部成员" active={deptFilter === null} depth={0}
           onClick={() => setDeptFilter(null)} />
         {tree.map((d) => (
@@ -363,7 +363,7 @@ function MemberDialog({
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FormField label="姓名" required>
           <Input value={form.display_name} onChange={(e) => set('display_name', e.target.value)} />
         </FormField>

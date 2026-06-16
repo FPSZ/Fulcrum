@@ -76,7 +76,7 @@ export function UsersPage() {
   }, [canApprove, stats.pending])
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-5">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-4 md:p-5">
       {/* 概览统计 */}
       <div className="grid shrink-0 grid-cols-3 gap-2.5 sm:grid-cols-6">
         {statItems.map((s) => (

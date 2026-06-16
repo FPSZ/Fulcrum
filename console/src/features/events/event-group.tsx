@@ -23,11 +23,11 @@ export function EventGroup({
   onSelect: (id: string) => void
 }) {
   return (
-    <section>
+    <section className="glass-card group/grp overflow-hidden rounded-[12px]">
       <button
         type="button"
         onClick={onToggle}
-        className="focus-ring sticky top-0 z-[2] flex w-full items-center gap-2.5 border-b border-line bg-white/55 px-4 py-2 text-left text-[14px] font-semibold backdrop-blur-md"
+        className="focus-ring flex w-full items-center gap-2.5 bg-surface-2/55 px-3.5 py-2 text-left text-[13.5px] font-semibold"
       >
         <ChevronDown
           className={cn(
@@ -37,8 +37,8 @@ export function EventGroup({
         />
         <DispositionIcon disp={disp} />
         {DISPOSITION_LABEL[disp]}
-        <span className="font-data text-[13px] font-medium text-ink-mute">{rows.length}</span>
-        <span className="ml-auto text-[13px] font-medium text-ink-mute opacity-0 transition-opacity hover:text-ink-3 group-hover:opacity-100">
+        <span className="font-data text-[12.5px] font-medium text-ink-mute">{rows.length}</span>
+        <span className="ml-auto text-[12.5px] font-medium text-ink-mute opacity-0 transition-opacity hover:text-ink-3 group-hover/grp:opacity-100">
           批量处置
         </span>
       </button>
@@ -51,13 +51,14 @@ export function EventGroup({
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.22, ease: ease.out }}
-            className="overflow-hidden"
+            className="overflow-hidden border-t border-line"
           >
-            {rows.map((e) => (
+            {rows.map((e, i) => (
               <EventRow
                 key={e.id}
                 event={e}
                 selected={e.id === selectedId}
+                last={i === rows.length - 1}
                 onSelect={() => onSelect(e.id)}
               />
             ))}

@@ -12,10 +12,12 @@ const TRUST_TEXT: Record<string, string> = {
 export function EventRow({
   event: e,
   selected,
+  last,
   onSelect,
 }: {
   event: SecurityEvent
   selected: boolean
+  last?: boolean
   onSelect: () => void
 }) {
   const SrcIcon = SOURCE_ICON[e.srcType]
@@ -25,9 +27,10 @@ export function EventRow({
       onClick={onSelect}
       data-selected={selected || undefined}
       className={cn(
-        'focus-ring group relative flex h-[42px] w-full items-center gap-3.5 border-b border-line pl-[18px] pr-4 text-left',
-        'bg-white/48 transition-colors duration-100 hover:bg-white/70',
-        'data-[selected]:bg-accent/12 data-[selected]:hover:bg-accent/12',
+        'focus-ring group relative flex h-[40px] w-full items-center gap-3.5 pl-[18px] pr-4 text-left',
+        'transition-colors duration-100 hover:bg-surface-2/70',
+        !last && 'border-b border-line/55',
+        'data-[selected]:bg-accent/10 data-[selected]:hover:bg-accent/10',
       )}
     >
       {/* 最左竖色条 = 严重等级(纯颜色,不写字) */}

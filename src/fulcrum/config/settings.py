@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # 装配清单路径(None 用包内默认 fulcrum.yml)
     capability_config: str | None = None
 
+    # 前端静态资源目录(生产:指向已构建的 console/dist);留空则只提供 API
+    frontend_dir: str = ""
+
     # 审计/运行目录
     audit_db_path: str = "data/runtime/fulcrum.sqlite"
 

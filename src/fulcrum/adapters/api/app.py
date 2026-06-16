@@ -113,4 +113,38 @@ def build_api(
             events=[e.model_dump(mode="json") for e in events],
         )
 
+    # 生产托管已构建的前端(同源 → 会话 Cookie 无需 CORS);最后挂载,API 路由优先。
+    if settings is not None and settings.frontend_dir:
+        _mount_frontend(app, settings.frontend_dir)
+
     return app
+
+
+def _mount_frontend(app: FastAPI, frontend_dir: str) -> None:
+    """把 console/dist 挂到根:/assets 等静态资源直出,其余路径回退 index.html(SPA)。"""
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    root = Path(frontend_dir).resolve()
+    index = root / "index.html"
+    if not index.is_file():
+        return
+
+    assets = root / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    async def _index() -> FileResponse:
+        return FileResponse(str(index))
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def _spa(path: str) -> FileResponse:
+        # 已存在的根级静态文件(favicon、logo 等)直出,否则回退 index.html 交前端路由;
+        # resolve 后必须仍在 root 内,挡掉 ../ 穿越。
+        candidate = (root / path).resolve()
+        if candidate.is_file() and (candidate == root or root in candidate.parents):
+            return FileResponse(str(candidate))
+        return FileResponse(str(index))

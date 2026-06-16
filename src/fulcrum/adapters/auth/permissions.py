@@ -72,7 +72,14 @@ class RoleSeed:
     permissions: frozenset[str]
 
 
-_VIEW_ONLY = frozenset(p.key for p in PERMISSIONS if p.key.endswith(".view"))
+# 业务看板的只读视图(不含 settings.view / users.view 等"系统管理"面 ——
+# 低信任访客绝不该看到系统设置和成员目录)
+_BOARD_VIEW = frozenset(
+    {
+        "overview.view", "events.view", "policies.view",
+        "tools.view", "supply.view", "audit.view", "eval.view",
+    }
+)
 
 BUILTIN_ROLES: tuple[RoleSeed, ...] = (
     RoleSeed(
@@ -120,8 +127,8 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
     RoleSeed(
         "viewer",
         "只读访客",
-        "只读:仅查看各看板,不可操作",
-        _VIEW_ONLY,
+        "只读:仅查看各业务看板,不可操作、不可见系统管理",
+        _BOARD_VIEW,
     ),
 )
 

@@ -1,0 +1,59 @@
+name: deploy
+
+# 推送到 main 即自动部署到生产服务器(fulcrum.makerealm.top)。
+# 前端在 CI 里用 vite 构建(不走 tsc 闸门),再 rsync 源码+dist 到服务器并重启 systemd。
+# 需要仓库 Secrets:DEPLOY_HOST、DEPLOY_SSH_KEY(ed25519 私钥)。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - name: Build frontend (vite, 不经 tsc 闸门)
+        working-directory: console
+        run: |
+          npm ci
+          npx vite build
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync code to server
+        env:
+          H: root@${{ secrets.DEPLOY_HOST }}
+        run: |
+          # src 用 --delete(限定在 src 目录内,安全);单文件直传;dist 整目录替换。
+          rsync -az --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            --exclude='__pycache__' --exclude='*.pyc' \
+            src/ "$H:/opt/fulcrum/src/"
+          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
+            pyproject.toml uv.lock README.md "$H:/opt/fulcrum/"
+          rsync -az --delete -e "ssh -i ~/.ssh/id_ed25519" \
+            console/dist/ "$H:/opt/fulcrum/console/dist/"
+          rsync -az -e "ssh -i ~/.ssh/id_ed25519" \
+            data/policies/ "$H:/opt/fulcrum/data/policies/"
+
+      - name: Sync deps & restart service
+        run: |
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.DEPLOY_HOST }} \
+            'export PATH=$HOME/.local/bin:$PATH; cd /opt/fulcrum && uv sync --python 3.11 && systemctl restart fulcrum && sleep 3 && systemctl is-active fulcrum && curl -sf -o /dev/null -w "healthz:%{http_code}\n" http://127.0.0.1:8001/healthz'

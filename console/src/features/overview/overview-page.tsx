@@ -204,14 +204,14 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
   ]
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-5">
+    <div className="h-full overflow-y-auto px-4 py-4 md:px-6 md:py-5">
       {/* 欢迎 + 实时时钟 */}
-      <div className="mb-5 flex items-start justify-between gap-4">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <h2 className="text-[22px] font-bold tracking-[-0.02em] text-ink">欢迎回来,安全运营 👋</h2>
-          <p className="mt-1 flex items-center gap-1.5 text-[14.5px] text-ink-3">
-            <span className="h-1.5 w-1.5 rounded-full bg-ok" style={{ animation: 'pulse-ring 2s infinite' }} />
-            实时监测中 · 2026年6月15日 星期一 · 政务办公助手 英雄场景全程护航中
+          <h2 className="text-[20px] font-bold tracking-[-0.02em] text-ink md:text-[22px]">欢迎回来,安全运营 👋</h2>
+          <p className="mt-1 flex items-center gap-1.5 text-[13.5px] text-ink-3 md:text-[14.5px]">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" style={{ animation: 'pulse-ring 2s infinite' }} />
+            实时监测中 · 政务办公助手 英雄场景全程护航中
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
@@ -377,10 +377,10 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
             )}
           </div>
           <div className="flex items-center gap-2.5">
-            <span className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-surface/70 px-3 text-[14px] text-ink-mute">
+            <span className="hidden h-8 items-center gap-2 rounded-[10px] border border-line bg-surface/70 px-3 text-[14px] text-ink-mute sm:flex">
               <Search className="h-3.5 w-3.5" /> 检索
             </span>
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" className="hidden sm:inline-flex">
               全部类型 <ChevronDown className="h-3.5 w-3.5 opacity-60" />
             </Button>
             <Button variant="secondary" size="sm">
