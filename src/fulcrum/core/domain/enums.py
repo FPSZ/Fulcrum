@@ -6,7 +6,9 @@ from enum import StrEnum
 
 
 class SourceType(StrEnum):
+    SYSTEM = "system"
     USER = "user"
+    ASSISTANT = "assistant"
     DOCUMENT = "document"
     WEBPAGE = "webpage"
     RETRIEVAL = "retrieval"
