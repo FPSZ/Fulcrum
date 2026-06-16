@@ -122,8 +122,7 @@ class YamlPolicyEngine:
             (
                 f.score
                 for f in ctx.findings
-                if f.kind.startswith("chain.")
-                and f.evidence.get("intent_id") == intent.intent_id
+                if f.kind.startswith("chain.") and f.evidence.get("intent_id") == intent.intent_id
             ),
             default=0.0,
         )
