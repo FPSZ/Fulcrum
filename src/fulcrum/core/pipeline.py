@@ -249,7 +249,8 @@ class SecurityPipeline:
                 "risk_level": verdict.risk_level,
                 "max_score": verdict.max_score,
                 "top_kind": verdict.top_kind,
-                "excerpt": text[:200],
+                # 出口审计摘要脱敏:回复正是可能含泄露数据之处,绝不以明文落审计库。
+                "excerpt": redact(text[:200]),
                 "source_type": SourceType.ASSISTANT.value,
                 "trust_level": TrustLevel.UNTRUSTED.value,
                 "stage": "output_gateway",
@@ -322,7 +323,8 @@ class SecurityPipeline:
                 "reason": decision.reason,
                 "risk_level": decision.risk_level,
                 "tool": intent.tool_name,
-                "args": _short_args(intent.arguments),
+                # 工具参数摘要脱敏:参数里可能夹带身份证/密钥等敏感值,审计副本打码。
+                "args": redact(_short_args(intent.arguments)),
                 "risk_score": intent.risk_score,
                 "attribution_confidence": intent.attribution_confidence,
                 "source_trust": _intent_source_trust(intent, ctx),
