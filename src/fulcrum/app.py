@@ -64,4 +64,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     seed = GatewayConfig(endpoint=settings.upstream_agent_endpoint, protocol="native")
     store = GatewayConfigStore(settings.gateway_config_path, seed=seed)
     upstream = UpstreamForwarder(store)
-    return build_api(build_pipeline(cfg), build_auth_bundle(settings), settings, upstream, store)
+
+    pipeline = build_pipeline(cfg)  # 触发 _load_builtins,注册表此后含 scanner
+    # 供应链扫描器经组装根注入 API(不入管线装配 —— 离线关切;adapters 不依赖 capabilities)。
+    scanner = registry.create("scanner", "manifest")
+    return build_api(pipeline, build_auth_bundle(settings), settings, upstream, store, scanner)

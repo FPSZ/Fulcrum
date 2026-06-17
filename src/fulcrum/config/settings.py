@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # 装配清单路径(None 用包内默认 fulcrum.yml)
     capability_config: str | None = None
 
+    # 供应链:待扫描的组件 manifest 目录(供应链页只读展示其静态扫描评级)
+    supply_manifest_dir: str = "samples/supplychain"
+
     # 前端静态资源目录(生产:指向已构建的 console/dist);留空则只提供 API
     frontend_dir: str = ""
 

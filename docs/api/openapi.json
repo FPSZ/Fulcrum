@@ -1334,6 +1334,56 @@
         }
       }
     },
+    "/supply/scans": {
+      "get": {
+        "summary": "Supply Scans",
+        "operationId": "supply_scans_supply_scans_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SupplyScanReportDTO"
+                  },
+                  "title": "Response Supply Scans Supply Scans Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/gateway-config": {
       "get": {
         "summary": "Get Config",
@@ -2777,6 +2827,64 @@
           "status"
         ],
         "title": "StatusUpdate"
+      },
+      "SupplyScanReportDTO": {
+        "properties": {
+          "component_id": {
+            "type": "string",
+            "title": "Component Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "component"
+          },
+          "rating": {
+            "type": "string",
+            "title": "Rating"
+          },
+          "risks": {
+            "items": {
+              "$ref": "#/components/schemas/SupplyScanRiskDTO"
+            },
+            "type": "array",
+            "title": "Risks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "component_id",
+          "rating"
+        ],
+        "title": "SupplyScanReportDTO"
+      },
+      "SupplyScanRiskDTO": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "score",
+          "severity"
+        ],
+        "title": "SupplyScanRiskDTO"
       },
       "TempPasswordResponse": {
         "properties": {
