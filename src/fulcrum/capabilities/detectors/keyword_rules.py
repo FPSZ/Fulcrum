@@ -16,6 +16,9 @@
 名册级外泄,故按命中条数升级严重度。出口闸门借此拦住"把市民名册原样吐出来"这类泄露——
 仅凭关键词规则(sensitive_file 只识"提到了凭据")是抓不住的。
 
+外加一条**混淆复扫**:`obfuscated_injection`——把文本里的 Base64/Hex 编码块解码后,用上述
+危险规则复扫;命中即说明攻击者刻意把指令藏进编码绕过关键词匹配,按 critical 计分。
+
 确定性、可解释、低延迟,作为第一层防线;LLM-judge 在 P3 作为后置增强叠加(见路线图)。
 每个命中产出一条 Finding:`score`∈[0,1],`evidence.severity`∈{low,medium,high,critical},
 并附命中规则、来源信息,供归因与审计取证使用。
@@ -23,6 +26,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 
 from ...core.domain import Context, Finding, SourceSpan, SourceType, TrustLevel
@@ -171,6 +176,44 @@ def _severity(score: float) -> str:
     return "low"
 
 
+# ---- 混淆注入复扫:攻击者把「ignore previous instructions」之类塞进 Base64/Hex 绕过关键词 ----
+# 思路:先把文本里的编码块解出来,再用既有危险类别的规则复扫解码结果。解码后命中 = 刻意隐藏
+# 意图,比明文更可疑,故按 critical 基准计分。解码不出可读文本 / 解出来无危险词 → 不产 finding,
+# 故正常的 Base64(图片、令牌、随机串)不会误报。
+_B64_BLOB = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
+_HEX_BLOB = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
+# 解码后复扫的危险类别(隐藏意图最常见的就是这四类)。
+_DEOBF_CATEGORIES: tuple[str, ...] = ("injection", "jailbreak", "exfiltration", "command_exec")
+_DEOBF_BASE = 0.85  # 混淆即恶意意图,基准取 critical 档
+
+
+def _decode_blobs(text: str) -> list[str]:
+    """抽取文本里的 Base64 / Hex 编码块并尝试解码成可读文本(失败/不可读则跳过)。"""
+    decoded: list[str] = []
+    for m in _B64_BLOB.finditer(text):
+        blob = m.group(0)
+        try:
+            pad = "=" * (-len(blob) % 4)
+            text_out = base64.b64decode(blob + pad, validate=False).decode("utf-8", "ignore")
+        except (binascii.Error, ValueError):
+            continue
+        if text_out.strip():
+            decoded.append(text_out)
+    for m in _HEX_BLOB.finditer(text):
+        try:
+            text_out = bytes.fromhex(m.group(0)).decode("utf-8", "ignore")
+        except ValueError:
+            continue
+        if text_out.strip():
+            decoded.append(text_out)
+    return decoded
+
+
+def _scan_decoded(decoded: str) -> list[str]:
+    """对解码后的文本复扫危险类别,返回命中的类别名(去重、按固定顺序)。"""
+    return [cat for cat in _DEOBF_CATEGORIES if any(p.search(decoded) for p in _COMPILED[cat][1])]
+
+
 @capability("detector", "keyword_rules")
 class KeywordRuleDetector:
     """多源规则检测器。注册名沿用 `keyword_rules`,装配清单无需改动。"""
@@ -222,4 +265,27 @@ class KeywordRuleDetector:
                         },
                     )
                 )
+            # 混淆复扫:解码 Base64/Hex 后再扫;命中 = 刻意隐藏的注入/外发/命令,按 critical 计分。
+            for decoded in _decode_blobs(text):
+                hidden = _scan_decoded(decoded)
+                if not hidden:
+                    continue
+                raw = _DEOBF_BASE * trust_mul + (_INDIRECT_BOOST if indirect else 0.0)
+                score = round(min(raw, 1.0), 3)
+                findings.append(
+                    Finding(
+                        kind="obfuscated_injection",
+                        score=score,
+                        evidence={
+                            "source_id": span.source_id,
+                            "source_type": span.source_type,
+                            "trust_level": span.trust_level,
+                            "severity": _severity(score),
+                            "decoded_kinds": hidden,
+                            "decoded_excerpt": decoded[:80],
+                            "indirect_source": indirect,
+                        },
+                    )
+                )
+                break  # 一个 span 报一条混淆 finding 足矣,避免多块重复刷分
         return findings
