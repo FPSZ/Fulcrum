@@ -40,10 +40,12 @@ class RestrictedExecutor:
         workspace: str = "data/workspace",
         allow_domains: list[str] | None = None,
         timeout_seconds: float = 5.0,
+        max_output_chars: int = 16384,
     ) -> None:
         self._workspace = workspace
         self._allow_domains = list(allow_domains or [])  # 默认空 = 外联全关(默认关闭)
         self._timeout = float(timeout_seconds)
+        self._max_output = int(max_output_chars)  # 工具返回大小上限(防内存撑爆 / 超量外泄)
 
     async def execute(self, tool: Tool, intent: ToolIntent, ctx: Context) -> ExecResult:
         args = intent.arguments
@@ -61,7 +63,7 @@ class RestrictedExecutor:
         # ---- 超时受限执行:工具调用入线程 + 墙钟超时,超时不阻塞管线 ----
         loop = asyncio.get_running_loop()
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 loop.run_in_executor(None, lambda: tool.call(args, ctx)),
                 timeout=self._timeout,
             )
@@ -69,3 +71,17 @@ class RestrictedExecutor:
             return _deny(f"执行超时(> {self._timeout:g}s),强制终止")
         except Exception as exc:  # noqa: BLE001 —— 执行异常不外泄细节给调用方,统一判失败
             return ExecResult(ok=False, error=f"执行异常:{type(exc).__name__}")
+
+        # ---- 执行后输出边界:超大返回截断(防内存撑爆 + 超量数据外泄)----
+        return self._bound_output(result)
+
+    def _bound_output(self, result: ExecResult) -> ExecResult:
+        out = result.output
+        if out is None or len(out) <= self._max_output:
+            return result
+        return ExecResult(
+            ok=result.ok,
+            output=out[: self._max_output] + f"\n…[沙箱截断:输出超 {self._max_output} 字符上限]",
+            side_effects={**result.side_effects, "sandbox": "output_truncated"},
+            error=result.error,
+        )
