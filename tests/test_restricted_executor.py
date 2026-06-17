@@ -28,6 +28,15 @@ class _SlowTool:
         return ExecResult(ok=True, output="late")
 
 
+class _BigTool:
+    name = "big"
+    base_risk = 0.1
+    model_schema = None
+
+    def call(self, arguments: dict, ctx: Context) -> ExecResult:
+        return ExecResult(ok=True, output="A" * 5000)
+
+
 def _run(tool: object, args: dict, **kw: object) -> ExecResult:
     ex = RestrictedExecutor(**kw)  # type: ignore[arg-type]
     intent = ToolIntent(session_id="s", tool_name=getattr(tool, "name", "x"), arguments=args)
@@ -69,3 +78,17 @@ def test_network_allowlisted_passes() -> None:
 def test_timeout_enforced() -> None:
     r = _run(_SlowTool(), {"path": "notice.txt"}, timeout_seconds=0.05)
     assert not r.ok and "超时" in (r.error or "")
+
+
+def test_oversized_output_truncated() -> None:
+    r = _run(_BigTool(), {"path": "notice.txt"}, max_output_chars=100)
+    assert r.ok  # 仍算成功,但输出被截断
+    assert len(r.output or "") < 5000
+    assert "截断" in (r.output or "")
+    assert r.side_effects.get("sandbox") == "output_truncated"
+
+
+def test_output_under_cap_untouched() -> None:
+    r = _run(_PassTool(), {"path": "notice.txt"}, max_output_chars=100)
+    assert r.ok and r.output == "done"  # 未超限,原样返回
+    assert "sandbox" not in r.side_effects
