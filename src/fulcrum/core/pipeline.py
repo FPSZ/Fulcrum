@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -42,6 +43,31 @@ if TYPE_CHECKING:  # 仅类型注解,避免运行时耦合
         SourceLabeler,
         Tool,
     )
+
+
+def _short_args(args: dict) -> str:
+    """工具参数的可展示摘要(截断,避免审计/展示里塞入超长或敏感全文)。"""
+    try:
+        text = json.dumps(args, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        text = str(args)
+    return text[:200]
+
+
+def _intent_source_trust(intent: ToolIntent, ctx: Context) -> str | None:
+    """本次调用所依据来源的最坏信任级(worst-first);无可核验来源则 None。
+
+    与策略引擎判信任同口径:取 intent 归因到的各来源 span 里最不可信的一档;有声明来源
+    却无 span 可核验(工具网关路径)→ 视为不可信(fail-closed)。
+    """
+    by_id = {s.source_id: s for s in ctx.spans}
+    trusts = {by_id[sid].trust_level for sid in intent.derived_from_sources if sid in by_id}
+    for level in (TrustLevel.UNTRUSTED, TrustLevel.SEMI_TRUSTED, TrustLevel.TRUSTED):
+        if level in trusts:
+            return level.value
+    if intent.derived_from_sources:
+        return TrustLevel.UNTRUSTED.value
+    return None
 
 
 @dataclass(slots=True)
@@ -244,12 +270,24 @@ class SecurityPipeline:
         except Exception as exc:  # noqa: BLE001 —— 安全边界:任何异常都必须 fail-closed
             return await self._fail_closed(ctx, intent, "risk_assessment", exc)
 
+        # 富化工具治理证据:把"这次工具调用凭什么这么判"的可展示依据落进审计 ——
+        # 供工具网关页逐调用展示(工具/参数/风险/归因/来源信任/命中规则)。这些字段都来自
+        # 本次 intent / decision,随判定点事件入哈希(只影响新事件自身)。
         await self._emit(
             ctx,
             AuditEventType.POLICY_DECIDED,
             subject_id=intent.intent_id,
             decision=decision.decision,
-            evidence={"reason": decision.reason, "risk_level": decision.risk_level},
+            evidence={
+                "reason": decision.reason,
+                "risk_level": decision.risk_level,
+                "tool": intent.tool_name,
+                "args": _short_args(intent.arguments),
+                "risk_score": intent.risk_score,
+                "attribution_confidence": intent.attribution_confidence,
+                "source_trust": _intent_source_trust(intent, ctx),
+                "matched_policy": decision.matched_policy_id,
+            },
         )
 
         outcome = ToolOutcome(intent=intent, decision=decision)

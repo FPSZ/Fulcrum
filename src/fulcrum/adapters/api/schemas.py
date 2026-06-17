@@ -259,6 +259,30 @@ class SupplyScanReportDTO(BaseModel):
     risks: list[SupplyScanRiskDTO] = Field(default_factory=list)
 
 
+# ---- /tools/calls(工具网关:工具调用治理流水)----
+class ToolCallDTO(BaseModel):
+    """一次过治理的工具调用(归因→评分→链→策略→处置)+ 其可展示证据。
+
+    数据来自工具调用穿过枢衡的判定点(policy_decided,带 `tool` 证据);前置网关「只筛输入」
+    的路径无工具调用,故本流水仅在模型编排 / 直接工具调用(`/v1/chat/completions`、`/tools/call`)
+    有流量时非空。
+    """
+
+    id: str  # event_id
+    time: float  # created_at(epoch 秒),前端格式化为时分秒
+    sess: str  # session_id
+    tool: str  # 工具名
+    args: str = ""  # 参数摘要(截断)
+    source_trust: str | None = None  # 来源最坏信任级(untrusted/semi_trusted/trusted)
+    risk_score: float = 0.0  # 工具风险评分
+    risk_level: str = "low"  # RiskLevel 值
+    attribution_confidence: float = 0.0  # 归因置信度
+    decision: str  # Disposition 值(allow/sanitize/approve/block)
+    rule: str | None = None  # 命中的策略规则 id
+    executed: bool = False  # 是否真正执行(有 tool_executed 关联)
+    reason: str = ""  # 处置理由
+
+
 # ---- /healthz ----
 class HealthResponse(BaseModel):
     status: str = "ok"

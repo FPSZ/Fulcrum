@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Plug, ShieldX } from 'lucide-react'
 import { Badge, type BadgeTone, Card, Segmented } from '@/components/ui'
 import { TOOL_CALLS, type Disposition, type Trust } from './data'
+import { useToolCalls } from './use-tools'
 
 const DISP_TONE: Record<Disposition, BadgeTone> = {
   block: 'crit',
@@ -27,21 +28,24 @@ const FILTERS: { value: Filter; label: string }[] = [
 
 export function ToolsPage() {
   const [filter, setFilter] = useState<Filter>('all')
+  // 接真后端:有工具治理流水则用真;无权限/不可达/无工具流量 → 回退演示 seed。
+  const live = useToolCalls().data
+  const calls = live && live.length > 0 ? live : TOOL_CALLS
   const rows = useMemo(
     () =>
-      TOOL_CALLS.filter((c) =>
+      calls.filter((c) =>
         filter === 'all' ? true : filter === 'allow' ? c.decision === 'allow' : c.decision !== 'allow',
       ),
-    [filter],
+    [filter, calls],
   )
-  const held = TOOL_CALLS.filter((c) => c.decision !== 'allow').length
+  const held = calls.filter((c) => c.decision !== 'allow').length
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h2 className="text-[15px] font-semibold text-ink">工具调用管控</h2>
         <span className="text-[13px] text-ink-3">
-          每次高危工具调用都过「归因 → 评分 → 任务链 → 策略 → 沙箱执行」;近 {TOOL_CALLS.length}{' '}
+          每次高危工具调用都过「归因 → 评分 → 任务链 → 策略 → 沙箱执行」;近 {calls.length}{' '}
           次,其中 <span className="font-medium text-crit">{held}</span> 次被管控(阻断/审批)。
         </span>
       </div>
