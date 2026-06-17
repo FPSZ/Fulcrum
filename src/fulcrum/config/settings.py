@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # 装配清单路径(None 用包内默认 fulcrum.yml)
     capability_config: str | None = None
 
+    # 评测报告路径:`python -m fulcrum.eval` 的最近一次产物;评测页只读展示,无则回退演示
+    eval_report_path: str = "docs/eval/results/latest.json"
+
     # 前端静态资源目录(生产:指向已构建的 console/dist);留空则只提供 API
     frontend_dir: str = ""
 

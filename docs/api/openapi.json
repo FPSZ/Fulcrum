@@ -1334,6 +1334,60 @@
         }
       }
     },
+    "/eval/report": {
+      "get": {
+        "summary": "Eval Report",
+        "operationId": "eval_report_eval_report_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/EvalReportDTO"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Eval Report Eval Report Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/gateway-config": {
       "get": {
         "summary": "Get Config",
@@ -1974,6 +2028,188 @@
         ],
         "title": "Disposition",
         "description": "分级处置(也复用于供应链评级:allow/review<=sanitize/approve/block)。"
+      },
+      "EvalMetricsDTO": {
+        "properties": {
+          "asr_baseline": {
+            "type": "number",
+            "title": "Asr Baseline",
+            "default": 0.0
+          },
+          "asr_fulcrum": {
+            "type": "number",
+            "title": "Asr Fulcrum",
+            "default": 0.0
+          },
+          "asr_reduction": {
+            "type": "number",
+            "title": "Asr Reduction",
+            "default": 0.0
+          },
+          "recall_bsr": {
+            "type": "number",
+            "title": "Recall Bsr",
+            "default": 0.0
+          },
+          "precision": {
+            "type": "number",
+            "title": "Precision",
+            "default": 0.0
+          },
+          "fpr": {
+            "type": "number",
+            "title": "Fpr",
+            "default": 0.0
+          },
+          "utility": {
+            "type": "number",
+            "title": "Utility",
+            "default": 0.0
+          },
+          "decision_accuracy": {
+            "type": "number",
+            "title": "Decision Accuracy",
+            "default": 0.0
+          },
+          "audit_complete_rate": {
+            "type": "number",
+            "title": "Audit Complete Rate",
+            "default": 0.0
+          },
+          "hash_chain_pass_rate": {
+            "type": "number",
+            "title": "Hash Chain Pass Rate",
+            "default": 0.0
+          },
+          "totals": {
+            "$ref": "#/components/schemas/EvalTotalsDTO"
+          }
+        },
+        "type": "object",
+        "title": "EvalMetricsDTO"
+      },
+      "EvalReportDTO": {
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "title": "Dataset"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/EvalMetricsDTO"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/EvalSampleDTO"
+            },
+            "type": "array",
+            "title": "Samples"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset",
+          "metrics"
+        ],
+        "title": "EvalReportDTO"
+      },
+      "EvalSampleDTO": {
+        "properties": {
+          "sample_id": {
+            "type": "string",
+            "title": "Sample Id"
+          },
+          "attack_type": {
+            "type": "string",
+            "title": "Attack Type"
+          },
+          "malicious": {
+            "type": "boolean",
+            "title": "Malicious"
+          },
+          "expected": {
+            "type": "string",
+            "title": "Expected"
+          },
+          "predicted": {
+            "type": "string",
+            "title": "Predicted"
+          },
+          "held": {
+            "type": "boolean",
+            "title": "Held"
+          },
+          "attack_succeeded": {
+            "type": "boolean",
+            "title": "Attack Succeeded"
+          },
+          "decision_correct": {
+            "type": "boolean",
+            "title": "Decision Correct"
+          },
+          "audit_ok": {
+            "type": "boolean",
+            "title": "Audit Ok",
+            "default": true
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_id",
+          "attack_type",
+          "malicious",
+          "expected",
+          "predicted",
+          "held",
+          "attack_succeeded",
+          "decision_correct"
+        ],
+        "title": "EvalSampleDTO"
+      },
+      "EvalTotalsDTO": {
+        "properties": {
+          "samples": {
+            "type": "integer",
+            "title": "Samples",
+            "default": 0
+          },
+          "malicious": {
+            "type": "integer",
+            "title": "Malicious",
+            "default": 0
+          },
+          "benign": {
+            "type": "integer",
+            "title": "Benign",
+            "default": 0
+          },
+          "tp": {
+            "type": "integer",
+            "title": "Tp",
+            "default": 0
+          },
+          "fn": {
+            "type": "integer",
+            "title": "Fn",
+            "default": 0
+          },
+          "fp": {
+            "type": "integer",
+            "title": "Fp",
+            "default": 0
+          },
+          "tn": {
+            "type": "integer",
+            "title": "Tn",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "EvalTotalsDTO"
       },
       "GatewayChatRequest": {
         "properties": {

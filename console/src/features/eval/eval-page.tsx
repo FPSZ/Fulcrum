@@ -3,6 +3,7 @@ import { Check, FlaskConical, X } from 'lucide-react'
 import { Badge, type BadgeTone, Card, Segmented } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { EVAL_REPORT, METRIC_ROWS } from './data'
+import { useEvalReport } from './use-eval'
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
 
@@ -27,7 +28,9 @@ const FILTERS: { value: Filter; label: string }[] = [
 ]
 
 export function EvalPage() {
-  const { dataset, metrics, samples } = EVAL_REPORT
+  // 接真后端:有最近评测报告则用真;无报告/无权限/不可达 → 回退演示 seed。
+  const report = useEvalReport().data ?? EVAL_REPORT
+  const { dataset, metrics, samples } = report
   const t = metrics.totals
   const [filter, setFilter] = useState<Filter>('all')
 

@@ -177,6 +177,50 @@ class AuditSessionDTO(BaseModel):
     events: list[AuditChainEventDTO] = Field(default_factory=list)
 
 
+# ---- /eval/report(评测验证:`python -m fulcrum.eval` 的最近报告,只读)----
+class EvalTotalsDTO(BaseModel):
+    samples: int = 0
+    malicious: int = 0
+    benign: int = 0
+    tp: int = 0
+    fn: int = 0
+    fp: int = 0
+    tn: int = 0
+
+
+class EvalMetricsDTO(BaseModel):
+    asr_baseline: float = 0.0
+    asr_fulcrum: float = 0.0
+    asr_reduction: float = 0.0
+    recall_bsr: float = 0.0
+    precision: float = 0.0
+    fpr: float = 0.0
+    utility: float = 0.0
+    decision_accuracy: float = 0.0
+    audit_complete_rate: float = 0.0
+    hash_chain_pass_rate: float = 0.0
+    totals: EvalTotalsDTO = Field(default_factory=EvalTotalsDTO)
+
+
+class EvalSampleDTO(BaseModel):
+    sample_id: str
+    attack_type: str
+    malicious: bool
+    expected: str
+    predicted: str
+    held: bool
+    attack_succeeded: bool
+    decision_correct: bool
+    audit_ok: bool = True
+    reason: str = ""
+
+
+class EvalReportDTO(BaseModel):
+    dataset: str
+    metrics: EvalMetricsDTO
+    samples: list[EvalSampleDTO] = Field(default_factory=list)
+
+
 # ---- /healthz ----
 class HealthResponse(BaseModel):
     status: str = "ok"
