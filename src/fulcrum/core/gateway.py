@@ -91,9 +91,11 @@ def screen_output(findings: list[Finding]) -> GateVerdict:
     """出口闸门:对**企业智能体的回复**判敏感/危险内容 → 放行 / 标注复核 / 拦截。
 
     与 `screen`(入口)同阈值、同 Finding 来源,只是处置语义换成"回复要不要回给用户":
-        block   → 回复疑似含敏感数据外泄,拦截不回传(打码)。
-        approve → 回复可疑,标注待人工复核。
-        allow   → 回复正常,放行回传。
+        block    → 回复疑似含敏感数据外泄,拦截不回传(打码)。
+        sanitize → 回复夹带的**唯一**风险是可机械打码的结构化敏感量(pii_leak),
+                   且在复核档(未到拦截阈)→ 脱敏后回传:既不漏明文,也不白丢整条回复。
+        approve  → 回复可疑(含打码救不了的风险,如外联措辞),标注待人工复核。
+        allow    → 回复正常,放行回传。
     """
     if not findings:
         return GateVerdict(
@@ -108,11 +110,16 @@ def screen_output(findings: list[Finding]) -> GateVerdict:
     top = max(findings, key=lambda f: f.score)
     score = top.score
     level = _risk_level(score)
-    label = "、".join(sorted({f.kind for f in findings}))
+    kinds = {f.kind for f in findings}
+    label = "、".join(sorted(kinds))
 
     if score >= BLOCK_AT:
         decision = Disposition.BLOCK
         reason = f"回复命中高危内容({label}),疑似敏感数据外泄,已拦截不回传。"
+    elif score >= REVIEW_AT and kinds == {"pii_leak"}:
+        # 复核档,且全部风险都是可打码的结构化敏感量 → 脱敏回传,无需人工挡件。
+        decision = Disposition.SANITIZE
+        reason = f"回复夹带结构化敏感量({label}),已脱敏后回传。"
     elif score >= REVIEW_AT:
         decision = Disposition.APPROVE
         reason = f"回复命中可疑内容({label}),标注待人工复核。"
