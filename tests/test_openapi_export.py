@@ -17,6 +17,7 @@ _REQUIRED_PATHS = {
     "/gateway/chat",
     "/overview/stats",
     "/events",
+    "/policies",
     "/admin/gateway-config",
     "/auth/login",
     "/admin/users",

@@ -1334,6 +1334,60 @@
         }
       }
     },
+    "/policies": {
+      "get": {
+        "summary": "Policies",
+        "operationId": "policies_policies_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PolicySetDTO"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Policies Policies Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/gateway-config": {
       "get": {
         "summary": "Get Config",
@@ -2519,6 +2573,99 @@
           "group"
         ],
         "title": "PermissionDTO"
+      },
+      "PolicyConditionDTO": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "PolicyConditionDTO"
+      },
+      "PolicyRuleDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "when": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyConditionDTO"
+            },
+            "type": "array",
+            "title": "When"
+          },
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "risk_level": {
+            "type": "string",
+            "title": "Risk Level",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "decision"
+        ],
+        "title": "PolicyRuleDTO"
+      },
+      "PolicySetDTO": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
+          },
+          "default": {
+            "type": "string",
+            "title": "Default",
+            "default": "allow"
+          },
+          "workspace": {
+            "type": "string",
+            "title": "Workspace",
+            "default": ""
+          },
+          "allow_domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allow Domains"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyRuleDTO"
+            },
+            "type": "array",
+            "title": "Rules"
+          }
+        },
+        "type": "object",
+        "title": "PolicySetDTO"
       },
       "PrincipalResponse": {
         "properties": {
