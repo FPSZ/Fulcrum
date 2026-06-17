@@ -1388,6 +1388,172 @@
         }
       }
     },
+    "/policies": {
+      "get": {
+        "summary": "Policies",
+        "operationId": "policies_policies_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PolicySetDTO"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Policies Policies Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/supply/scans": {
+      "get": {
+        "summary": "Supply Scans",
+        "operationId": "supply_scans_supply_scans_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SupplyScanReportDTO"
+                  },
+                  "title": "Response Supply Scans Supply Scans Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/calls": {
+      "get": {
+        "summary": "Tool Calls",
+        "operationId": "tool_calls_tools_calls_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolCallDTO"
+                  },
+                  "title": "Response Tool Calls Tools Calls Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/gateway-config": {
       "get": {
         "summary": "Get Config",
@@ -2781,6 +2947,99 @@
         ],
         "title": "PermissionDTO"
       },
+      "PolicyConditionDTO": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "PolicyConditionDTO"
+      },
+      "PolicyRuleDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "when": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyConditionDTO"
+            },
+            "type": "array",
+            "title": "When"
+          },
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "risk_level": {
+            "type": "string",
+            "title": "Risk Level",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "decision"
+        ],
+        "title": "PolicyRuleDTO"
+      },
+      "PolicySetDTO": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
+          },
+          "default": {
+            "type": "string",
+            "title": "Default",
+            "default": "allow"
+          },
+          "workspace": {
+            "type": "string",
+            "title": "Workspace",
+            "default": ""
+          },
+          "allow_domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allow Domains"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyRuleDTO"
+            },
+            "type": "array",
+            "title": "Rules"
+          }
+        },
+        "type": "object",
+        "title": "PolicySetDTO"
+      },
       "PrincipalResponse": {
         "properties": {
           "username": {
@@ -3039,6 +3298,64 @@
         ],
         "title": "StatusUpdate"
       },
+      "SupplyScanReportDTO": {
+        "properties": {
+          "component_id": {
+            "type": "string",
+            "title": "Component Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "component"
+          },
+          "rating": {
+            "type": "string",
+            "title": "Rating"
+          },
+          "risks": {
+            "items": {
+              "$ref": "#/components/schemas/SupplyScanRiskDTO"
+            },
+            "type": "array",
+            "title": "Risks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "component_id",
+          "rating"
+        ],
+        "title": "SupplyScanReportDTO"
+      },
+      "SupplyScanRiskDTO": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "score",
+          "severity"
+        ],
+        "title": "SupplyScanRiskDTO"
+      },
       "TempPasswordResponse": {
         "properties": {
           "user": {
@@ -3062,6 +3379,92 @@
         ],
         "title": "TempPasswordResponse",
         "description": "新建成员 / 重置口令:仅这一次返回临时口令(若由系统生成)。"
+      },
+      "ToolCallDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "time": {
+            "type": "number",
+            "title": "Time"
+          },
+          "sess": {
+            "type": "string",
+            "title": "Sess"
+          },
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "args": {
+            "type": "string",
+            "title": "Args",
+            "default": ""
+          },
+          "source_trust": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Trust"
+          },
+          "risk_score": {
+            "type": "number",
+            "title": "Risk Score",
+            "default": 0.0
+          },
+          "risk_level": {
+            "type": "string",
+            "title": "Risk Level",
+            "default": "low"
+          },
+          "attribution_confidence": {
+            "type": "number",
+            "title": "Attribution Confidence",
+            "default": 0.0
+          },
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule"
+          },
+          "executed": {
+            "type": "boolean",
+            "title": "Executed",
+            "default": false
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "time",
+          "sess",
+          "tool",
+          "decision"
+        ],
+        "title": "ToolCallDTO",
+        "description": "一次过治理的工具调用(归因→评分→链→策略→处置)+ 其可展示证据。\n\n数据来自工具调用穿过枢衡的判定点(policy_decided,带 `tool` 证据);前置网关「只筛输入」\n的路径无工具调用,故本流水仅在模型编排 / 直接工具调用(`/v1/chat/completions`、`/tools/call`)\n有流量时非空。"
       },
       "ToolCallRequest": {
         "properties": {
