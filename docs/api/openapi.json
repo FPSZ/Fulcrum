@@ -1176,6 +1176,52 @@
         }
       }
     },
+    "/overview/stats": {
+      "get": {
+        "summary": "Overview Stats",
+        "operationId": "overview_stats_overview_stats_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewStatsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/gateway-config": {
       "get": {
         "summary": "Get Config",
@@ -2182,6 +2228,57 @@
           "executed"
         ],
         "title": "OutcomeDTO"
+      },
+      "OverviewStatsResponse": {
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "title": "Sessions",
+            "default": 0
+          },
+          "events": {
+            "type": "integer",
+            "title": "Events",
+            "default": 0
+          },
+          "verified_sessions": {
+            "type": "integer",
+            "title": "Verified Sessions",
+            "default": 0
+          },
+          "requests": {
+            "type": "integer",
+            "title": "Requests",
+            "default": 0
+          },
+          "blocked": {
+            "type": "integer",
+            "title": "Blocked",
+            "default": 0
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending",
+            "default": 0
+          },
+          "decisions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Decisions"
+          },
+          "by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Type"
+          }
+        },
+        "type": "object",
+        "title": "OverviewStatsResponse",
+        "description": "从审计链实时聚合的总览指标(无流量时各计数为 0,即诚实反映空闲网关)。\n\n时序/历史趋势不在此端点:审计事件不带时间戳,逐事件时间线归会话事件页。"
       },
       "PasswordReset": {
         "properties": {

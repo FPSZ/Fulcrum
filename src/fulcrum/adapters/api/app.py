@@ -87,10 +87,12 @@ def build_api(
         from .admin_routes import register_admin_routes
         from .auth_routes import register_auth_routes
         from .deps import AuthDeps
+        from .overview_routes import register_overview_routes
 
         deps = AuthDeps(auth.auth, settings.session_cookie_name)
         register_auth_routes(app, auth.auth, settings, deps)
         register_admin_routes(app, auth.directory, deps)
+        register_overview_routes(app, pipeline, deps)
         if upstream is not None and gateway_store is not None:
             from .gateway_routes import register_gateway_routes
 

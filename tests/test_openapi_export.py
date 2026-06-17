@@ -14,6 +14,7 @@ _REQUIRED_PATHS = {
     "/tools/call",
     "/audit/{session_id}",
     "/gateway/chat",
+    "/overview/stats",
     "/admin/gateway-config",
     "/auth/login",
     "/admin/users",

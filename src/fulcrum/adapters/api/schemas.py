@@ -111,6 +111,23 @@ class AuditResponse(BaseModel):
     events: list[dict] = Field(default_factory=list)
 
 
+# ---- /overview/stats(安全总览:跨会话审计聚合,实时计数)----
+class OverviewStatsResponse(BaseModel):
+    """从审计链实时聚合的总览指标(无流量时各计数为 0,即诚实反映空闲网关)。
+
+    时序/历史趋势不在此端点:审计事件不带时间戳,逐事件时间线归会话事件页。
+    """
+
+    sessions: int = 0  # 有审计链的会话数
+    events: int = 0  # 审计事件总数
+    verified_sessions: int = 0  # hash-chain 校验通过的会话数
+    requests: int = 0  # 受控请求数(request_received)
+    blocked: int = 0  # 拦截数(tool_blocked)
+    pending: int = 0  # 待审批数(tool_pending_approval)
+    decisions: dict[str, int] = Field(default_factory=dict)  # 按处置计数(policy_decided)
+    by_type: dict[str, int] = Field(default_factory=dict)  # 按审计事件类型计数
+
+
 # ---- /healthz ----
 class HealthResponse(BaseModel):
     status: str = "ok"
