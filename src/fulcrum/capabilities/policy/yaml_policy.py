@@ -4,7 +4,11 @@
 (allow / sanitize / approve / block)。规则自上而下,**首条命中即决定**;否则 default 兜底。
 策略与代码分离:调策略只改 `data/policies/default.yml`,核心代码零改动。
 
-未知条件键在加载期即报错(fail-closed),避免拼错的条件被静默忽略导致"看似生效实则放行"。
+信任级条件有两种:`source_trust` 精确匹配某一级;`source_trust_at_least` 做序比较——
+按**不信任程度**(trusted<semi_trusted<untrusted)匹配"至少这么不可信"的来源,与
+`risk_at_least` 同向(门槛越高越严)。前者写不出"半可信或更糟"这类区间,后者一句即可。
+
+未知条件键 / 拼错的信任级在加载期即报错(fail-closed),避免被静默忽略导致"看似生效实则放行"。
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ _PREDICATES = frozenset(
         "tool_in",
         "tool_name",
         "source_trust",
+        "source_trust_at_least",
         "risk_at_least",
         "attribution_at_least",
         "chain_risk_at_least",
@@ -41,11 +46,16 @@ _PREDICATES = frozenset(
 _BOOL_FACTS = frozenset(
     {"path_sensitive", "path_outside_workspace", "domain_allowed", "command_dangerous"}
 )
+# 信任级按**不信任程度**升序排名:trusted 最低、untrusted 最高。`source_trust_at_least`
+# 据此做"至少这么不可信"的序比较(语义与 risk_at_least 同向:数值/排名越高=风险越大)。
 _TRUST_RANK: dict[TrustLevel, int] = {
     TrustLevel.TRUSTED: 0,
     TrustLevel.SEMI_TRUSTED: 1,
     TrustLevel.UNTRUSTED: 2,
 }
+_TRUST_RANK_BY_VALUE: dict[str, int] = {lvl.value: rank for lvl, rank in _TRUST_RANK.items()}
+# 接受信任级字面量的条件键(加载期校验取值合法,拼错的级别 fail-closed 报错而非静默不匹配)。
+_TRUST_PREDICATES = frozenset({"source_trust", "source_trust_at_least"})
 
 
 def _risk_level(score: float) -> RiskLevel:
@@ -70,9 +80,16 @@ class YamlPolicyEngine:
             raise ConfigError(f"策略文件不存在:{path}")
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         for rule in data.get("rules", []):
-            unknown = set(rule.get("when", {})) - _PREDICATES
+            when = rule.get("when", {})
+            unknown = set(when) - _PREDICATES
             if unknown:
                 raise ConfigError(f"策略规则 {rule.get('id')!r} 含未知条件:{sorted(unknown)}")
+            for key in _TRUST_PREDICATES & set(when):
+                if when[key] not in _TRUST_RANK_BY_VALUE:
+                    raise ConfigError(
+                        f"策略规则 {rule.get('id')!r} 的 {key} 含未知信任级:{when[key]!r}"
+                        f"(可选:{sorted(_TRUST_RANK_BY_VALUE)})"
+                    )
         return data
 
     def policy_document(self) -> dict[str, Any]:
@@ -154,6 +171,11 @@ class YamlPolicyEngine:
             return facts["tool"] == expected
         if key == "source_trust":
             return facts["source_trust"] == expected
+        if key == "source_trust_at_least":
+            actual = facts["source_trust"]
+            if actual is None:  # 无来源(直连用户)→ 不满足任何"至少这么不可信"门槛
+                return False
+            return _TRUST_RANK_BY_VALUE[str(actual)] >= _TRUST_RANK_BY_VALUE[str(expected)]
         if key == "risk_at_least":
             return facts["risk_score"] >= float(expected)
         if key == "attribution_at_least":

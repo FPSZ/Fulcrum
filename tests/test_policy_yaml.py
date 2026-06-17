@@ -81,6 +81,76 @@ def test_benign_workspace_read_allowed() -> None:
     assert _decide(intent) == Disposition.ALLOW
 
 
+def _intent_from_trust(trust: TrustLevel) -> tuple[ToolIntent, Context]:
+    """构造一个来源信任级为 trust 的工具调用 + 其上下文(供序比较条件命中)。"""
+    span = SourceSpan(
+        source_type=SourceType.DOCUMENT,
+        trust_level=trust,
+        content_hash="x",
+        excerpt="...",
+    )
+    ctx = Context(session_id="s", spans=[span])
+    intent = ToolIntent(
+        session_id="s",
+        tool_name="note.write",
+        arguments={"text": "x"},
+        derived_from_sources=[span.source_id],
+    )
+    return intent, ctx
+
+
+def _ordinal_policy(tmp_path: Path) -> YamlPolicyEngine:
+    """仅含一条 source_trust_at_least: semi_trusted → approve 的策略,便于隔离验证序语义。"""
+    p = tmp_path / "ordinal.yml"
+    p.write_text(
+        "default: allow\n"
+        "rules:\n"
+        "  - id: review-untrusted-ish\n"
+        "    when:\n"
+        "      source_trust_at_least: semi_trusted\n"
+        "    decision: approve\n",
+        encoding="utf-8",
+    )
+    return YamlPolicyEngine(p)
+
+
+def test_source_trust_at_least_matches_equal_and_worse(tmp_path: Path) -> None:
+    policy = _ordinal_policy(tmp_path)
+    # semi_trusted(等于门槛)与 untrusted(更不可信)都应命中 → approve。
+    for trust in (TrustLevel.SEMI_TRUSTED, TrustLevel.UNTRUSTED):
+        intent, ctx = _intent_from_trust(trust)
+        assert asyncio.run(policy.decide(intent, ctx)).decision == Disposition.APPROVE
+
+
+def test_source_trust_at_least_skips_more_trusted(tmp_path: Path) -> None:
+    policy = _ordinal_policy(tmp_path)
+    # trusted(比门槛更可信)不命中 → 落到 default allow。
+    intent, ctx = _intent_from_trust(TrustLevel.TRUSTED)
+    assert asyncio.run(policy.decide(intent, ctx)).decision == Disposition.ALLOW
+
+
+def test_source_trust_at_least_no_source_does_not_match(tmp_path: Path) -> None:
+    policy = _ordinal_policy(tmp_path)
+    # 无来源(直连用户,source_trust=None)不满足任何"至少这么不可信"门槛 → default allow。
+    intent = ToolIntent(session_id="s", tool_name="note.write", arguments={"text": "x"})
+    assert asyncio.run(policy.decide(intent, Context(session_id="s"))).decision == Disposition.ALLOW
+
+
+def test_bad_trust_level_rejected_at_load(tmp_path: Path) -> None:
+    bad = tmp_path / "bad_trust.yml"
+    bad.write_text(
+        "default: allow\nrules:\n  - id: x\n    when:\n"
+        "      source_trust_at_least: kinda_trusted\n    decision: block\n",
+        encoding="utf-8",
+    )
+    try:
+        YamlPolicyEngine(bad)
+    except Exception as exc:  # noqa: BLE001
+        assert "未知信任级" in str(exc)
+    else:
+        raise AssertionError("拼错的信任级应在加载期报错")
+
+
 def test_unknown_predicate_rejected_at_load(tmp_path: Path) -> None:
     bad = tmp_path / "bad.yml"
     bad.write_text(
