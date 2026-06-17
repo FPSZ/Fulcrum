@@ -6,11 +6,18 @@ import json
 from pathlib import Path
 
 from fulcrum.adapters.api.eval_routes import load_report
+from fulcrum.eval.__main__ import main as eval_main
 
 
-def test_loads_committed_latest_report() -> None:
-    """仓库内 docs/eval/results/latest.json 应能被解析为合法报告。"""
-    report = load_report("docs/eval/results/latest.json")
+def test_loads_report_produced_by_eval_cli(tmp_path: Path) -> None:
+    """端点消费的报告 = `python -m fulcrum.eval` 实际产出的报告(生产者→消费者契约)。
+
+    不依赖 docs/eval/results/latest.json(该产物被 gitignore,全新检出不存在)——
+    现场用 CLI 产一个再 load,保证两端 schema 始终一致。
+    """
+    out = tmp_path / "report.json"
+    assert eval_main(["--out", str(out)]) == 0
+    report = load_report(out)
     assert report is not None
     assert report.dataset
     assert report.metrics.totals.samples == len(report.samples)
