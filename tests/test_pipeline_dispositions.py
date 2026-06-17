@@ -1,4 +1,4 @@
-"""管线分级处置:未知工具 fail-closed、SANITIZE 记桩不执行。"""
+"""管线分级处置:未知工具 fail-closed、SANITIZE 净化参数后执行。"""
 
 from __future__ import annotations
 
@@ -63,17 +63,46 @@ def test_allow_unknown_tool_is_blocked_fail_closed() -> None:
     assert AuditEventType.TOOL_BLOCKED in types
 
 
-def test_sanitize_records_stub_and_not_executed() -> None:
+def test_sanitize_masks_args_then_executes() -> None:
+    """SANITIZE:参数里的敏感载荷打码后再执行(落实 default.yml「先净化降级」)。"""
     pipe = _pipeline(
         _FixedPolicy(Disposition.SANITIZE),
         tools={"echo": registry.create("tool", "echo")},
     )
     outcome = asyncio.run(
-        pipe.handle_tool_call(session_id="s2", tool_name="echo", arguments={"text": "x"})
+        pipe.handle_tool_call(
+            session_id="s2",
+            tool_name="echo",
+            arguments={"text": "联系 13800138000"},
+        )
     )
-    assert outcome.executed is False
-    types = [e.event_type for e in asyncio.run(pipe.audit.events("s2"))]
-    assert AuditEventType.TOOL_PENDING_APPROVAL in types
+    # 已执行,但 echo 回显的是脱敏后的参数 —— 手机号已打码,明文不出工具
+    assert outcome.executed is True
+    assert outcome.result is not None
+    assert "13800138000" not in (outcome.result.output or "")
+    assert "138****8000" in (outcome.result.output or "")
+    # 审计:走 TOOL_EXECUTED,且标注净化了哪些字段
+    events = asyncio.run(pipe.audit.events("s2"))
+    executed = [e for e in events if e.event_type == AuditEventType.TOOL_EXECUTED]
+    assert executed and executed[-1].evidence.get("sanitized") is True
+    assert "text" in executed[-1].evidence.get("fields", [])
+    assert asyncio.run(pipe.audit.verify_chain("s2")) is True
+
+
+def test_sanitize_clean_args_executes_without_change() -> None:
+    """SANITIZE 但参数无敏感量:照常执行,changed 字段为空(净化是无副作用直通)。"""
+    pipe = _pipeline(
+        _FixedPolicy(Disposition.SANITIZE),
+        tools={"echo": registry.create("tool", "echo")},
+    )
+    outcome = asyncio.run(
+        pipe.handle_tool_call(session_id="s2b", tool_name="echo", arguments={"text": "查询进度"})
+    )
+    assert outcome.executed is True
+    assert (outcome.result.output if outcome.result else "") == "查询进度"
+    events = asyncio.run(pipe.audit.events("s2b"))
+    executed = [e for e in events if e.event_type == AuditEventType.TOOL_EXECUTED]
+    assert executed and executed[-1].evidence.get("fields") == []
 
 
 def test_stage_exception_fails_closed_and_audited() -> None:

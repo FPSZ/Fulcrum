@@ -55,6 +55,26 @@ def _short_args(args: dict) -> str:
     return text[:200]
 
 
+def _sanitize_args(arguments: dict) -> tuple[dict, list[str]]:
+    """对工具参数的字符串值做脱敏,返回(净化后参数, 被改动的字段名)。
+
+    用于 SANITIZE 处置:半可信来源的中风险动作,先把参数里可能夹带的敏感载荷
+    (身份证/手机/邮箱/密钥/长令牌)打码再执行,而非整条挂起人工。键与结构不变,
+    非字符串值原样保留;只有真含敏感量的字段会进入 changed,便于审计标注净化了什么。
+    """
+    sanitized: dict = {}
+    changed: list[str] = []
+    for key, value in arguments.items():
+        if isinstance(value, str):
+            masked = redact(value)
+            sanitized[key] = masked
+            if masked != value:
+                changed.append(key)
+        else:
+            sanitized[key] = value
+    return sanitized, changed
+
+
 def _intent_source_trust(intent: ToolIntent, ctx: Context) -> str | None:
     """本次调用所依据来源的最坏信任级(worst-first);无可核验来源则 None。
 
@@ -332,45 +352,75 @@ class SecurityPipeline:
 
         outcome = ToolOutcome(intent=intent, decision=decision)
         if decision.decision == Disposition.ALLOW:
-            if tool is None:
-                # fail-closed:策略放行了,但工具未知 —— 显式阻断 + 审计,绝不静默跳过。
-                outcome.result = ExecResult(ok=False, error=f"unknown tool: {intent.tool_name}")
-                await self._emit(
-                    ctx,
-                    AuditEventType.TOOL_BLOCKED,
-                    subject_id=intent.intent_id,
-                    evidence={"reason": "unknown_tool", "tool": intent.tool_name},
-                )
-            else:
-                try:
-                    outcome.result = await self._executor.execute(tool, intent, ctx)
-                    outcome.executed = True
-                    # 记录工具返回(截断)→ 供后续步骤的跨步污点链分析比对来源。
-                    if outcome.result.output:
-                        ctx.tool_returns.append(outcome.result.output[:500])
-                    await self._emit(ctx, AuditEventType.TOOL_EXECUTED, subject_id=intent.intent_id)
-                except Exception as exc:  # noqa: BLE001 —— 执行抛错不得 fail-open
-                    # 动作已被策略允许,但执行崩溃 → 记错误结果 + 留痕,绝不静默 500。
-                    outcome.result = ExecResult(ok=False, error=f"executor error: {exc}")
-                    await self._emit(
-                        ctx,
-                        AuditEventType.TOOL_BLOCKED,
-                        subject_id=intent.intent_id,
-                        evidence={"reason": "executor_error", "error": str(exc)},
-                    )
+            await self._execute_and_audit(ctx, tool, intent, outcome)
         elif decision.decision == Disposition.SANITIZE:
-            # M0 未实现真实净化:记录桩并按 fail-closed 暂不执行(等同 pending)。
-            await self._emit(
+            # 净化降级(落实 default.yml 规则7「先净化降级」):把参数里可能夹带的敏感载荷
+            # 打码后再执行,而非整条挂起人工。审计标注净化了哪些字段。
+            sane_args, changed = _sanitize_args(intent.arguments)
+            await self._execute_and_audit(
                 ctx,
-                AuditEventType.TOOL_PENDING_APPROVAL,
-                subject_id=intent.intent_id,
-                evidence={"reason": "sanitize_stub"},
+                tool,
+                intent,
+                outcome,
+                exec_args=sane_args,
+                executed_evidence={"sanitized": True, "fields": changed},
             )
         elif decision.decision == Disposition.APPROVE:
             await self._emit(ctx, AuditEventType.TOOL_PENDING_APPROVAL, subject_id=intent.intent_id)
         elif decision.decision == Disposition.BLOCK:
             await self._emit(ctx, AuditEventType.TOOL_BLOCKED, subject_id=intent.intent_id)
         return outcome
+
+    async def _execute_and_audit(
+        self,
+        ctx: Context,
+        tool: Tool | None,
+        intent: ToolIntent,
+        outcome: ToolOutcome,
+        *,
+        exec_args: dict | None = None,
+        executed_evidence: dict | None = None,
+    ) -> None:
+        """放行/净化后真正执行工具并落审计(放行与净化共用,fail-closed 不 fail-open)。
+
+        `exec_args` 非空时按净化后的参数执行(SANITIZE),审计仍挂原 intent_id 以可溯源;
+        `executed_evidence` 附在 TOOL_EXECUTED 事件上(如净化标记 + 改动字段)。
+        工具未知或执行抛错均落 TOOL_BLOCKED + 错误结果,绝不静默放过。
+        """
+        if tool is None:
+            # fail-closed:策略放行了,但工具未知 —— 显式阻断 + 审计,绝不静默跳过。
+            outcome.result = ExecResult(ok=False, error=f"unknown tool: {intent.tool_name}")
+            await self._emit(
+                ctx,
+                AuditEventType.TOOL_BLOCKED,
+                subject_id=intent.intent_id,
+                evidence={"reason": "unknown_tool", "tool": intent.tool_name},
+            )
+            return
+        exec_intent = (
+            intent if exec_args is None else intent.model_copy(update={"arguments": exec_args})
+        )
+        try:
+            outcome.result = await self._executor.execute(tool, exec_intent, ctx)
+            outcome.executed = True
+            # 记录工具返回(截断)→ 供后续步骤的跨步污点链分析比对来源。
+            if outcome.result.output:
+                ctx.tool_returns.append(outcome.result.output[:500])
+            await self._emit(
+                ctx,
+                AuditEventType.TOOL_EXECUTED,
+                subject_id=intent.intent_id,
+                evidence=executed_evidence,
+            )
+        except Exception as exc:  # noqa: BLE001 —— 执行抛错不得 fail-open
+            # 动作已被策略允许,但执行崩溃 → 记错误结果 + 留痕,绝不静默 500。
+            outcome.result = ExecResult(ok=False, error=f"executor error: {exc}")
+            await self._emit(
+                ctx,
+                AuditEventType.TOOL_BLOCKED,
+                subject_id=intent.intent_id,
+                evidence={"reason": "executor_error", "error": str(exc)},
+            )
 
     # ---- fail-closed:安全关键阶段抛错时的统一降级处置 ----
     async def _fail_closed(
