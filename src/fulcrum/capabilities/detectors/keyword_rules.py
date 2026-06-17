@@ -9,6 +9,12 @@
     sensitive_file  敏感文件 / 密钥凭据访问
     command_exec    系统命令 / 脚本执行
     data_poisoning  数据投毒 / 知识污染
+    pii_leak        结构化敏感量泄露(身份证/手机号/邮箱/密钥实值,按命中条数升级)
+
+前六类靠"措辞"识别意图;`pii_leak` 不同——它数的是回复/输入里**真的夹带了多少条**结构化
+个人或机密数据(实际号码/邮箱/密钥值)。单条多属正常(用户报自己手机号),批量出现才是
+名册级外泄,故按命中条数升级严重度。出口闸门借此拦住"把市民名册原样吐出来"这类泄露——
+仅凭关键词规则(sensitive_file 只识"提到了凭据")是抓不住的。
 
 确定性、可解释、低延迟,作为第一层防线;LLM-judge 在 P3 作为后置增强叠加(见路线图)。
 每个命中产出一条 Finding:`score`∈[0,1],`evidence.severity`∈{low,medium,high,critical},
@@ -106,6 +112,28 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
     ),
 }
 
+# 结构化敏感量:实际数值/令牌(而非仅"提到凭据"的措辞)。与 sensitive_file 互补——
+# 此类命中表示文本里**真的夹带了**个人或机密数据,是出口名册外泄的直接证据。
+_PII_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)"),  # 身份证号(18 位)
+    re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"),  # 手机号(11 位)
+    re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"),  # 邮箱
+    re.compile(  # 显式密钥/口令赋值(带实值)
+        r"(?i)(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|"
+        r"密码|口令|密钥|凭据|凭证)\s*[:=]\s*\"?[^\s\"]{3,}"
+    ),
+)
+
+
+def _pii_score(count: int) -> float:
+    """命中条数 → 严重度基准:单条(0.4,多属正常)→ 批量名册外泄(0.85,critical)。"""
+    if count >= 3:
+        return 0.85
+    if count == 2:
+        return 0.6
+    return 0.4
+
+
 # 来源信任级 -> 乘子:不可信来源命中风险最高,用户直述同样措辞风险较低。
 _TRUST_MUL: dict[TrustLevel, float] = {
     TrustLevel.UNTRUSTED: 1.0,
@@ -171,6 +199,25 @@ class KeywordRuleDetector:
                             "trust_level": span.trust_level,
                             "severity": _severity(score),
                             "matched_rules": matched,
+                            "indirect_source": indirect,
+                        },
+                    )
+                )
+            # 结构化敏感量:按命中条数(身份证/手机/邮箱/密钥实值)升级,而非固定权重。
+            pii_hits = sum(len(p.findall(text)) for p in _PII_PATTERNS)
+            if pii_hits:
+                raw = _pii_score(pii_hits) * trust_mul + (_INDIRECT_BOOST if indirect else 0.0)
+                score = round(min(raw, 1.0), 3)
+                findings.append(
+                    Finding(
+                        kind="pii_leak",
+                        score=score,
+                        evidence={
+                            "source_id": span.source_id,
+                            "source_type": span.source_type,
+                            "trust_level": span.trust_level,
+                            "severity": _severity(score),
+                            "pii_hits": pii_hits,
                             "indirect_source": indirect,
                         },
                     )
