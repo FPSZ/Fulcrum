@@ -2915,6 +2915,16 @@
             "type": "object",
             "title": "Decisions"
           },
+          "gates": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Gates"
+          },
           "by_type": {
             "additionalProperties": {
               "type": "integer"
