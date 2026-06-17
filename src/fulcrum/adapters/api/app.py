@@ -13,7 +13,6 @@ from ...core.domain import Disposition, ExecResult, Message, ModelRequest
 from ...core.errors import FulcrumError
 from ...core.redaction import redact
 from .schemas import (
-    AuditResponse,
     ChatRequest,
     ChatResponse,
     GatewayChatRequest,
@@ -186,15 +185,6 @@ def build_api(
                 resp.output_sanitized = True
                 resp.reply = redact(reply.reply)
         return resp
-
-    @app.get("/audit/{session_id}", response_model=AuditResponse)
-    async def audit(session_id: str) -> AuditResponse:
-        events = await pipeline.audit.events(session_id)
-        return AuditResponse(
-            session_id=session_id,
-            verified=await pipeline.audit.verify_chain(session_id),
-            events=[e.model_dump(mode="json") for e in events],
-        )
 
     # 生产托管已构建的前端(同源 → 会话 Cookie 无需 CORS);最后挂载,API 路由优先。
     if settings is not None and settings.frontend_dir:

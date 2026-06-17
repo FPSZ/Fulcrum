@@ -33,6 +33,26 @@ def test_redacts_explicit_secret_and_long_token() -> None:
     assert "AKIA1234567890ABCDEFGHIJ" not in redact("key=AKIA1234567890ABCDEFGHIJ")
 
 
+def test_redacts_json_shaped_short_secret() -> None:
+    # 回归:工具参数是 json.dumps 后再脱敏,key 后紧跟闭合引号曾让短密钥整条漏过。
+    out = redact('{"api_key": "sk-LIVE-abcdefghij"}')
+    assert "sk-LIVE-abcdefghij" not in out
+    assert "***" in out
+
+
+def test_redacts_legacy_15_digit_id_and_bank_card() -> None:
+    out = redact("旧证 310101990307888,卡号 6228480402564890018")
+    assert "310101990307888" not in out  # 15 位老身份证
+    assert "6228480402564890018" not in out  # 19 位银行卡
+    assert "3101" in out and "7888" in out  # 保留首尾便于核对
+
+
+def test_keeps_short_digit_runs() -> None:
+    # 不过度打码:12 位订单号等 <15 位数字串原样保留(避免误伤非 PII 标识)。
+    text = "订单号 123456789012 已受理"
+    assert redact(text) == text
+
+
 def test_keeps_normal_text() -> None:
     text = "你好,请帮我查询低保办件进度,谢谢。"
     assert redact(text) == text  # 无敏感量 → 原样

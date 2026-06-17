@@ -15,7 +15,7 @@ from ...core.domain import AuditEvent, AuditEventType
 from ..audit.memory_sink import InMemoryAuditSink
 from ..auth import Principal
 from .deps import AuthDeps
-from .schemas import AuditChainEventDTO, AuditSessionDTO
+from .schemas import AuditChainEventDTO, AuditResponse, AuditSessionDTO
 
 if TYPE_CHECKING:
     from ...core.pipeline import SecurityPipeline
@@ -68,3 +68,14 @@ def register_audit_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthDe
             verified = await sink.verify_chain(sid)
             out.append(to_session_dto(sid, events, verified))
         return out
+
+    @app.get("/audit/{session_id}", response_model=AuditResponse)
+    async def audit_detail(session_id: str, _: Principal = Depends(can_view)) -> AuditResponse:
+        # 单条会话链(全事件 + 哈希校验);与 /audit 列表同口径鉴权(audit.view),
+        # 不再裸奔 —— 审计链含判定证据,未授权读取等于把溯源数据泄露出去。
+        events = await pipeline.audit.events(session_id)
+        return AuditResponse(
+            session_id=session_id,
+            verified=await pipeline.audit.verify_chain(session_id),
+            events=[e.model_dump(mode="json") for e in events],
+        )

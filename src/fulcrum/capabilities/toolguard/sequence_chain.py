@@ -62,21 +62,33 @@ def _args_text(intent: ToolIntent) -> str:
     return " ".join(str(v) for v in intent.arguments.values())
 
 
+def _normalize_taint(s: str) -> str:
+    """污点比对归一化:抹除所有空白 + casefold。
+
+    挫败"原样外发但大小写不同 / 字符间插空格"这类规避;去空白还顺带让被空格拆进多个
+    参数字段的连续敏感量在拼接文本里重新相邻,缩小分片绕过面。
+    """
+    return "".join(s.split()).casefold()
+
+
 def _taint_source(intent: ToolIntent, tool_returns: list[str]) -> str | None:
     """当前外发参数是否源自某一步工具返回:取返回内容的连续片段在参数文本里命中即判污点。
 
-    返回命中的返回内容摘要(供证据展示),无命中返回 None。确定性子串匹配,不猜测。
+    归一化(去空白 + casefold)后做**逐位**滑窗子串匹配 —— 此前以步长 4 跳采会漏掉起点不
+    对齐的字面子串(实测 'SECRETDATA99' 原样外发却判 None);步长改 1 并归一化后,对齐 /
+    大小写 / 插空格三类规避一并堵死。返回命中的(原始)返回内容摘要供证据展示,无则 None。
+    确定性子串匹配,不猜测。
     """
-    text = _args_text(intent)
+    text = _normalize_taint(_args_text(intent))
     if len(text) < _TAINT_MIN:
         return None
     for ret in tool_returns:
-        ret = ret.strip()
-        if len(ret) < _TAINT_MIN:
+        norm = _normalize_taint(ret)
+        if len(norm) < _TAINT_MIN:
             continue
-        for i in range(0, len(ret) - _TAINT_MIN + 1, 4):
-            if ret[i : i + _TAINT_MIN] in text:
-                return ret[:80]
+        for i in range(len(norm) - _TAINT_MIN + 1):
+            if norm[i : i + _TAINT_MIN] in text:
+                return ret.strip()[:80]
     return None
 
 

