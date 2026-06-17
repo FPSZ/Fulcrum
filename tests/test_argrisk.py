@@ -69,3 +69,33 @@ def test_dangerous_commands_flagged(command: str) -> None:
 )
 def test_benign_commands_not_flagged(command: str) -> None:
     assert argrisk.command_dangerous({"command": command}) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:8080/admin",  # 本机内部管理口
+        "http://10.0.0.5/x",  # RFC1918 内网
+        "http://192.168.1.1/",
+        "http://172.16.0.9/",
+        "http://169.254.169.254/latest/meta-data/",  # 云元数据(窃实例凭据)
+        "http://localhost/x",  # 公认本机名
+        "http://[::1]:9000/",  # IPv6 回环
+        "http://0.0.0.0/",  # 未指定地址
+    ],
+)
+def test_internal_urls_flagged(url: str) -> None:
+    assert argrisk.url_is_internal({"url": url}) is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://gov.cn/notice", "http://8.8.8.8/x", "https://api.weather.gov.cn/v1"],
+)
+def test_public_urls_not_internal(url: str) -> None:
+    assert argrisk.url_is_internal({"url": url}) is False
+
+
+def test_no_url_not_internal() -> None:
+    # 无 url 参(如纯路径动作)→ 不涉及 SSRF 判定。
+    assert argrisk.url_is_internal({"path": "data/workspace/notice.txt"}) is False

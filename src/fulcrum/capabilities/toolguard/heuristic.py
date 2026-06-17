@@ -2,7 +2,7 @@
 
 风险 = **工具基础风险**(base_risk,由管线从 Tool 盖戳到 intent)+ **参数风险加权**。
 参数风险**按出现了哪类危险参数判定,与工具名无关**:有 path 参就查路径敏感/越界、有 url 参
-就查外联域名/裸 IP、有 command 参就查危险命令。因此**加工具零改本评分器**——基础风险写在
+就查外联/裸 IP/内网 SSRF、有 command 参就查危险命令。因此**加工具零改本评分器**——基础风险写在
 工具上,参数口径与 yaml_policy 的事实(argrisk)同源。来源信任与归因置信度由 policy 另行
 结合(评分=动作危险度,判定=动作危险度×来源×归因),职责单一。
 """
@@ -29,11 +29,13 @@ class HeuristicRiskScorer:
             score += 0.5
         if argrisk.path_outside_workspace(args, _DEFAULT_WORKSPACE):
             score += 0.3
-        # URL 类参数:有外联即抬升,裸 IP 再加。
+        # URL 类参数:有外联即抬升,裸 IP 再加,指向内网/云元数据(SSRF)再加。
         if argrisk.url_host(args):
             score += 0.2
             if argrisk.is_raw_ip(args):
                 score += 0.2
+            if argrisk.url_is_internal(args):
+                score += 0.3
         # 命令类参数:命中危险片段才加权。
         if argrisk.command_dangerous(args):
             score += 0.4

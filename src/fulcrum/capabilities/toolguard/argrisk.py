@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from urllib.parse import urlparse
 
@@ -59,6 +60,8 @@ _DANGEROUS_CMD = re.compile(
 )
 _IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 _WIN_DRIVE = re.compile(r"^[A-Za-z]:")
+# 公认的本机主机名(非 IP 字面量,ipaddress 解析不了,单列)。
+_INTERNAL_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
 
 
 def _arg_path(arguments: dict) -> str:
@@ -107,3 +110,24 @@ def domain_allowed(arguments: dict, allow_domains: list[str]) -> bool:
 def is_raw_ip(arguments: dict) -> bool:
     host = url_host(arguments)
     return bool(host and _IPV4.match(host))
+
+
+def url_is_internal(arguments: dict) -> bool:
+    """URL 指向内网/回环/链路本地/云元数据等**非公网可路由**地址 → SSRF 风险。
+
+    经典的"借智能体打内部面":URL 指向 127.0.0.1 内部管理口、10/172.16/192.168 内网主机、
+    或 169.254.169.254 云元数据端点(窃取实例凭据)——域名白名单按字符串匹配,管不到这层。
+    仅对 URL 里**字面 IP**(及 localhost 等公认本机名)做确定性判定;不做 DNS 解析,
+    域名→私网的重绑定(DNS rebinding)属 P3 增强。`not is_global` 一并覆盖私网/回环/
+    链路本地/保留/未指定地址,跨 Python 版本稳定。
+    """
+    host = url_host(arguments)
+    if host is None:
+        return False
+    if host in _INTERNAL_HOSTNAMES:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False  # 普通域名:不做解析,不在此判定(交由白名单/其它规则)
+    return not ip.is_global
