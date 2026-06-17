@@ -13,16 +13,48 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-# 敏感文件/路径:系统账户、密钥、凭据、env、证书。
+# 敏感文件/路径:系统账户、SSH/证书私钥、云与服务凭据、Shell 历史、Web 配置(中英 + Win/Linux)。
+# 政务现场多为 Windows,故同时覆盖 SAM/SYSTEM 注册表蜂巢、NTDS、各类凭据落盘点。
 _SENSITIVE_PATH = re.compile(
-    r"(/etc/(passwd|shadow)|id_rsa|\.ssh|\.env\b|\.pem\b|\.key\b|secret|credential|password|"
-    r"confidential|密钥|私钥|口令|凭据|凭证|涉密|机密)",
+    r"("
+    # 系统账户 / 提权配置(Linux)
+    r"/etc/(passwd|shadow|sudoers)|/root/|/proc/self/environ|"
+    # SSH / 证书 / 密钥库
+    r"id_rsa|id_ed25519|authorized_keys|\.ssh|\.pem\b|\.key\b|\.p12\b|\.pfx\b|\.jks\b|\.keystore\b|"
+    # 云原生 / 服务凭据落盘点
+    r"\.aws[\\/]+credentials|\.kube[\\/]+config|\.docker[\\/]+config|\.gnupg|\.netrc|\.pgpass|"
+    r"\.git-credentials|\.npmrc|\.env\b|"
+    # Shell / DB 历史(常含明文口令)
+    r"\.bash_history|\.mysql_history|"
+    # Windows 凭据存储:注册表蜂巢 / 域库
+    r"system32[\\/]+config[\\/]+(sam|system|security)|ntds\.dit|"
+    # Web 应用敏感配置
+    r"web\.config|wp-config\.php|\.htpasswd|"
+    # 通用关键词兜底(中英)
+    r"secret|credential|password|confidential|密钥|私钥|口令|凭据|凭证|涉密|机密)",
     re.IGNORECASE,
 )
-# 危险 shell 片段:删除、外联下载、反弹 shell、提权、磁盘操作。
+# 危险 shell 片段:删除/磁盘、外联下载、管道喂 shell、反弹/交互 shell、提权改账户、
+# Windows LOLBins(无文件执行 / 日志清除 / 持久化)、fork bomb。规则保守,宁可转人工。
 _DANGEROUS_CMD = re.compile(
-    r"(rm\s+-rf|\b(curl|wget)\b|\bnc\b\s+-e|base64\s+-d|chmod\s+777|/bin/sh|bash\s+-c|"
-    r"powershell|mkfs|dd\s+if=|shutdown|reboot|:\(\)\s*\{)",
+    r"("
+    # 删除 / 磁盘 / 关机
+    r"rm\s+-rf|mkfs|dd\s+if=|shutdown|reboot|wipefs|del\s+/[a-z]|rmdir\s+/s|format\s+[a-z]:|"
+    # 外联下载(含 Windows 下载器 LOLBin)
+    r"\b(curl|wget)\b|certutil\s+.*-urlcache|bitsadmin|"
+    # 管道把下载内容直接喂给 shell(下载即执行)
+    r"\|\s*(ba|z)?sh\b|\|\s*powershell|"
+    # 反弹 / 交互 shell + 内联解释器执行
+    r"\bnc\b\s+-e|/bin/sh|/dev/tcp/|bash\s+-[ic]|\bsh\s+-i|mkfifo|\bsocat\b|"
+    r"python\d?\s+-c|perl\s+-e|php\s+-r|ruby\s+-e|"
+    # 提权 / 编码绕过 / 改账户
+    r"base64\s+-d|chmod\s+777|chattr\s|setcap\s|\bsudo\s|net\s+user|net\s+localgroup|"
+    r"useradd|usermod|"
+    # Windows LOLBins:无文件执行 / 服务管控 / 日志与卷影清除 / 计划任务 / 注册表 / 关防护
+    r"powershell|invoke-expression|\biex\b|invoke-webrequest|mshta|regsvr32|rundll32|"
+    r"wmic|vssadmin|wevtutil|schtasks|\breg\s+(add|delete)|\b(set|add)-mppreference|"
+    # fork bomb
+    r":\(\)\s*\{)",
     re.IGNORECASE,
 )
 _IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
