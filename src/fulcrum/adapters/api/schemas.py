@@ -244,6 +244,21 @@ class PolicySetDTO(BaseModel):
     rules: list[PolicyRuleDTO] = Field(default_factory=list)
 
 
+# ---- /supply/scans(供应链:组件 manifest 静态扫描评级,只读)----
+class SupplyScanRiskDTO(BaseModel):
+    kind: str  # 风险项类型,如 perm.command_exec / endpoint.raw_ip
+    score: float
+    severity: str  # low / medium / high / critical
+    detail: str = ""
+
+
+class SupplyScanReportDTO(BaseModel):
+    component_id: str  # name@version
+    kind: str = "component"  # 组件类型(plugin/skill/mcp,据 manifest 或文件名推断)
+    rating: str  # 评级 = 最严重项:critical→block / high→approve / medium→sanitize / 否则 allow
+    risks: list[SupplyScanRiskDTO] = Field(default_factory=list)
+
+
 # ---- /healthz ----
 class HealthResponse(BaseModel):
     status: str = "ok"

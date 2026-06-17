@@ -3,6 +3,7 @@ import { Package, ShieldAlert } from 'lucide-react'
 import { Badge, type BadgeTone, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { SCAN_REPORTS, type Rating, type Severity } from './data'
+import { useSupplyScans } from './use-supply'
 
 const RATING_TONE: Record<Rating, BadgeTone> = {
   block: 'crit',
@@ -24,21 +25,26 @@ const SEV_TONE: Record<Severity, BadgeTone> = {
 }
 
 export function SupplyPage() {
-  const [selectedId, setSelectedId] = useState(SCAN_REPORTS[0]?.component_id ?? '')
-  const report = SCAN_REPORTS.find((r) => r.component_id === selectedId) ?? null
+  // 接真后端:有真实扫描评级则用真;无权限/不可达/空 → 回退演示 seed。
+  const live = useSupplyScans().data
+  const reports = live && live.length > 0 ? live : SCAN_REPORTS
+  const [selectedId, setSelectedId] = useState('')
+  // 选中项不在当前列表(初始 / 真数据替换 seed 后)→ 回退首条
+  const report = reports.find((r) => r.component_id === selectedId) ?? reports[0] ?? null
+  const activeId = report?.component_id ?? ''
 
   return (
     <div className="flex min-h-0 flex-1">
       {/* 组件列表 */}
       <div className="w-[340px] shrink-0 space-y-2 overflow-y-auto border-r border-line p-3 max-[900px]:w-[280px]">
-        {SCAN_REPORTS.map((r) => (
+        {reports.map((r) => (
           <button
             key={r.component_id}
             type="button"
             onClick={() => setSelectedId(r.component_id)}
             className={cn(
               'focus-ring block w-full rounded-md border p-3 text-left transition-colors',
-              r.component_id === selectedId
+              r.component_id === activeId
                 ? 'border-accent/40 bg-accent/5'
                 : 'border-line bg-surface hover:border-line-3',
             )}

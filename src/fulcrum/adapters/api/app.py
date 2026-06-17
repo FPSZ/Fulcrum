@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from ...config import Settings
     from ...core.gateway import GateVerdict
     from ...core.pipeline import SecurityPipeline, ToolOutcome
+    from ...core.ports import SupplyChainScanner
     from ..auth import AuthBundle
     from ..gateway import GatewayConfigStore, UpstreamForwarder
 
@@ -73,6 +74,7 @@ def build_api(
     settings: Settings | None = None,
     upstream: UpstreamForwarder | None = None,
     gateway_store: GatewayConfigStore | None = None,
+    scanner: SupplyChainScanner | None = None,
 ) -> FastAPI:
     app = FastAPI(title="枢衡 Fulcrum API", version=__version__)
 
@@ -92,6 +94,7 @@ def build_api(
         from .events_routes import register_events_routes
         from .overview_routes import register_overview_routes
         from .policies_routes import register_policies_routes
+        from .supply_routes import register_supply_routes
 
         deps = AuthDeps(auth.auth, settings.session_cookie_name)
         register_auth_routes(app, auth.auth, settings, deps)
@@ -101,6 +104,7 @@ def build_api(
         register_audit_routes(app, pipeline, deps)
         register_eval_routes(app, settings.eval_report_path, deps)
         register_policies_routes(app, pipeline, deps)
+        register_supply_routes(app, scanner, settings.supply_manifest_dir, deps)
         if upstream is not None and gateway_store is not None:
             from .gateway_routes import register_gateway_routes
 

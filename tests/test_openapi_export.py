@@ -19,6 +19,7 @@ _REQUIRED_PATHS = {
     "/events",
     "/eval/report",
     "/policies",
+    "/supply/scans",
     "/admin/gateway-config",
     "/auth/login",
     "/admin/users",

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # 评测报告路径:`python -m fulcrum.eval` 的最近一次产物;评测页只读展示,无则回退演示
     eval_report_path: str = "docs/eval/results/latest.json"
 
+    # 供应链:待扫描的组件 manifest 目录(供应链页只读展示其静态扫描评级)
+    supply_manifest_dir: str = "samples/supplychain"
+
     # 前端静态资源目录(生产:指向已构建的 console/dist);留空则只提供 API
     frontend_dir: str = ""
 
