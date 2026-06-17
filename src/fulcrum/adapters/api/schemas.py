@@ -65,6 +65,7 @@ class GatewayChatResponse(BaseModel):
     output_risk_level: str = ""
     output_reason: str = ""
     output_blocked: bool = False  # 回复是否因出口检测被拦截打码
+    output_sanitized: bool = False  # 回复是否经出口脱敏后回传(复核档,仅打码救得了的敏感量)
 
 
 # ---- /admin/gateway-config(网关上游接入,设置页可配)----

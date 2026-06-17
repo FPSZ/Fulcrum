@@ -2477,6 +2477,11 @@
             "type": "boolean",
             "title": "Output Blocked",
             "default": false
+          },
+          "output_sanitized": {
+            "type": "boolean",
+            "title": "Output Sanitized",
+            "default": false
           }
         },
         "type": "object",

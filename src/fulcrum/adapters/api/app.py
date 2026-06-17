@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from ... import __version__
 from ...core.domain import Disposition, ExecResult, Message, ModelRequest
 from ...core.errors import FulcrumError
+from ...core.redaction import redact
 from .schemas import (
     AuditResponse,
     ChatRequest,
@@ -180,6 +181,10 @@ def build_api(
             if out.decision == Disposition.BLOCK:
                 resp.output_blocked = True
                 resp.reply = "[出口安全策略:回复疑似含敏感数据,已拦截不予返回]"
+            elif out.decision == Disposition.SANITIZE:
+                # 复核档且只夹带可打码的结构化敏感量:脱敏后回传,用户仍拿到实质答复。
+                resp.output_sanitized = True
+                resp.reply = redact(reply.reply)
         return resp
 
     @app.get("/audit/{session_id}", response_model=AuditResponse)
