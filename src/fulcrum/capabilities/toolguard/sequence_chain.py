@@ -15,6 +15,8 @@ Finding 的 evidence 带 `intent_id`(= 触发链的当前调用),供策略只对
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 
 from ...core.domain import Context, Finding, ToolIntent
@@ -56,6 +58,39 @@ _WINDOW = 12
 # 阈值取得够长以避免短公共串(如 "true"/url 协议头)误报。
 _TAINT_MIN = 12
 
+# 编码外发规避:把上一步读到的敏感量先 Base64/Hex 编码再外发,可绕过原样子串比对。
+# 故对外发参数里的编码块就地解码,得到的明文一并参与污点比对。阈值取够长以避免噪声:
+# Base64 ≥16 字符(≥12 字节明文)、Hex ≥24 字符(≥12 字节明文),均对齐 _TAINT_MIN。
+_B64_BLOB = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
+_HEX_BLOB = re.compile(r"(?:[0-9a-fA-F]{2}){12,}")
+
+
+def _decoded_variants(text: str) -> list[str]:
+    """抽取外发文本里的 Base64/Hex 块并解码为明文(utf-8,无法解码的丢弃)。
+
+    用于堵「编码后外发」规避:`send(data=base64(secret))` 时原文不含 secret 子串,但解码块含。
+    确定性:仅解码格式合法且能落地为 utf-8 的块,失败静默跳过,不猜测。
+    """
+    out: list[str] = []
+    for m in _B64_BLOB.finditer(text):
+        blob = m.group()
+        try:
+            dec = base64.b64decode(blob + "=" * (-len(blob) % 4), validate=True)
+        except (binascii.Error, ValueError):
+            continue
+        text_dec = dec.decode("utf-8", "ignore")
+        if text_dec:
+            out.append(text_dec)
+    for m in _HEX_BLOB.finditer(text):
+        try:
+            dec = bytes.fromhex(m.group())
+        except ValueError:
+            continue
+        text_dec = dec.decode("utf-8", "ignore")
+        if text_dec:
+            out.append(text_dec)
+    return out
+
 
 def _args_text(intent: ToolIntent) -> str:
     """外发动作的参数值拼成可比对文本(只取值,键名不参与污点比对)。"""
@@ -71,24 +106,29 @@ def _normalize_taint(s: str) -> str:
     return "".join(s.split()).casefold()
 
 
-def _taint_source(intent: ToolIntent, tool_returns: list[str]) -> str | None:
+def _taint_source(intent: ToolIntent, tool_returns: list[str]) -> tuple[str, bool] | None:
     """当前外发参数是否源自某一步工具返回:取返回内容的连续片段在参数文本里命中即判污点。
 
     归一化(去空白 + casefold)后做**逐位**滑窗子串匹配 —— 此前以步长 4 跳采会漏掉起点不
     对齐的字面子串(实测 'SECRETDATA99' 原样外发却判 None);步长改 1 并归一化后,对齐 /
-    大小写 / 插空格三类规避一并堵死。返回命中的(原始)返回内容摘要供证据展示,无则 None。
-    确定性子串匹配,不猜测。
+    大小写 / 插空格三类规避一并堵死。除原样参数文本外,还把参数里的 Base64/Hex 块解码后
+    一并作为比对干草堆,堵「编码后外发」规避。返回 (命中的原始返回内容摘要, 是否经编码),
+    无则 None。原样命中优先于编码命中。确定性子串匹配,不猜测。
     """
-    text = _normalize_taint(_args_text(intent))
-    if len(text) < _TAINT_MIN:
-        return None
+    args_raw = _args_text(intent)
+    # (干草堆, 是否经解码);原样在前,确保原样命中优先报告。
+    haystacks: list[tuple[str, bool]] = [(_normalize_taint(args_raw), False)]
+    haystacks += [(_normalize_taint(dec), True) for dec in _decoded_variants(args_raw)]
     for ret in tool_returns:
         norm = _normalize_taint(ret)
         if len(norm) < _TAINT_MIN:
             continue
-        for i in range(len(norm) - _TAINT_MIN + 1):
-            if norm[i : i + _TAINT_MIN] in text:
-                return ret.strip()[:80]
+        for hay, encoded in haystacks:
+            if len(hay) < _TAINT_MIN:
+                continue
+            for i in range(len(norm) - _TAINT_MIN + 1):
+                if norm[i : i + _TAINT_MIN] in hay:
+                    return ret.strip()[:80], encoded
     return None
 
 
@@ -122,18 +162,22 @@ class SequenceChainAnalyzer:
         findings: list[Finding] = []
 
         # ① 跨步数据流污点:外发参数确实源自上一步工具返回 —— 比"顺序巧合"更硬的外泄证据。
-        tainted = _taint_source(current, ctx.tool_returns)
-        if tainted is not None:
+        taint = _taint_source(current, ctx.tool_returns)
+        if taint is not None:
+            tainted, encoded = taint
+            # 编码后外发是更强的恶意信号(刻意隐藏载荷,不可能是顺序巧合),证据再加重。
+            pattern = "tool_return->encode->exfil" if encoded else "tool_return->exfil"
             findings.append(
                 Finding(
                     kind="chain.taint_exfiltration",
-                    score=0.9,
+                    score=0.95 if encoded else 0.9,
                     evidence={
                         "intent_id": current.intent_id,
-                        "pattern": "tool_return->exfil",
+                        "pattern": pattern,
                         "severity": "critical",
                         "exfil_tool": current.tool_name,
                         "tainted_from": tainted,
+                        "encoded": encoded,
                     },
                 )
             )
