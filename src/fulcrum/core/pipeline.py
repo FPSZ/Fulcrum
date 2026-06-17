@@ -28,6 +28,7 @@ from .domain import (
     TrustLevel,
 )
 from .gateway import GateVerdict, screen
+from .redaction import redact
 
 if TYPE_CHECKING:  # 仅类型注解,避免运行时耦合
     from .ports import (
@@ -172,7 +173,8 @@ class SecurityPipeline:
                 "risk_level": verdict.risk_level,
                 "max_score": verdict.max_score,
                 "top_kind": verdict.top_kind,
-                "excerpt": message[:200],
+                # 审计摘要脱敏:身份证/手机/密钥等不以明文落库(检测仍看全文,见 ctx.spans)。
+                "excerpt": redact(message[:200]),
                 "source_type": SourceType.USER.value,
                 "trust_level": TrustLevel.UNTRUSTED.value,
                 "stage": "input_gateway",
