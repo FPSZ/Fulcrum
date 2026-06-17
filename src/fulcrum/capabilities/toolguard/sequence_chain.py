@@ -52,6 +52,32 @@ _DEST_KEYS = frozenset(
 )
 # 回看窗口(步数近似)。当前调用之前的 _WINDOW 步内出现敏感/普通读取即构成链。
 _WINDOW = 12
+# 跨步污点:外发参数里出现长度 ≥ 此阈值、源自某一步工具返回的连续片段 → 判定污点。
+# 阈值取得够长以避免短公共串(如 "true"/url 协议头)误报。
+_TAINT_MIN = 12
+
+
+def _args_text(intent: ToolIntent) -> str:
+    """外发动作的参数值拼成可比对文本(只取值,键名不参与污点比对)。"""
+    return " ".join(str(v) for v in intent.arguments.values())
+
+
+def _taint_source(intent: ToolIntent, tool_returns: list[str]) -> str | None:
+    """当前外发参数是否源自某一步工具返回:取返回内容的连续片段在参数文本里命中即判污点。
+
+    返回命中的返回内容摘要(供证据展示),无命中返回 None。确定性子串匹配,不猜测。
+    """
+    text = _args_text(intent)
+    if len(text) < _TAINT_MIN:
+        return None
+    for ret in tool_returns:
+        ret = ret.strip()
+        if len(ret) < _TAINT_MIN:
+            continue
+        for i in range(0, len(ret) - _TAINT_MIN + 1, 4):
+            if ret[i : i + _TAINT_MIN] in text:
+                return ret[:80]
+    return None
 
 
 def _is_read(intent: ToolIntent) -> bool:
@@ -81,25 +107,45 @@ class SequenceChainAnalyzer:
         if not _is_outbound(current):
             return []  # 仅在"对外发送"这步收口判链
 
+        findings: list[Finding] = []
+
+        # ① 跨步数据流污点:外发参数确实源自上一步工具返回 —— 比"顺序巧合"更硬的外泄证据。
+        tainted = _taint_source(current, ctx.tool_returns)
+        if tainted is not None:
+            findings.append(
+                Finding(
+                    kind="chain.taint_exfiltration",
+                    score=0.9,
+                    evidence={
+                        "intent_id": current.intent_id,
+                        "pattern": "tool_return->exfil",
+                        "severity": "critical",
+                        "exfil_tool": current.tool_name,
+                        "tainted_from": tainted,
+                    },
+                )
+            )
+
+        # ② 顺序模式:窗口内出现(敏感)读取 + 当前外发。
         window = trace[-(_WINDOW + 1) : -1]  # 当前调用之前、窗口内的历史调用
         reads = [t for t in window if _is_read(t)]
-        if not reads:
-            return []
-
-        sensitive = any(_is_sensitive_read(t) for t in reads)
-        score = 0.85 if sensitive else 0.5
-        pattern = "sensitive_read->exfil" if sensitive else "read->exfil"
-        return [
-            Finding(
-                kind="chain.exfiltration",
-                score=score,
-                evidence={
-                    "intent_id": current.intent_id,
-                    "pattern": pattern,
-                    "severity": "critical" if sensitive else "medium",
-                    "read_tools": [t.tool_name for t in reads][:3],
-                    "exfil_tool": current.tool_name,
-                    "window_steps": _WINDOW,
-                },
+        if reads:
+            sensitive = any(_is_sensitive_read(t) for t in reads)
+            score = 0.85 if sensitive else 0.5
+            pattern = "sensitive_read->exfil" if sensitive else "read->exfil"
+            findings.append(
+                Finding(
+                    kind="chain.exfiltration",
+                    score=score,
+                    evidence={
+                        "intent_id": current.intent_id,
+                        "pattern": pattern,
+                        "severity": "critical" if sensitive else "medium",
+                        "read_tools": [t.tool_name for t in reads][:3],
+                        "exfil_tool": current.tool_name,
+                        "window_steps": _WINDOW,
+                    },
+                )
             )
-        ]
+
+        return findings

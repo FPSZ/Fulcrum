@@ -343,6 +343,9 @@ class SecurityPipeline:
                 try:
                     outcome.result = await self._executor.execute(tool, intent, ctx)
                     outcome.executed = True
+                    # 记录工具返回(截断)→ 供后续步骤的跨步污点链分析比对来源。
+                    if outcome.result.output:
+                        ctx.tool_returns.append(outcome.result.output[:500])
                     await self._emit(ctx, AuditEventType.TOOL_EXECUTED, subject_id=intent.intent_id)
                 except Exception as exc:  # noqa: BLE001 —— 执行抛错不得 fail-open
                     # 动作已被策略允许,但执行崩溃 → 记错误结果 + 留痕,绝不静默 500。

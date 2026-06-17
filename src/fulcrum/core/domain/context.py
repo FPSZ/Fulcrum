@@ -28,3 +28,6 @@ class Context(BaseModel):
     # 请求级动作序列(非跨请求!命名特意不叫 session_trace,见上方生命周期说明)。
     request_trace: list[ToolIntent] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
+    # 本请求内已执行工具的返回内容(截断)。供任务链做**跨步数据流污点**:判断后续外发
+    # 动作的参数是否真的源自上一步工具返回(比"顺序巧合"更硬的外泄证据)。
+    tool_returns: list[str] = Field(default_factory=list)
