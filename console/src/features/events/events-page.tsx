@@ -9,6 +9,7 @@ import { EventDetail } from './event-detail'
 import { EventGroup } from './event-group'
 import { DISPOSITION_ORDER, LEVEL_LABEL } from './meta'
 import type { Disposition, RiskLevel, SecurityEvent } from './types'
+import { useEventsFeed } from './use-events'
 
 type Filter = 'all' | RiskLevel
 const FILTERS: { value: Filter; label: string }[] = [
@@ -19,7 +20,10 @@ const FILTERS: { value: Filter; label: string }[] = [
 ]
 
 export function EventsPage() {
-  const events = useResource<SecurityEvent>('events')
+  // 接真后端:有真实事件则用真;无权限/不可达/空 → 回退导入备份的演示事件(纯前端预览不受影响)。
+  const backup = useResource<SecurityEvent>('events')
+  const { data: live } = useEventsFeed()
+  const events = live && live.length > 0 ? live : backup
   // 列表+详情并排放不下时(≤1080)切换为栈式:列表 ↔ 全屏详情
   const compact = useMediaQuery('(max-width: 1080px)')
   const [filter, setFilter] = useState<Filter>('all')

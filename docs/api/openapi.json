@@ -1222,6 +1222,68 @@
         }
       }
     },
+    "/events": {
+      "get": {
+        "summary": "Events",
+        "operationId": "events_events_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SecurityEventDTO"
+                  },
+                  "title": "Response Events Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/gateway-config": {
       "get": {
         "summary": "Get Config",
@@ -2470,6 +2532,100 @@
           "name"
         ],
         "title": "RoleWrite"
+      },
+      "SecurityEventDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "time": {
+            "type": "number",
+            "title": "Time"
+          },
+          "sess": {
+            "type": "string",
+            "title": "Sess"
+          },
+          "src_type": {
+            "type": "string",
+            "title": "Src Type"
+          },
+          "trust": {
+            "type": "string",
+            "title": "Trust"
+          },
+          "risk": {
+            "type": "string",
+            "title": "Risk"
+          },
+          "tool": {
+            "type": "string",
+            "title": "Tool",
+            "default": ""
+          },
+          "policy": {
+            "type": "string",
+            "title": "Policy",
+            "default": ""
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "disp": {
+            "type": "string",
+            "title": "Disp"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt",
+            "default": ""
+          },
+          "intent": {
+            "type": "string",
+            "title": "Intent",
+            "default": ""
+          },
+          "args": {
+            "type": "string",
+            "title": "Args",
+            "default": ""
+          },
+          "conf": {
+            "type": "number",
+            "title": "Conf",
+            "default": 0.0
+          },
+          "derived": {
+            "type": "string",
+            "title": "Derived",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "time",
+          "sess",
+          "src_type",
+          "trust",
+          "risk",
+          "level",
+          "disp",
+          "verified"
+        ],
+        "title": "SecurityEventDTO",
+        "description": "一条安全事件 = 一个判定点(policy_decided 审计事件)+ 其可展示判定依据。\n\n输入筛查(前置网关)路径无工具调用,故 tool/intent/args 诚实留空;\n字段刻意对齐前端 SecurityEvent,前端做一层薄映射(枚举值 → 中文/图标)即可。"
       },
       "StatusUpdate": {
         "properties": {

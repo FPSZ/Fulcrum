@@ -160,12 +160,23 @@ class SecurityPipeline:
         await self.detect_inputs(ctx, ctx.spans)
 
         verdict = screen(ctx.findings)
+        # 富化判定证据:把"这条输入凭什么这么判"的可展示依据落进审计 —— 供事件页逐事件
+        # 溯源(摘要/来源/置信度)。这些是观测字段,随事件入哈希(只影响新事件自身)。
         await self._emit(
             ctx,
             AuditEventType.POLICY_DECIDED,
             subject_id=req.request_id,
             decision=verdict.decision,
-            evidence={"reason": verdict.reason, "risk_level": verdict.risk_level},
+            evidence={
+                "reason": verdict.reason,
+                "risk_level": verdict.risk_level,
+                "max_score": verdict.max_score,
+                "top_kind": verdict.top_kind,
+                "excerpt": message[:200],
+                "source_type": SourceType.USER.value,
+                "trust_level": TrustLevel.UNTRUSTED.value,
+                "stage": "input_gateway",
+            },
         )
         if verdict.decision == Disposition.BLOCK:
             await self._emit(ctx, AuditEventType.TOOL_BLOCKED, subject_id=req.request_id)
