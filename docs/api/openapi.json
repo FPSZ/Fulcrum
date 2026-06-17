@@ -1284,6 +1284,56 @@
         }
       }
     },
+    "/audit": {
+      "get": {
+        "summary": "Audit Sessions",
+        "operationId": "audit_sessions_audit_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditSessionDTO"
+                  },
+                  "title": "Response Audit Sessions Audit Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/gateway-config": {
       "get": {
         "summary": "Get Config",
@@ -1643,6 +1693,62 @@
         "type": "object",
         "title": "ApproveRequest"
       },
+      "AuditChainEventDTO": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "subject_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Id"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          },
+          "prev_hash": {
+            "type": "string",
+            "title": "Prev Hash"
+          },
+          "event_hash": {
+            "type": "string",
+            "title": "Event Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "event_type",
+          "prev_hash",
+          "event_hash"
+        ],
+        "title": "AuditChainEventDTO",
+        "description": "链上一个审计事件(对齐审计页时间轴展示;不回大段 evidence,只取理由)。"
+      },
       "AuditResponse": {
         "properties": {
           "session_id": {
@@ -1668,6 +1774,37 @@
           "verified"
         ],
         "title": "AuditResponse"
+      },
+      "AuditSessionDTO": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AuditChainEventDTO"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "verified"
+        ],
+        "title": "AuditSessionDTO",
+        "description": "一条会话审计链 + 其 hash-chain 校验结论 + 从链派生的一句话情景。"
       },
       "ChatMessage": {
         "properties": {

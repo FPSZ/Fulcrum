@@ -3,6 +3,7 @@ import { Link2, ShieldCheck } from 'lucide-react'
 import { Badge, type BadgeTone, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { AUDIT_SESSIONS, type Disposition, EVENT_LABEL } from './data'
+import { useAuditSessions } from './use-audit'
 
 const DISP_TONE: Record<Disposition, BadgeTone> = {
   block: 'crit',
@@ -18,21 +19,26 @@ const DISP_LABEL: Record<Disposition, string> = {
 }
 
 export function AuditPage() {
-  const [selectedId, setSelectedId] = useState(AUDIT_SESSIONS[0]?.session_id ?? '')
-  const session = AUDIT_SESSIONS.find((s) => s.session_id === selectedId) ?? null
+  // 接真后端:有真实会话链则用真;无权限/不可达/空 → 回退演示 seed(纯前端预览不受影响)。
+  const live = useAuditSessions().data
+  const sessions = live && live.length > 0 ? live : AUDIT_SESSIONS
+  const [selectedId, setSelectedId] = useState('')
+  // 选中项不在当前列表(初始 / 真数据替换 seed 后)→ 回退首条
+  const session = sessions.find((s) => s.session_id === selectedId) ?? sessions[0] ?? null
+  const activeId = session?.session_id ?? ''
 
   return (
     <div className="flex min-h-0 flex-1">
       {/* 会话列表 */}
       <div className="w-[320px] shrink-0 space-y-2 overflow-y-auto border-r border-line p-3 max-[900px]:w-[260px]">
-        {AUDIT_SESSIONS.map((s) => (
+        {sessions.map((s) => (
           <button
             key={s.session_id}
             type="button"
             onClick={() => setSelectedId(s.session_id)}
             className={cn(
               'focus-ring block w-full rounded-md border p-3 text-left transition-colors',
-              s.session_id === selectedId
+              s.session_id === activeId
                 ? 'border-accent/40 bg-accent/5'
                 : 'border-line bg-surface hover:border-line-3',
             )}

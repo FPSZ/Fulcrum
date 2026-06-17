@@ -85,6 +85,7 @@ def build_api(
     # 鉴权 + 管理后台路由;auth/settings 缺省时跳过,便于纯管线测试。
     if auth is not None and settings is not None:
         from .admin_routes import register_admin_routes
+        from .audit_routes import register_audit_routes
         from .auth_routes import register_auth_routes
         from .deps import AuthDeps
         from .events_routes import register_events_routes
@@ -95,6 +96,7 @@ def build_api(
         register_admin_routes(app, auth.directory, deps)
         register_overview_routes(app, pipeline, deps)
         register_events_routes(app, pipeline, deps)
+        register_audit_routes(app, pipeline, deps)
         if upstream is not None and gateway_store is not None:
             from .gateway_routes import register_gateway_routes
 

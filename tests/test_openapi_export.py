@@ -13,6 +13,7 @@ _REQUIRED_PATHS = {
     "/v1/chat/completions",
     "/tools/call",
     "/audit/{session_id}",
+    "/audit",
     "/gateway/chat",
     "/overview/stats",
     "/events",

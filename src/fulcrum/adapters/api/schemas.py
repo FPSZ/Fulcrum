@@ -155,6 +155,28 @@ class SecurityEventDTO(BaseModel):
     reason: str = ""  # 处置理由
 
 
+# ---- /audit(会话审计链列表:append-only + hash-chain 的可视化溯源)----
+class AuditChainEventDTO(BaseModel):
+    """链上一个审计事件(对齐审计页时间轴展示;不回大段 evidence,只取理由)。"""
+
+    index: int
+    event_type: str
+    subject_id: str | None = None
+    decision: str | None = None
+    reason: str = ""
+    prev_hash: str
+    event_hash: str
+
+
+class AuditSessionDTO(BaseModel):
+    """一条会话审计链 + 其 hash-chain 校验结论 + 从链派生的一句话情景。"""
+
+    session_id: str
+    verified: bool
+    summary: str = ""
+    events: list[AuditChainEventDTO] = Field(default_factory=list)
+
+
 # ---- /healthz ----
 class HealthResponse(BaseModel):
     status: str = "ok"
