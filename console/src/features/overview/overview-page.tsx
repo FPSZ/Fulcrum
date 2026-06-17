@@ -18,12 +18,14 @@ import { ease } from '@/lib/motion'
 import { useAuth } from '@/lib/auth'
 import { useNavigateFeature } from '@/lib/nav'
 import { useResource } from '@/lib/backup'
+import type { OverviewStats } from '@/lib/api/overview'
 import { ImportBackupButtons } from '../backup/import-controls'
 import type { SecurityEvent } from '../events/types'
 import { BarChart, Gauge, LiveChart } from './charts'
 import type { OverviewData, OverviewStat } from './backup'
-import { STAT_ICON, deriveRecent, type StatTone } from './data'
+import { STAT_ICON, deriveRecent, realKpiCards, type StatTone } from './data'
 import { useLive } from './use-live'
+import { useOverviewStats } from './use-stats'
 
 const item: Variants = {
   initial: { opacity: 0 },
@@ -161,12 +163,23 @@ function EmptyOverview() {
 export function OverviewPage() {
   const ov = useResource<OverviewData>('overview')[0] as OverviewData | undefined
   const events = useResource<SecurityEvent>('events')
-  if (!ov && events.length === 0) return <EmptyOverview />
-  return <LiveOverview ov={ov} seed={events} />
+  // 接真后端:有真实流量(events>0)时用其覆盖 KPI;无权限/不可达则 query 静默失败,回退备份。
+  const { data: stats } = useOverviewStats()
+  const real = stats && stats.events > 0 ? stats : undefined
+  if (!ov && events.length === 0 && !real) return <EmptyOverview />
+  return <LiveOverview ov={ov} seed={events} real={real} />
 }
 
 /** 实时面板主体(数据流每秒推进) */
-function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }) {
+function LiveOverview({
+  ov,
+  seed,
+  real,
+}: {
+  ov?: OverviewData
+  seed: SecurityEvent[]
+  real?: OverviewStats
+}) {
   const { now, feed, freshIds, perSecond, added, pending } = useLive(seed, true)
   const [chartMode, setChartMode] = useState<'live' | 'month' | 'year'>('live')
   const [sliderVal, setSliderVal] = useState(DEFAULT_SLIDER)
@@ -193,15 +206,19 @@ function LiveOverview({ ov, seed }: { ov?: OverviewData; seed: SecurityEvent[] }
   const isLive = chartMode === 'live'
   const baseStats = chartMode === 'year' && ov?.kpiYear ? ov.kpiYear : ov?.stats
   const deltaLabel = chartMode === 'year' ? '较上年' : '较上月'
-  const stats: { stat: OverviewStat; live: boolean }[] =
-    baseStats?.map((s) => {
-      if (isLive && s.key === 'controlled')
-        return { stat: { ...s, value: fmtNum(numBase(s.value) + added.controlled) }, live: true }
-      if (isLive && s.key === 'blocked')
-        return { stat: { ...s, value: fmtNum(numBase(s.value) + added.blocked) }, live: true }
-      if (isLive && s.key === 'pending') return { stat: { ...s, value: String(pending) }, live: true }
-      return { stat: s, live: false }
-    }) ?? []
+  // 实时档且后端有真实流量:KPI 接真(覆盖备份演示值);其余档沿用备份历史 KPI。
+  const realCards = isLive && real ? realKpiCards(real, baseStats) : null
+  const stats: { stat: OverviewStat; live: boolean }[] = realCards
+    ? realCards.map((stat) => ({ stat, live: true }))
+    : (baseStats?.map((s) => {
+        if (isLive && s.key === 'controlled')
+          return { stat: { ...s, value: fmtNum(numBase(s.value) + added.controlled) }, live: true }
+        if (isLive && s.key === 'blocked')
+          return { stat: { ...s, value: fmtNum(numBase(s.value) + added.blocked) }, live: true }
+        if (isLive && s.key === 'pending')
+          return { stat: { ...s, value: String(pending) }, live: true }
+        return { stat: s, live: false }
+      }) ?? [])
 
   const recent = deriveRecent(feed, 7)
   const RANGE: { key: 'live' | 'month' | 'year'; label: string }[] = [

@@ -1,10 +1,50 @@
 import { ShieldCheck, ShieldAlert, Clock, FileCheck2, type LucideIcon } from 'lucide-react'
 import type { BadgeTone } from '@/components/ui'
+import type { OverviewStats } from '@/lib/api/overview'
 import { DISPOSITION_LABEL, DISPOSITION_TONE, SOURCE_ICON } from '../events/meta'
 import type { SecurityEvent } from '../events/types'
 import type { OverviewStat } from './backup'
 
 export type StatTone = OverviewStat['tone']
+
+/** 接真后端时各 KPI 卡的默认文案/色调(无备份时也能成卡;有备份则沿用其 label/unit) */
+const REAL_KPI_META: Record<OverviewStat['key'], { label: string; unit?: string; tone: StatTone }> = {
+  controlled: { label: '受控调用', tone: 'accent' },
+  blocked: { label: '高危拦截', tone: 'crit' },
+  pending: { label: '待人工研判', tone: 'high' },
+  audit: { label: '审计完整率', unit: '%', tone: 'ok' },
+}
+
+const fmtInt = (n: number) => n.toLocaleString('en-US')
+
+/**
+ * 把后端实时聚合统计映射成四张 KPI 卡(覆盖备份演示值)。
+ * controlled/blocked/pending 为计数;audit 为 hash-chain 校验通过率(%)。
+ * base(若有备份)只用于沿用一致的 label/unit;delta 在实时态不展示,故置空。
+ */
+export function realKpiCards(stats: OverviewStats, base?: OverviewStat[]): OverviewStat[] {
+  const rate = stats.sessions > 0 ? (stats.verified_sessions / stats.sessions) * 100 : 100
+  const value: Record<OverviewStat['key'], string> = {
+    controlled: fmtInt(stats.requests),
+    blocked: fmtInt(stats.blocked),
+    pending: String(stats.pending),
+    audit: String(Math.round(rate * 10) / 10),
+  }
+  const keys: OverviewStat['key'][] = ['controlled', 'blocked', 'pending', 'audit']
+  return keys.map((key) => {
+    const meta = REAL_KPI_META[key]
+    const seed = base?.find((s) => s.key === key)
+    return {
+      key,
+      label: seed?.label ?? meta.label,
+      value: value[key],
+      unit: key === 'audit' ? (seed?.unit ?? meta.unit) : undefined,
+      delta: '',
+      dir: 'up',
+      tone: seed?.tone ?? meta.tone,
+    }
+  })
+}
 
 /** KPI key → 图标(图标不入备份,前端按 key 映射) */
 export const STAT_ICON: Record<OverviewStat['key'], LucideIcon> = {

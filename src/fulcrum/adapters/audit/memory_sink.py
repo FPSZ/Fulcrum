@@ -72,6 +72,16 @@ class InMemoryAuditSink:
     async def events(self, session_id: str) -> list[AuditEvent]:
         return list(self._chains.get(session_id, []))
 
+    # ── 聚合读取(供总览统计端点跨会话汇总)──────────────────────────
+    # 端口 AuditSink 只暴露 per-session 读;这两个是内存实现的具体扩展,调用方
+    # 按 isinstance 窄化使用(见 demo/runtime 同款先例)。SQLite 实现将以一条
+    # 聚合查询提供等价能力,不必逐链拉全量。
+    def session_ids(self) -> list[str]:
+        return list(self._chains.keys())
+
+    def all_events(self) -> list[AuditEvent]:
+        return [event for chain in self._chains.values() for event in chain]
+
     async def verify_chain(self, session_id: str) -> bool:
         prev = _GENESIS
         for event in self._chains.get(session_id, []):

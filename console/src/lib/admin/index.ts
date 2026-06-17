@@ -1,7 +1,9 @@
 /**
  * 管理后台 API 客户端(组织 / 角色 / 成员 / 权限)。
- * 全部走相对路径同源请求,会话 Cookie 自动携带;后端按权限点强制鉴权(前端隐藏只是体验)。
+ * 请求封装复用同源基座 {@link api}(会话 Cookie 自动携带,非 2xx 抛后端 detail)。
  */
+
+import { api, j, patch } from '@/lib/api/client'
 
 export interface PermissionDef {
   key: string
@@ -48,31 +50,6 @@ export interface TempPasswordResult {
   user: Member
   temp_password: string | null
 }
-
-/** 统一请求封装:非 2xx 抛出后端的 detail 文案,便于直接 toast。 */
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  let res: Response
-  try {
-    res = await fetch(path, {
-      credentials: 'include',
-      headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
-      ...init,
-    })
-  } catch {
-    throw new Error('无法连接服务,请稍后再试')
-  }
-  if (res.status === 204) return undefined as T
-  const text = await res.text()
-  const data = text ? JSON.parse(text) : undefined
-  if (!res.ok) {
-    const detail = data?.detail
-    throw new Error(typeof detail === 'string' ? detail : '操作失败')
-  }
-  return data as T
-}
-
-const j = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
-const patch = (body: unknown): RequestInit => ({ method: 'PATCH', body: JSON.stringify(body) })
 
 // ── 权限目录 ────────────────────────────────────────────────────
 export const listPermissions = () => api<PermissionDef[]>('/admin/permissions')
