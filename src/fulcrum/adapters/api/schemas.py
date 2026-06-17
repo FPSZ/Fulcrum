@@ -128,6 +128,33 @@ class OverviewStatsResponse(BaseModel):
     by_type: dict[str, int] = Field(default_factory=dict)  # 按审计事件类型计数
 
 
+# ---- /events(会话事件流:审计判定点投影成可溯源事件行)----
+class SecurityEventDTO(BaseModel):
+    """一条安全事件 = 一个判定点(policy_decided 审计事件)+ 其可展示判定依据。
+
+    输入筛查(前置网关)路径无工具调用,故 tool/intent/args 诚实留空;
+    字段刻意对齐前端 SecurityEvent,前端做一层薄映射(枚举值 → 中文/图标)即可。
+    """
+
+    id: str  # event_id
+    time: float  # created_at(epoch 秒),前端格式化为时分秒
+    sess: str  # session_id
+    src_type: str  # SourceType 值(user/document/...)
+    trust: str  # TrustLevel 值(untrusted/semi_trusted/trusted)
+    risk: str  # 事件标题(按处置归纳的中文短语)
+    tool: str = ""  # 工具/动作(筛查路径为空)
+    policy: str = ""  # 命中策略 / 判定阶段
+    level: str  # RiskLevel 值
+    disp: str  # Disposition 值
+    verified: bool  # 所属会话 hash-chain 校验是否通过
+    excerpt: str = ""  # 来源片段摘要
+    intent: str = ""  # 模型意图(筛查路径为空)
+    args: str = ""  # 工具参数(筛查路径为空)
+    conf: float = 0.0  # 置信度(max_score)
+    derived: str = ""  # 归因依据
+    reason: str = ""  # 处置理由
+
+
 # ---- /healthz ----
 class HealthResponse(BaseModel):
     status: str = "ok"
