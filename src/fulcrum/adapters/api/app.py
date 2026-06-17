@@ -160,6 +160,16 @@ def build_api(
         resp.reply = reply.reply
         resp.tools = reply.tools
         resp.upstream_error = reply.error
+
+        # 出口闸门:对回复做敏感/危险内容检测;高危则拦截打码,不把疑似外泄内容回给用户。
+        if reply.ok and reply.reply:
+            out = await pipeline.screen_output(body.session_id, reply.reply)
+            resp.output_decision = out.decision
+            resp.output_risk_level = out.risk_level
+            resp.output_reason = out.reason
+            if out.decision == Disposition.BLOCK:
+                resp.output_blocked = True
+                resp.reply = "[出口安全策略:回复疑似含敏感数据,已拦截不予返回]"
         return resp
 
     @app.get("/audit/{session_id}", response_model=AuditResponse)

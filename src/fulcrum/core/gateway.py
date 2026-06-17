@@ -85,3 +85,46 @@ def screen(findings: list[Finding]) -> GateVerdict:
         top_kind=top.kind,
         findings=findings,
     )
+
+
+def screen_output(findings: list[Finding]) -> GateVerdict:
+    """出口闸门:对**企业智能体的回复**判敏感/危险内容 → 放行 / 标注复核 / 拦截。
+
+    与 `screen`(入口)同阈值、同 Finding 来源,只是处置语义换成"回复要不要回给用户":
+        block   → 回复疑似含敏感数据外泄,拦截不回传(打码)。
+        approve → 回复可疑,标注待人工复核。
+        allow   → 回复正常,放行回传。
+    """
+    if not findings:
+        return GateVerdict(
+            decision=Disposition.ALLOW,
+            risk_level=RiskLevel.LOW,
+            reason="回复未命中敏感/危险内容,放行回传。",
+            max_score=0.0,
+            top_kind=None,
+            findings=[],
+        )
+
+    top = max(findings, key=lambda f: f.score)
+    score = top.score
+    level = _risk_level(score)
+    label = "、".join(sorted({f.kind for f in findings}))
+
+    if score >= BLOCK_AT:
+        decision = Disposition.BLOCK
+        reason = f"回复命中高危内容({label}),疑似敏感数据外泄,已拦截不回传。"
+    elif score >= REVIEW_AT:
+        decision = Disposition.APPROVE
+        reason = f"回复命中可疑内容({label}),标注待人工复核。"
+    else:
+        decision = Disposition.ALLOW
+        reason = f"回复风险较低({label}),放行回传。"
+
+    return GateVerdict(
+        decision=decision,
+        risk_level=level,
+        reason=reason,
+        max_score=score,
+        top_kind=top.kind,
+        findings=findings,
+    )
