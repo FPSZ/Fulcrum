@@ -221,6 +221,29 @@ class EvalReportDTO(BaseModel):
     samples: list[EvalSampleDTO] = Field(default_factory=list)
 
 
+# ---- /policies(策略中心:当前装配的声明式 YAML 策略,只读)----
+class PolicyConditionDTO(BaseModel):
+    key: str
+    value: str  # when 值归一为展示串(list→"a, b"、bool→"true"/"false")
+
+
+class PolicyRuleDTO(BaseModel):
+    id: str
+    when: list[PolicyConditionDTO] = Field(default_factory=list)
+    decision: str
+    risk_level: str = ""
+    reason: str = ""
+
+
+class PolicySetDTO(BaseModel):
+    name: str = ""
+    version: int = 1
+    default: str = "allow"
+    workspace: str = ""
+    allow_domains: list[str] = Field(default_factory=list)
+    rules: list[PolicyRuleDTO] = Field(default_factory=list)
+
+
 # ---- /healthz ----
 class HealthResponse(BaseModel):
     status: str = "ok"

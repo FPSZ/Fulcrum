@@ -92,6 +92,11 @@ class SecurityPipeline:
         """只读访问审计 sink(供审计查询端点使用)。"""
         return self._audit
 
+    @property
+    def policy(self) -> PolicyEngine:
+        """只读访问策略引擎(供策略中心展示「当前装配的策略」)。"""
+        return self._policy
+
     def model_tool_schemas(self) -> list[dict]:
         """装配工具里声明了 model_schema 的 OpenAI function 规格列表。
 

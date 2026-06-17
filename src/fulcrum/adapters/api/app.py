@@ -91,6 +91,7 @@ def build_api(
         from .eval_routes import register_eval_routes
         from .events_routes import register_events_routes
         from .overview_routes import register_overview_routes
+        from .policies_routes import register_policies_routes
 
         deps = AuthDeps(auth.auth, settings.session_cookie_name)
         register_auth_routes(app, auth.auth, settings, deps)
@@ -99,6 +100,7 @@ def build_api(
         register_events_routes(app, pipeline, deps)
         register_audit_routes(app, pipeline, deps)
         register_eval_routes(app, settings.eval_report_path, deps)
+        register_policies_routes(app, pipeline, deps)
         if upstream is not None and gateway_store is not None:
             from .gateway_routes import register_gateway_routes
 

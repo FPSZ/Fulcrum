@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,10 @@ class YamlPolicyEngine:
             if unknown:
                 raise ConfigError(f"策略规则 {rule.get('id')!r} 含未知条件:{sorted(unknown)}")
         return data
+
+    def policy_document(self) -> dict[str, Any]:
+        """当前装配的策略文档(深拷贝,只读展示用 —— 调用方改不动内部状态)。"""
+        return copy.deepcopy(self._policy)
 
     async def decide(self, intent: ToolIntent, ctx: Context) -> PolicyDecision:
         facts = self._facts(intent, ctx)

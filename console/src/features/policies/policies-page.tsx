@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { ArrowRight, Scale } from 'lucide-react'
 import { Badge, type BadgeTone, Card, Segmented } from '@/components/ui'
 import { POLICY_SET, type Disposition } from './data'
+import { usePolicies } from './use-policies'
 
 const DISP_TONE: Record<Disposition, BadgeTone> = {
   block: 'crit',
@@ -30,7 +31,8 @@ const FILTERS: { value: Filter; label: string }[] = [
 ]
 
 export function PoliciesPage() {
-  const ps = POLICY_SET
+  // 接真后端:有当前装配策略则用真;无权限/不可达/非 yaml 引擎 → 回退演示 seed。
+  const ps = usePolicies().data ?? POLICY_SET
   const [filter, setFilter] = useState<Filter>('all')
   const rules = useMemo(
     () => ps.rules.filter((r) => filter === 'all' || r.decision === filter),
