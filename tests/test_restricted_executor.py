@@ -92,3 +92,50 @@ def test_output_under_cap_untouched() -> None:
     r = _run(_PassTool(), {"path": "notice.txt"}, max_output_chars=100)
     assert r.ok and r.output == "done"  # 未超限,原样返回
     assert "sandbox" not in r.side_effects
+
+
+class _RecordingTool:
+    """记录是否被真正调用,用于验证超体积载荷在执行前即被拒(未触达工具)。"""
+
+    name = "rec"
+    base_risk = 0.1
+    model_schema = None
+
+    def __init__(self) -> None:
+        self.called = False
+
+    def call(self, arguments: dict, ctx: Context) -> ExecResult:
+        self.called = True
+        return ExecResult(ok=True, output="done")
+
+
+def test_oversized_input_payload_denied_before_exec() -> None:
+    tool = _RecordingTool()
+    # 目标域名在白名单内(外联放行),但参数体超上限 → 仍按批量外泄拒绝,且不触达工具。
+    r = _run(
+        tool,
+        {"url": "https://gov.cn/x", "body": "A" * 5000},
+        allow_domains=["gov.cn"],
+        max_input_chars=100,
+    )
+    assert not r.ok and "批量外泄" in (r.error or "")
+    assert r.side_effects.get("sandbox") == "denied"
+    assert tool.called is False  # 执行前边界:工具未被调用
+
+
+def test_input_under_cap_passes() -> None:
+    r = _run(_PassTool(), {"path": "notice.txt", "body": "A" * 50}, max_input_chars=100)
+    assert r.ok and r.output == "done"
+
+
+def test_input_payload_counts_nested_and_keys() -> None:
+    # 数据塞进嵌套列表/键名同样计入体积,堵"换个容器就绕过"。
+    big = {"a" * 60: ["B" * 60, {"c": "D" * 60}]}
+    r = _run(_PassTool(), big, max_input_chars=100)
+    assert not r.ok and "批量外泄" in (r.error or "")
+
+
+def test_default_input_cap_is_generous() -> None:
+    # 默认 64KB:寻常办公参数不应被误拒(不传 max_input_chars)。
+    r = _run(_PassTool(), {"path": "notice.txt", "text": "正常公文内容" * 200})
+    assert r.ok and r.output == "done"
