@@ -57,9 +57,14 @@ class GatewayChatResponse(BaseModel):
     reason: str
     max_score: float
     findings: list[GatewayFindingDTO] = Field(default_factory=list)
-    reply: str = ""  # 仅放行时为企业智能体的真实回复
+    reply: str = ""  # 仅放行时为企业智能体的真实回复(出口拦截时为打码占位)
     tools: list[dict] = Field(default_factory=list)  # 企业智能体本轮执行的工具轨迹
     upstream_error: str | None = None
+    # 出口闸门:对回复做敏感/危险内容检测后的结论(无回复时为 None)
+    output_decision: Disposition | None = None
+    output_risk_level: str = ""
+    output_reason: str = ""
+    output_blocked: bool = False  # 回复是否因出口检测被拦截打码
 
 
 # ---- /admin/gateway-config(网关上游接入,设置页可配)----

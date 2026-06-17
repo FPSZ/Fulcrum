@@ -28,7 +28,7 @@ from .domain import (
     ToolIntent,
     TrustLevel,
 )
-from .gateway import GateVerdict, screen
+from .gateway import GateVerdict, screen, screen_output
 
 if TYPE_CHECKING:  # 仅类型注解,避免运行时耦合
     from .ports import (
@@ -215,6 +215,44 @@ class SecurityPipeline:
             await self._emit(ctx, AuditEventType.TOOL_PENDING_APPROVAL, subject_id=req.request_id)
         else:
             await self._emit(ctx, AuditEventType.MODEL_FORWARDED, subject_id=req.request_id)
+        return verdict
+
+    # ---- 流程 1c:出口闸门(/gateway/chat 收到企业智能体回复后)----
+    async def screen_output(self, session_id: str, text: str) -> GateVerdict:
+        """对**企业智能体的回复**做"检测 → 出口闸门",判敏感/危险内容并落审计。
+
+        对应安全问题路径「响应后检查模型输出」(01 §4.2):入口拦恶意输入,出口拦回复里的
+        敏感数据外泄 / 危险内容,两道对称。出口对回复按**不可信内容全权检测**——泄露就是泄露,
+        不因"是自家 agent 说的"就放松(agent 可能已被污染上下文带偏);闸门语义见
+        core.gateway.screen_output。
+        """
+        ctx = Context(session_id=session_id)
+        ctx.spans = [
+            SourceSpan(
+                source_type=SourceType.ASSISTANT,
+                trust_level=TrustLevel.UNTRUSTED,
+                content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                excerpt=text[:600],
+            )
+        ]
+        await self.detect_inputs(ctx, ctx.spans)
+
+        verdict = screen_output(ctx.findings)
+        await self._emit(
+            ctx,
+            AuditEventType.POLICY_DECIDED,
+            decision=verdict.decision,
+            evidence={
+                "reason": verdict.reason,
+                "risk_level": verdict.risk_level,
+                "max_score": verdict.max_score,
+                "top_kind": verdict.top_kind,
+                "excerpt": text[:200],
+                "source_type": SourceType.ASSISTANT.value,
+                "trust_level": TrustLevel.UNTRUSTED.value,
+                "stage": "output_gateway",
+            },
+        )
         return verdict
 
     # ---- 流程 2:直接工具调用(/tools/call)----

@@ -2286,6 +2286,31 @@
               }
             ],
             "title": "Upstream Error"
+          },
+          "output_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Disposition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_risk_level": {
+            "type": "string",
+            "title": "Output Risk Level",
+            "default": ""
+          },
+          "output_reason": {
+            "type": "string",
+            "title": "Output Reason",
+            "default": ""
+          },
+          "output_blocked": {
+            "type": "boolean",
+            "title": "Output Blocked",
+            "default": false
           }
         },
         "type": "object",
