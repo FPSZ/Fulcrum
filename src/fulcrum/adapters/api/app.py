@@ -90,6 +90,7 @@ def build_api(
         from .deps import AuthDeps
         from .events_routes import register_events_routes
         from .overview_routes import register_overview_routes
+        from .tools_routes import register_tools_routes
 
         deps = AuthDeps(auth.auth, settings.session_cookie_name)
         register_auth_routes(app, auth.auth, settings, deps)
@@ -97,6 +98,7 @@ def build_api(
         register_overview_routes(app, pipeline, deps)
         register_events_routes(app, pipeline, deps)
         register_audit_routes(app, pipeline, deps)
+        register_tools_routes(app, pipeline, deps)
         if upstream is not None and gateway_store is not None:
             from .gateway_routes import register_gateway_routes
 
