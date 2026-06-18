@@ -83,13 +83,24 @@ class InMemoryAuditSink:
         return [event for chain in self._chains.values() for event in chain]
 
     async def verify_chain(self, session_id: str) -> bool:
+        return await self.locate_break(session_id) is None
+
+    async def locate_break(self, session_id: str) -> int | None:
+        """定位审计链中第一处断裂的事件**位置下标**(防篡改取证)。
+
+        断裂判据与 `verify_chain` 同源:`prev_hash` 未接上前件、`event_hash` 与重算值不符、
+        或 `schema_version` 未知(无法验证 → fail-closed 视为断裂)。链完好返回 None。
+        相对只给布尔的 `verify_chain`,这里指出**哪一条**被篡改/缺失,供审计溯源页与取证
+        精确定位。下标用链内实际位置(enumerate),不取事件自带的 index 字段——后者本身
+        可能正是被篡改项。
+        """
         prev = _GENESIS
-        for event in self._chains.get(session_id, []):
+        for pos, event in enumerate(self._chains.get(session_id, [])):
             try:
                 expected = _event_hash(event)
             except AuditError:
-                return False  # 未知格式视为不可验证(fail-closed),不抛错给查询端
+                return pos  # 未知格式视为不可验证(fail-closed),不抛错给查询端
             if event.prev_hash != prev or event.event_hash != expected:
-                return False
+                return pos
             prev = event.event_hash
-        return True
+        return None
