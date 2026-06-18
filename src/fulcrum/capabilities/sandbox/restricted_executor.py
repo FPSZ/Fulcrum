@@ -7,11 +7,13 @@ MVP 边界(对齐 arch §6.3,诚实声明降级):
 - **路径**:涉密路径直接拒;越出受控工作区拒(复用 argrisk,与策略同一口径,避免漂移)。
 - **命令**:高危命令(rm -rf / 反弹 shell / 提权等)直接拒。
 - **网络**:默认关闭外联——目标域名不在白名单一律拒(白名单经 options 注入,默认空=全关)。
+- **载荷**:出站参数体积设上限——即便目标域名在白名单内,超大参数体(批量数据)一律拒,
+  堵"经允许通道批量外泄"。与执行后输出截断对称:入口防灌出、出口防批量回。
 - **超时**:工具调用放进线程并设墙钟超时,超时即判失败返回(不阻塞管线)。
 - **资源(CPU/内存)/ 进程级隔离**:需容器或受限子进程,属 P3 增强,本 MVP 不覆盖,
   在此明确标注边界,不夸大为"完全隔离"。
 
-无 options 条目时用保守默认(工作区 data/workspace、外联全关、超时 5s)。
+无 options 条目时用保守默认(工作区 data/workspace、外联全关、超时 5s、入站载荷上限 64KB)。
 """
 
 from __future__ import annotations
@@ -31,6 +33,20 @@ def _deny(reason: str) -> ExecResult:
     return ExecResult(ok=False, error=f"[沙箱拒绝] {reason}", side_effects={"sandbox": "denied"})
 
 
+def _payload_size(value: object) -> int:
+    """估算出站参数的字符体积:递归求和,作为"批量外泄/资源占用"的粗粒度上界。
+
+    含键名一并计入(攻击者可把数据塞进键),容器逐项展开;标量按其字符串长度计。
+    """
+    if isinstance(value, str):
+        return len(value)
+    if isinstance(value, dict):
+        return sum(_payload_size(k) + _payload_size(v) for k, v in value.items())
+    if isinstance(value, (list, tuple)):
+        return sum(_payload_size(v) for v in value)
+    return len(str(value))
+
+
 @capability("executor", "restricted")
 class RestrictedExecutor:
     """执行时强制边界 + 超时。注册名 `restricted`,在 fulcrum.yml 启用;echo 为最小桩。"""
@@ -41,11 +57,13 @@ class RestrictedExecutor:
         allow_domains: list[str] | None = None,
         timeout_seconds: float = 5.0,
         max_output_chars: int = 16384,
+        max_input_chars: int = 65536,
     ) -> None:
         self._workspace = workspace
         self._allow_domains = list(allow_domains or [])  # 默认空 = 外联全关(默认关闭)
         self._timeout = float(timeout_seconds)
         self._max_output = int(max_output_chars)  # 工具返回大小上限(防内存撑爆 / 超量外泄)
+        self._max_input = int(max_input_chars)  # 出站参数体积上限(防经允许通道批量外泄)
 
     async def execute(self, tool: Tool, intent: ToolIntent, ctx: Context) -> ExecResult:
         args = intent.arguments
@@ -59,6 +77,8 @@ class RestrictedExecutor:
             return _deny("命令含高危操作,拒绝执行")
         if not argrisk.domain_allowed(args, self._allow_domains):
             return _deny("目标域名不在沙箱外联白名单(默认关闭外联)")
+        if _payload_size(args) > self._max_input:
+            return _deny(f"出站载荷超体积上限({self._max_input} 字符),拒绝执行(防批量外泄)")
 
         # ---- 超时受限执行:工具调用入线程 + 墙钟超时,超时不阻塞管线 ----
         loop = asyncio.get_running_loop()
