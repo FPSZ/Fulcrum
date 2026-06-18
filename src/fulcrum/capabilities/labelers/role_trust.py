@@ -63,12 +63,19 @@ _TAG_TYPE: dict[str, SourceType] = {
 
 # 标签可选集合(长标签优先,避免 "doc" 抢先匹配 "document")。
 _TAG_ALT = "|".join(re.escape(t) for t in sorted(_TAG_TYPE, key=len, reverse=True))
-# 三种成对定界:<tag>…</tag>  /  [tag]…[/tag]  /  【tag】…【/tag】。
+# RAG 框架常用的标记行定界:3+ 个 - 或 = 组成的分隔线。
+_MARK = r"[-=]{3,}"
+# 四种成对定界:<tag>…</tag>  /  [tag]…[/tag]  /  【tag】…【/tag】  /
+# ---BEGIN tag--- … ---END tag---(LangChain/LlamaIndex 风格的检索块包裹)。
 # 每个正则:group(1)=标签名,group(2)=块内容;\1 反向引用确保开闭标签一致。
 _STYLE_RES: tuple[re.Pattern[str], ...] = (
     re.compile(rf"<\s*({_TAG_ALT})\s*>(.*?)<\s*/\s*\1\s*>", re.IGNORECASE | re.DOTALL),
     re.compile(rf"\[\s*({_TAG_ALT})\s*\](.*?)\[\s*/\s*\1\s*\]", re.IGNORECASE | re.DOTALL),
     re.compile(rf"【\s*({_TAG_ALT})\s*】(.*?)【\s*/\s*\1\s*】", re.IGNORECASE | re.DOTALL),
+    re.compile(
+        rf"{_MARK}\s*begin\s+({_TAG_ALT})\s*{_MARK}(.*?){_MARK}\s*end\s+\1\s*{_MARK}",
+        re.IGNORECASE | re.DOTALL,
+    ),
 )
 
 
