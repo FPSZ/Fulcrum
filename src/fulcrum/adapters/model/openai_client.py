@@ -83,6 +83,25 @@ _FN_TO_TOOL = {
 }
 
 
+def _parse_args(raw: object) -> dict[str, Any]:
+    """把模型给的 `function.arguments` 收敛为参数字典。
+
+    OpenAI 规范里 arguments 是一段 JSON 字符串,但被攻陷/犯浑的模型可能给出非法 JSON、
+    或合法却**非对象**的值(数组 / 标量 / null)。一律兜底成 `{"_raw": 原始串}`,确保下游
+    闸门拿到的恒为 dict——能照常检测/归因/拦截,绝不让畸形模型输出在映射阶段抛错,
+    把这次工具调用整个漏过安全管线(fail-closed:畸形即落入可检测形态,而非崩溃绕过)。
+    """
+    if isinstance(raw, dict):  # 个别端点直接回解析好的对象
+        return raw
+    if not isinstance(raw, str) or not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"_raw": raw}
+    return parsed if isinstance(parsed, dict) else {"_raw": raw}
+
+
 @capability("model", "openai")
 class OpenAICompatModelClient:
     def __init__(self, settings: Settings | None = None) -> None:
@@ -125,11 +144,7 @@ class OpenAICompatModelClient:
             fn = tc.get("function") or {}
             raw_name = str(fn.get("name") or "")
             name = _FN_TO_TOOL.get(raw_name, raw_name)
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {"_raw": fn.get("arguments", "")}
-            tool_calls.append(ToolCall(tool_name=name, arguments=args))
+            tool_calls.append(ToolCall(tool_name=name, arguments=_parse_args(fn.get("arguments"))))
         return ModelResponse(
             request_id=request_id,
             content=message.get("content") or "",
