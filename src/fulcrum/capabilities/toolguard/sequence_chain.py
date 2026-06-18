@@ -52,6 +52,18 @@ _DEST_KEYS = frozenset(
         "address",
     }
 )
+# 持久化/长期存储 sink:记忆、知识库、长期事实库。把不可信工具返回原样写进这里 = 记忆投毒,
+# 影响未来所有会话的决策。与"对外发送"并列,是任务链的另一类收口动作。
+_PERSIST_RE = re.compile(
+    r"(remember|memor(y|ize)|recall|persist|knowledge|\bkb\b|长期|记忆|记住|知识库)",
+    re.IGNORECASE,
+)
+# 通用写动作动词(工具名未直说记忆/知识库时,配合目标路径/键判断写入 sink 性质)。
+_WRITE_RE = re.compile(
+    r"(write|save|store|append|update|upsert|put|记录|写入|保存|存储)", re.IGNORECASE
+)
+# 承载写入内容的参数键:持久化写入须带内容才有"投毒"意义。
+_CONTENT_KEYS = frozenset({"content", "value", "text", "data", "body", "fact", "note", "memory"})
 # 回看窗口(步数近似)。当前调用之前的 _WINDOW 步内出现敏感/普通读取即构成链。
 _WINDOW = 12
 # 跨步污点:外发参数里出现长度 ≥ 此阈值、源自某一步工具返回的连续片段 → 判定污点。
@@ -148,6 +160,30 @@ def _is_sensitive_read(intent: ToolIntent) -> bool:
     )
 
 
+def _persist_target(intent: ToolIntent) -> str:
+    return str(
+        intent.arguments.get("path")
+        or intent.arguments.get("key")
+        or intent.arguments.get("target")
+        or ""
+    )
+
+
+def _is_persist_write(intent: ToolIntent) -> bool:
+    """是否把内容写入长期记忆/知识库等持久化 sink(记忆投毒链的收口动作)。
+
+    两条判别,任一成立即可:
+    - 工具名本身就是记忆/知识库交互(memory.*/kb.*/knowledge.*/remember…)且带写入内容;
+    - 通用写动作(write/save/append…),但目标路径/键指向记忆/知识库。
+    后者把目标限定在持久化 sink,正常 `file.write` 到工作区不误触。
+    """
+    name = intent.tool_name
+    has_content = any(k in intent.arguments for k in _CONTENT_KEYS)
+    if _PERSIST_RE.search(name) and has_content:
+        return True
+    return bool(_WRITE_RE.search(name) and _PERSIST_RE.search(_persist_target(intent)))
+
+
 @capability("chain_analyzer", "sequence")
 class SequenceChainAnalyzer:
     """有序动作链检测。注册名 `sequence`,在 fulcrum.yml 启用。"""
@@ -156,8 +192,12 @@ class SequenceChainAnalyzer:
         if not trace:
             return []
         current = trace[-1]
-        if not _is_outbound(current):
-            return []  # 仅在"对外发送"这步收口判链
+        outbound = _is_outbound(current)
+        # 收口动作有两类:对外发送(外泄链)、写入长期记忆/知识库(记忆投毒链)。
+        if not outbound:
+            if _is_persist_write(current):
+                return self._persistence_findings(current, ctx)
+            return []
 
         findings: list[Finding] = []
 
@@ -205,3 +245,32 @@ class SequenceChainAnalyzer:
             )
 
         return findings
+
+    @staticmethod
+    def _persistence_findings(current: ToolIntent, ctx: Context) -> list[Finding]:
+        """记忆投毒链:把**源自不可信工具返回**的内容原样写进长期记忆/知识库。
+
+        仅在污点成立(写入内容确实来自上一步工具返回)时收口 —— 把外部内容存进长期库会污染
+        未来所有会话的决策,是 AI 推荐投毒 / 持久化记忆投毒的核心动作。评分定在复核档(非硬拦),
+        因为「抓取一份正规文档入库」是合法 RAG 流程,语义善恶难由链结构断定,交人工复核更稳妥;
+        编码后再写入(刻意隐藏载荷)恶意性更强,评分上调但仍在复核档内。
+        """
+        taint = _taint_source(current, ctx.tool_returns)
+        if taint is None:
+            return []
+        tainted, encoded = taint
+        pattern = "tool_return->encode->persist" if encoded else "tool_return->persist"
+        return [
+            Finding(
+                kind="chain.persistence_poisoning",
+                score=0.75 if encoded else 0.6,
+                evidence={
+                    "intent_id": current.intent_id,
+                    "pattern": pattern,
+                    "severity": "high",
+                    "sink_tool": current.tool_name,
+                    "tainted_from": tainted,
+                    "encoded": encoded,
+                },
+            )
+        ]
