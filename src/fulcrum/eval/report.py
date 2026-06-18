@@ -61,6 +61,78 @@ def format_attack_breakdown(metrics: dict) -> str:
     return "\n".join(lines)
 
 
+def _coverage(results: list[SampleResult], key) -> str:
+    """按某分类键(owasp/severity)聚合恶意样本召回 —— 覆盖矩阵一行一类。"""
+    groups: dict[str, list[SampleResult]] = {}
+    for r in results:
+        if not r.malicious:
+            continue
+        groups.setdefault(key(r) or "(未标注)", []).append(r)
+    lines = ["| 分类 | 恶意样例 | 已管控 | 召回 |", "| --- | --- | --- | --- |"]
+    for k in sorted(groups):
+        rs = groups[k]
+        held = sum(1 for r in rs if r.held)
+        lines.append(f"| {k} | {len(rs)} | {held} | {held / len(rs) * 100:.1f}% |")
+    return "\n".join(lines)
+
+
+def format_coverage(results: list[SampleResult]) -> str:
+    """覆盖矩阵:按 OWASP LLM Top10:2025 与严重度两视角看召回。"""
+    return (
+        "### 覆盖矩阵 · 按 OWASP LLM Top10:2025\n\n"
+        + _coverage(results, lambda r: r.owasp)
+        + "\n\n### 覆盖矩阵 · 按严重度\n\n"
+        + _coverage(results, lambda r: r.severity)
+    )
+
+
+def format_misses(results: list[SampleResult]) -> str:
+    """差距清单:漏判(恶意→放行)按攻击类型列手法 + 误报(良性→管控)。"""
+    fn = [r for r in results if r.malicious and r.predicted_action == "allow"]
+    fp = [r for r in results if not r.malicious and r.held]
+    lines = [f"### 漏判清单 FN(恶意被放行,共 {len(fn)})", ""]
+    by: dict[str, list[str]] = {}
+    for r in fn:
+        by.setdefault(r.attack_type, []).append(r.technique or r.sample_id)
+    for at in sorted(by):
+        lines.append(f"- **{at}**({len(by[at])}):" + "、".join(by[at]))
+    lines += ["", f"### 误报清单 FP(良性被管控,共 {len(fp)})", ""]
+    for r in fp:
+        lines.append(f"- `{r.sample_id}` [{r.technique}] → {r.predicted_action}")
+    return "\n".join(lines)
+
+
+def build_markdown_report(
+    metrics: dict,
+    results: list[SampleResult],
+    *,
+    dataset: str,
+    policy: str,
+    version: str,
+    generated_at: str,
+) -> str:
+    """标准测试报告(记分卡)—— 每次跑产出,统计各项标准数据(对齐 plan 08 §6)。"""
+    return "\n\n".join(
+        [
+            "# 枢衡攻击样例库 · 测试报告",
+            (
+                f"- 库版本:**{version}**\n"
+                f"- 数据集:`{dataset}`\n"
+                f"- 策略:`{policy}`\n"
+                f"- 生成时间:{generated_at}"
+            ),
+            "## 主结果",
+            format_main_table(metrics),
+            format_attack_breakdown(metrics),
+            "## 覆盖矩阵",
+            format_coverage(results),
+            "## 差距",
+            format_misses(results),
+            "---\n*由 `python -m fulcrum.eval` 自动生成;逐样例明细见同名 JSON。*",
+        ]
+    )
+
+
 def build_report(metrics: dict, results: list[SampleResult], dataset: str) -> dict:
     """完整 JSON 报告:汇总指标 + 逐样例明细(供复现与错误分析)。"""
     return {

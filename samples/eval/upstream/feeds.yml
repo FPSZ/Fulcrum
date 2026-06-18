@@ -1,0 +1,82 @@
+# 外部威胁情报源登记(引用不内置)—— "持续更新"=定期从这些维护中的源拉新手法、本地化进 corpus。
+# 对标杀软:自有库 + 情报源。每条注明 license 与同步说明;不把外部数据塞进仓库(licensing 干净)。
+version: 1
+updated: 2026-06-18
+
+feeds:
+  # —— 越狱 / 注入语料 ——
+  - name: in-the-wild-jailbreak-prompts
+    repo: https://github.com/TrustAIRLab/in-the-wild-jailbreak-prompts
+    kind: jailbreak
+    maintained: true
+    license: academic (CC-ish, 见仓库)
+    note: 持续采集的真实野外越狱提示(1.5w+);取样本时本地化到政务场景
+
+  - name: jailbreak_llms (DAN)
+    repo: https://github.com/verazuo/jailbreak_llms
+    kind: jailbreak
+    license: 见仓库
+    note: "Do Anything Now" 数据集
+
+  - name: JailbreakBench
+    repo: https://github.com/JailbreakBench/jailbreakbench
+    kind: benchmark
+    license: MIT
+    note: 100 有害+100 良性,含隐私/政务决策类,可对照分类口径
+
+  - name: HarmBench
+    repo: https://github.com/centerforaisafety/HarmBench
+    kind: benchmark
+    license: MIT
+    note: 510 行为 7 语义类
+
+  # —— 扫描器 / 生成器(当"造样本"引擎)——
+  - name: garak
+    repo: https://github.com/NVIDIA/garak
+    kind: scanner
+    license: Apache-2.0
+    note: LLM 漏洞扫描,海量 probe;可借其探针思路扩样本
+
+  - name: PyRIT
+    repo: https://github.com/Azure/PyRIT
+    kind: generator
+    license: MIT
+    note: 多轮攻击(Crescendo 等)自动生成
+
+  # —— Agent 工具层(最贴目标②)——
+  - name: agentdojo
+    repo: https://github.com/ethz-spylab/agentdojo
+    kind: agent-benchmark
+    license: MIT
+    note: 工具调用注入基准,贴近我们工具管控样本
+
+  # —— 工具/基础设施 payload(喂工具层样本)——
+  - name: PayloadsAllTheThings
+    repo: https://github.com/swisskyrepo/PayloadsAllTheThings
+    kind: payloads
+    license: 见仓库(CC/开源)
+    note: SSRF / 路径穿越 / 命令注入 payload 来源
+
+  - name: LOLBAS
+    repo: https://github.com/LOLBAS-Project/LOLBAS
+    kind: lolbins
+    license: 见仓库
+    note: Windows LOLBins 结构化清单,补命令层样本
+
+  - name: GTFOBins
+    repo: https://github.com/GTFOBins/GTFOBins.github.io
+    kind: lolbins
+    license: 见仓库
+    note: Linux 提权/外联二进制
+
+  # —— 分类法标准 ——
+  - name: MITRE ATLAS
+    repo: https://github.com/mitre-atlas/atlas-data
+    kind: taxonomy
+    license: 见仓库
+    note: AI 威胁矩阵,贴 mitre_atlas 标签的权威源
+
+  - name: OWASP LLM Top 10
+    repo: https://genai.owasp.org/llm-top-10/
+    kind: taxonomy
+    note: 贴 owasp 标签的权威源

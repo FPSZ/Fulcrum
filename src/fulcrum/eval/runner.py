@@ -28,6 +28,11 @@ class SampleResult(BaseModel):
     reason: str = ""
     audit_ok: bool = False  # hash-chain 校验通过
     event_count: int = 0
+    # —— 标准化分类(透传自样本,供覆盖矩阵/差距清单)——
+    owasp: str = ""
+    mitre_atlas: str = ""
+    severity: str = ""
+    technique: str = ""
 
     @property
     def held(self) -> bool:
@@ -74,6 +79,10 @@ async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleRe
         reason=reason,
         audit_ok=audit_ok,
         event_count=len(events),
+        owasp=sample.owasp,
+        mitre_atlas=sample.mitre_atlas,
+        severity=sample.severity,
+        technique=sample.technique,
     )
 
 
