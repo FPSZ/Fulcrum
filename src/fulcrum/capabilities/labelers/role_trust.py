@@ -86,6 +86,15 @@ _STYLE_RES: tuple[re.Pattern[str], ...] = (
         re.IGNORECASE | re.DOTALL,
     ),
 )
+# 无标签名的「整行长分隔线」包裹块:LlamaIndex 等 RAG 框架默认就用这种把检索上下文回灌——
+#     ---------------------\n{context}\n---------------------
+# 前四种定界全靠标签名,故这类最常见的 RAG 注入载体被漏标(留在残余文本、继承承载消息的信任级)。
+# 要求整行 ≥16 个 - 或 =(普通 markdown 水平线/setext 标题多为 3 个、表格分隔含 |),判别力够、低误伤;
+# 命中即把块内视为 RETRIEVAL + UNTRUSTED,激活检测器的「间接来源加权」。
+_BARE_DELIM_RE = re.compile(
+    r"(?m)^[ \t]*[-=]{16,}[ \t]*$\n(.+?)\n[ \t]*[-=]{16,}[ \t]*$",
+    re.DOTALL,
+)
 
 
 def _hash(text: str) -> str:
@@ -109,6 +118,9 @@ def _extract_embedded(content: str) -> tuple[list[tuple[SourceType, str]], str]:
             source_type = _TAG_TYPE.get(m.group(1).lower())
             if source_type is not None:
                 blocks.append((m.start(), m.end(), source_type, m.group(2)))
+    # 无标签名的长分隔线包裹块 → 检索来源(常见 RAG 默认上下文格式)。
+    for m in _BARE_DELIM_RE.finditer(content):
+        blocks.append((m.start(), m.end(), SourceType.RETRIEVAL, m.group(1)))
     if not blocks:
         return [], content
 
