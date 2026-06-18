@@ -51,6 +51,7 @@ _TAG_TYPE: dict[str, SourceType] = {
     "context": SourceType.RETRIEVAL,
     "kb": SourceType.RETRIEVAL,
     "检索": SourceType.RETRIEVAL,
+    "检索结果": SourceType.RETRIEVAL,
     "资料": SourceType.RETRIEVAL,
     "知识库": SourceType.RETRIEVAL,
     "memory": SourceType.MEMORY,
@@ -58,7 +59,15 @@ _TAG_TYPE: dict[str, SourceType] = {
     "记忆": SourceType.MEMORY,
     "历史": SourceType.MEMORY,
     "tool_result": SourceType.TOOL_RETURN,
+    "tool_output": SourceType.TOOL_RETURN,
     "工具返回": SourceType.TOOL_RETURN,
+    "工具结果": SourceType.TOOL_RETURN,
+    "plugin_manifest": SourceType.PLUGIN_MANIFEST,
+    "manifest": SourceType.PLUGIN_MANIFEST,
+    "plugin": SourceType.PLUGIN_MANIFEST,
+    "skill": SourceType.PLUGIN_MANIFEST,
+    "插件清单": SourceType.PLUGIN_MANIFEST,
+    "插件": SourceType.PLUGIN_MANIFEST,
 }
 
 # 标签可选集合(长标签优先,避免 "doc" 抢先匹配 "document")。
