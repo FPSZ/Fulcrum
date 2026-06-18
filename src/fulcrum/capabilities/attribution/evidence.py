@@ -51,8 +51,7 @@ class EvidenceAttributor:
         self, intent: ToolIntent, spans: list[SourceSpan], ctx: Context
     ) -> Attribution:
         arg_vals = [frag for x in intent.arguments.values() for frag in _candidates(str(x).lower())]
-        derived: list[str] = []
-        best = 0.0
+        scored: list[tuple[float, str]] = []
         reasons: list[str] = []
         for span in spans:
             excerpt = span.excerpt.lower()
@@ -60,11 +59,16 @@ class EvidenceAttributor:
             if matched is None:
                 continue
             conf = _TRUST_WEIGHT.get(span.trust_level, 0.5)
-            derived.append(span.source_id)
-            best = max(best, conf)
+            scored.append((conf, span.source_id))
             reasons.append(
                 f"参数片段 {matched!r} 出现在 {span.source_type}({span.trust_level}) 来源"
             )
+
+        # 候选来源按归因置信度降序:最不可信(最可疑)的来源排在前,derived[0] 即首要嫌疑来源。
+        # 这既让溯源命中率@1/@3 可量化,也让审计/展示先看见最该警惕的那条边。等分保持发现顺序。
+        scored.sort(key=lambda t: t[0], reverse=True)
+        derived = [sid for _, sid in scored]
+        best = scored[0][0] if scored else 0.0
 
         if not derived and intent.derived_from_sources:
             # 调用方(工具网关)显式声明来源但无 span 可核验 → 给中等置信度,fail-closed。

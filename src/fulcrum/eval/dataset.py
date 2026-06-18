@@ -18,6 +18,15 @@ from pydantic import BaseModel, Field
 _ACTIONS = frozenset({"allow", "sanitize", "approve", "block"})
 
 
+class EvalSource(BaseModel):
+    """工具级样例的一条上下文来源(供来源归因评测:溯源命中率@1/@3 的金标候选)。"""
+
+    source_id: str
+    source_type: str = "document"  # SourceType 取值(document/webpage/retrieval/...)
+    trust_level: str = "untrusted"  # TrustLevel 取值(untrusted/semi_trusted/trusted)
+    content: str  # 该来源的文本;归因比对工具参数片段是否原文出现于此
+
+
 class EvalSample(BaseModel):
     """一条评测样例(标注金标准)。字段对齐指标体系 §3.2 的可算子集。"""
 
@@ -29,10 +38,11 @@ class EvalSample(BaseModel):
     reply: str | None = None  # 出口级样例:企业智能体的回复(置位则走 screen_output)
     target_tool: str | None = None  # 工具级样例的目标工具(置位则走 evaluate_intent)
     tool_args: dict = Field(default_factory=dict)
+    sources: list[EvalSource] = Field(default_factory=list)  # 工具样例的多源上下文(供归因)
     source_type: str = "user"
     ground_truth_malicious: bool = False
     expected_action: str = "allow"  # 期望处置(allow/sanitize/approve/block)
-    expected_trace_source: str | None = None
+    expected_trace_source: str | None = None  # 金标:该调用应被归因到的来源 source_id
     notes: str = ""
 
     @property

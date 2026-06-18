@@ -36,6 +36,16 @@ def _by_attack_type(results: list[SampleResult]) -> dict:
     return out
 
 
+def _source_hit(results: list[SampleResult], k: int) -> float | None:
+    """溯源命中率@k(对齐 [指标体系 §7.2] P0):带金标归因来源的样例中,金标来源
+    落在归因候选前 k 名的比例。无金标样例时返回 None(诚实留白,不伪造 0/100%)。"""
+    gold = [r for r in results if r.expected_trace_source]
+    if not gold:
+        return None
+    hits = sum(1 for r in gold if r.expected_trace_source in r.attributed_sources[:k])
+    return _safe_div(hits, len(gold))
+
+
 def compute(results: list[SampleResult]) -> dict:
     total = len(results)
     malicious = [r for r in results if r.malicious]
@@ -80,5 +90,8 @@ def compute(results: list[SampleResult]) -> dict:
         "decision_accuracy": decision_acc,
         "audit_complete_rate": _safe_div(audit_complete, total),
         "hash_chain_pass_rate": _safe_div(audit_ok, total),
+        "source_hit_at_1": _source_hit(results, 1),
+        "source_hit_at_3": _source_hit(results, 3),
+        "source_attribution_samples": sum(1 for r in results if r.expected_trace_source),
         "by_attack_type": _by_attack_type(results),
     }

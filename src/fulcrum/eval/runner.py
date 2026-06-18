@@ -7,14 +7,26 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+import hashlib
 
-from ..core.domain import Context, ToolIntent
+from pydantic import BaseModel, Field
+
+from ..core.domain import Context, SourceSpan, SourceType, ToolIntent, TrustLevel
 from ..core.pipeline import SecurityPipeline
-from .dataset import EvalSample
+from .dataset import EvalSample, EvalSource
 
 # 非 allow 的处置都视为"已管控/未放行"(拦截 / 审核 / 净化)。
 _HELD = frozenset({"block", "approve", "sanitize"})
+
+
+def _to_span(s: EvalSource) -> SourceSpan:
+    return SourceSpan(
+        source_id=s.source_id,
+        source_type=SourceType(s.source_type),
+        trust_level=TrustLevel(s.trust_level),
+        content_hash=hashlib.sha256(s.content.encode("utf-8")).hexdigest(),
+        excerpt=s.content,
+    )
 
 
 class SampleResult(BaseModel):
@@ -28,6 +40,8 @@ class SampleResult(BaseModel):
     reason: str = ""
     audit_ok: bool = False  # hash-chain 校验通过
     event_count: int = 0
+    expected_trace_source: str | None = None  # 金标归因来源(有则计入溯源命中率)
+    attributed_sources: list[str] = Field(default_factory=list)  # 实际归因候选(按置信度降序)
 
     @property
     def held(self) -> bool:
@@ -46,14 +60,17 @@ class SampleResult(BaseModel):
 
 async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleResult:
     sid = f"eval-{sample.sample_id}"
+    attributed: list[str] = []
     if sample.is_tool_sample:
         ctx = Context(session_id=sid)
+        ctx.spans = [_to_span(s) for s in sample.sources]  # 多源上下文供归因比对
         intent = ToolIntent(
             session_id=sid, tool_name=sample.target_tool or "", arguments=sample.tool_args
         )
         outcome = await pipeline.evaluate_intent(intent, ctx)
         predicted = outcome.decision.decision.value
         reason = outcome.decision.reason
+        attributed = list(outcome.intent.derived_from_sources)  # 已按置信度降序
     elif sample.is_output_sample:
         verdict = await pipeline.screen_output(sid, sample.reply or "")
         predicted = verdict.decision.value
@@ -74,6 +91,8 @@ async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleRe
         reason=reason,
         audit_ok=audit_ok,
         event_count=len(events),
+        expected_trace_source=sample.expected_trace_source,
+        attributed_sources=attributed,
     )
 
 

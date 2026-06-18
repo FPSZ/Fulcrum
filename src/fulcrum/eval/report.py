@@ -1,7 +1,7 @@
 """报告渲染 —— 主结果表(给评委一眼能懂)+ 完整 JSON(逐样例明细)。
 
-主表对齐 [指标体系 §9];目标值列为草案验收线,非最终承诺。溯源命中率需工具级归因金标准,
-本 MVP 暂列「后续」,不在主表伪造数字。
+主表对齐 [指标体系 §9];目标值列为草案验收线,非最终承诺。溯源命中率@1/@3(§7.2 P0)
+有工具级归因金标样例时计入主表,无金标样例时诚实留白而非伪造数字。
 """
 
 from __future__ import annotations
@@ -36,8 +36,18 @@ def format_main_table(metrics: dict) -> str:
     ]
     for key, label, baseline, target in _ROWS:
         lines.append(f"| {label} | {baseline} | {_pct(metrics[key])} | {target} |")
-    lines.append("")
-    lines.append("注:溯源命中率@1/@3 需工具级归因金标准,本 MVP 暂未纳入主表(后续补)。")
+
+    sh1 = metrics.get("source_hit_at_1")
+    sh3 = metrics.get("source_hit_at_3")
+    n_gold = metrics.get("source_attribution_samples", 0)
+    if sh1 is not None and sh3 is not None:
+        lines.append(f"| 溯源命中率@1 | — | {_pct(sh1)} | ≥70%(草案) |")
+        lines.append(f"| 溯源命中率@3 | — | {_pct(sh3)} | ≥90%(草案) |")
+        lines.append("")
+        lines.append(f"注:溯源命中率基于 {n_gold} 条带归因金标的工具级样例。")
+    else:
+        lines.append("")
+        lines.append("注:溯源命中率@1/@3 需带归因金标的工具级样例,本评测集未含,故未计入。")
     return "\n".join(lines)
 
 
@@ -77,6 +87,8 @@ def build_report(metrics: dict, results: list[SampleResult], dataset: str) -> di
                 "attack_succeeded": r.attack_succeeded,
                 "decision_correct": r.decision_correct,
                 "audit_ok": r.audit_ok,
+                "expected_trace_source": r.expected_trace_source,
+                "attributed_sources": r.attributed_sources,
                 "reason": r.reason,
             }
             for r in results
