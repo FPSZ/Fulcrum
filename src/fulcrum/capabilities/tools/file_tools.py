@@ -13,6 +13,7 @@ from ...core.registry import capability
 
 _WORKSPACE = Path("data/workspace")
 _MAX_READ = 4000  # 回显截断,避免超大文件灌爆上下文
+_MAX_WRITE = 1_000_000  # 单次写入字符上限(防被诱导批量落盘:磁盘耗尽 / 把外泄数据暂存进工作区)
 
 
 def _resolve(raw: str) -> Path | None:
@@ -96,6 +97,11 @@ class FileWriteTool:
         target = _resolve(raw)
         if target is None:
             return ExecResult(ok=False, error=f"路径越出受控工作区,拒绝写入:{raw}")
+        if len(content) > _MAX_WRITE:
+            return ExecResult(
+                ok=False,
+                error=f"写入内容超出上限({_MAX_WRITE} 字符),拒绝写入(防批量落盘外泄)",
+            )
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
