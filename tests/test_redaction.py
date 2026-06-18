@@ -75,6 +75,39 @@ def test_keeps_short_digit_runs() -> None:
     assert redact(text) == text
 
 
+def test_redacts_aws_access_key_id() -> None:
+    # AWS 密钥 ID 恰 20 字符,短于 _LONG_TOKEN 的 24 阈值;无 key= 键名时 _SECRET_KV 也不命中。
+    assert "AKIAIOSFODNN7EXAMPLE" not in redact("迁移用 AKIAIOSFODNN7EXAMPLE 即可")
+    assert "ASIAJ4F7XAMPLEKEY123" not in redact("临时凭据 ASIAJ4F7XAMPLEKEY123")
+    out = redact("AKIAIOSFODNN7EXAMPLE")
+    assert out.startswith("AKIA") and "*" in out  # 保留前缀便于核对来源
+
+
+def test_redacts_pem_private_key_block() -> None:
+    pem = (
+        "配置:-----BEGIN RSA PRIVATE KEY-----\n"
+        "MIIEpAIBAAKCAQEA1234567890abcdef\nzzzz\n"
+        "-----END RSA PRIVATE KEY----- 完毕"
+    )
+    out = redact(pem)
+    assert "MIIEpAIBAAKCAQEA1234567890abcdef" not in out  # 私钥体不留痕
+    assert "BEGIN RSA PRIVATE KEY" not in out  # 头尾结构也吞掉
+    assert "配置" in out and "完毕" in out  # 非敏感正文保留
+
+
+def test_redacts_jwt() -> None:
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyIjoiYWRtaW4ifQ.abc123signature456"
+    out = redact(f"Authorization: Bearer {jwt}")
+    assert "eyJ1c2VyIjoiYWRtaW4" not in out  # 载荷段(含 user 声明)不留痕
+    assert "abc123signature456" not in out  # 签名段不留痕
+
+
+def test_aws_prefix_word_not_over_redacted() -> None:
+    # 普通 18 位工单号(非 AKIA 前缀、<24)不被新规则误伤。
+    text = "工单 ABCD12CDEFGH345678 受理"
+    assert redact(text) == text
+
+
 def test_keeps_normal_text() -> None:
     text = "你好,请帮我查询低保办件进度,谢谢。"
     assert redact(text) == text  # 无敏感量 → 原样

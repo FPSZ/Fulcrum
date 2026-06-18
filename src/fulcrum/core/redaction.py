@@ -34,6 +34,19 @@ _LONG_DIGITS = re.compile(r"(?<![0-9*])(\d{15,19})(?![0-9])")
 # 邮箱本地段锚定长度上限(RFC 64),挡住 (\w)[\w.+-]* 在超长无 @ 串上的多项式回溯(ReDoS)。
 _EMAIL = re.compile(r"(\w)[\w.+-]{0,63}(@[\w.-]{1,255}\.\w{2,24})")
 _LONG_TOKEN = re.compile(r"(?<![A-Za-z0-9_\-])([A-Za-z0-9_\-]{24,})(?![A-Za-z0-9_\-])")
+# PEM 私钥/证书块:整块吞掉(多行)。须最先处理,否则块体被其它规则零散打码、头尾结构仍留痕。
+_PEM_BLOCK = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
+    re.DOTALL,
+)
+# AWS 访问密钥 ID:前缀 + 16 位,合计 20 字符。**短于 _LONG_TOKEN 的 24 阈值**,且无 key= 键名
+# 时 _SECRET_KV 也不命中 → 不专列就整条明文落库。前缀有判别力(AKIA/ASIA/AROA/AIDA…),低误报。
+_AWS_KEY = re.compile(
+    r"(?<![A-Za-z0-9])((?:AKIA|ASIA|AROA|AIDA|ABIA|ACCA)[A-Z0-9]{16})(?![A-Za-z0-9])"
+)
+# JWT:三段 base64url 以 . 分隔,前两段以 eyJ 开头。各段常 <24 且被 . 截断,_LONG_TOKEN 抓不全 →
+# 作为整体识别。锚定前两段的 eyJ 头,避免误伤普通点分串。
+_JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{4,}\.eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}")
 
 
 def _mask_uscc(m: re.Match[str]) -> str:
@@ -52,6 +65,8 @@ def redact(text: str) -> str:
     """对文本做敏感信息打码,返回脱敏后的副本(原值不可从结果恢复)。"""
     if not text:
         return text
+    # PEM 私钥整块先吞:置于所有规则之前,避免块体被零散打码后头尾结构仍留痕。
+    text = _PEM_BLOCK.sub("[私钥已脱敏]", text)
     text = _SECRET_KV.sub(lambda m: f"{m.group(1)}{m.group(2)}{m.group(3)}***", text)
     text = _ID_CARD.sub(lambda m: f"{m.group(1)}{'*' * 8}{m.group(3)}", text)
     # USCC 置于身份证之后:18 位纯数字身份证(末位为数字)也合 USCC 形,先按身份证打码
@@ -61,5 +76,9 @@ def redact(text: str) -> str:
     text = _PHONE.sub(lambda m: f"{m.group(1)}****{m.group(3)}", text)
     text = _LONG_DIGITS.sub(_mask_digits, text)
     text = _EMAIL.sub(lambda m: f"{m.group(1)}***{m.group(2)}", text)
+    # 凭据令牌:AWS 密钥 ID(短于通用阈值)与 JWT(分段被点截断)单列,置于通用长令牌规则之前。
+    # 保留前缀便于核对来源(AKIA…/eyJ…),其余打码;插入的 … 会打断后续连续段,不被通用规则二次命中。
+    text = _AWS_KEY.sub(lambda m: f"{m.group(1)[:4]}…***", text)
+    text = _JWT.sub("eyJ…***", text)
     text = _LONG_TOKEN.sub(lambda m: f"{m.group(1)[:4]}…***", text)
     return text
