@@ -26,11 +26,10 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 import re
 
 from ...core.domain import Context, Finding, SourceSpan, SourceType, TrustLevel
+from ...core.normalize import decode_variants, match_variants, normalize
 from ...core.registry import capability
 
 # 六类风险 -> (固有严重度基准 0~1, 正则模式集)。同类多模式命中合并为一条 Finding。
@@ -39,36 +38,59 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
     "injection": (
         0.75,
         (
-            r"ignore (the )?(previous|above|prior|preceding)",
-            r"disregard (the )?(instructions|above|previous|rules)",
-            r"override (the )?(instructions|system|rules)",
-            r"forget (everything|all|previous|the above)",
-            r"new instructions?\s*[:：]",
-            r"(reveal|show|print|repeat) (the )?(system )?prompt",
-            r"忽略(以上|之前|上述|前面|刚才|前文)",
-            r"无视(以上|之前|上述|规则|指令|前面)",
+            # 指令覆盖(放宽:ignore/无视 与目标词之间允许若干修饰词)
+            r"ignore\s+(?:\w+\s+){0,3}(?:previous|above|prior|preceding|earlier|instruction|rules?|prompt|document|context)",
+            r"disregard\s+(?:the\s+|all\s+|any\s+)*(instructions|above|previous|rules?|prompt)",
+            r"override\s+(?:the\s+)*(instructions|system|rules?|prompt|safety)",
+            r"forget\s+(everything|all|previous|the above|your (instructions|rules))",
+            r"new\s+instructions?\s*[:：]",
+            r"(reveal|show|print|repeat|output|dump)\s+(?:the\s+|your\s+|full\s+)*(system\s+)?(prompt|configuration|instructions)",
+            r"忽略(以上|之前|上述|前面|刚才|前文|文档|正文|这段)",
+            r"无视(以上|之前|上述|规则|指令|前面|文档)",
             r"不要(遵守|理会|遵循|管)",
             r"覆盖(指令|规则|系统设定|设置)",
             r"(新的|以下|真正的)指令\s*[:：]",
-            r"现在开始\s*[,，]?\s*你",
-            r"(泄露|打印|输出|重复)(你的)?(系统)?提示词",
+            r"(泄露|打印|输出|重复|贴出|背诵|复现)(你的|完整的?)?(系统)?(提示词|配置|连接串)",
+            r"(系统)?提示词.{0,10}(原样|逐字|发|给我|输出|告诉|贴|泄露|打印)",
+            r"(逐字|原样)(复现|输出|背诵|贴出|续写).{0,12}(提示词|策略|配置|规则|指令|工具)",
+            # 伪边界 / 角色注入(冒充内部控制结构)
+            r"</?(system|user|assistant|context|instructions?)\s*>",
+            r"\[/?(INST|SYS|SYSTEM)\]",
+            r"<\|im_(start|end)\|>",
+            r"(tool_result|assistant|system)\s*[:：]\s*(status|approved|已批准|reasoning|推理)",
+            r"===\s*(结束|end|完)\s*===",
+            # 配置块伪装 / policy puppetry
+            r"<\s*interaction-config|allowed-modes|blocked-(strings|modes)",
+            # 拒绝抑制
+            r"不(要|许|得)(说|出现|使用|加|有).{0,14}(无法|不能|抱歉|不便|免责|政策|权限|拒绝)",
+            r"(do not|don'?t)\s+(apologize|refuse|warn|mention)|no\s+(disclaimer|warning|refusal)",
+            r"禁止出现.{0,12}(无法|不能|抱歉|拒绝)",
+            # 前缀诱导
+            r"(start|begin)\s+(?:your\s+)?(answer|reply|response|output)\s+with",
+            r"(回复|回答|输出)(必须|务必|请|要)?\s*(严格)?以.{0,20}(开头|开始)",
+            # 权威伪装
+            r"开发者(备注|模式|指令)|平台团队|系统覆盖|审计豁免|内部(指令|口径)(:|：)?|system\s+override|admin\s+override",
+            # 载荷分片(变量赋值后拼接执行)
+            r"设\s*[a-z]\s*[=＝].{0,24}[a-z]\s*[=＝]|let\s+\w+\s*=.{0,40}\+\s*\w+|执行\s*[a-z](\s*\+\s*[a-z]){1,}",
         ),
     ),
     "jailbreak": (
         0.8,
         (
             r"you are now",
-            r"developer mode",
-            r"do anything now",
-            r"(without|no) (any )?(restrictions|limitations|rules|filter)",
-            r"bypass (the )?(safety|filter|guardrails?|审查)",
-            r"pretend (you are|to be) .{0,20}(unrestricted|no rules)",
+            r"developer mode|dev\s*mode|god\s*mode",
+            r"do anything now|\b(DAN|AIM)\b",
+            r"(without|no)\s+(any\s+)?(restrictions?|limitations?|rules?|filter|guardrails?)",
+            r"bypass\s+(the\s+)?(safety|filter|guardrails?|审查|approval|review)",
+            r"pretend\s+(you are|to be).{0,24}(unrestricted|no rules)",
+            r"(skip|disable|turn off)\s+(the\s+)?(human\s+)?(review|approval|safety|filter)",
             r"你现在(是|要扮演|将)",
-            r"开发者模式",
-            r"越狱模式|进入越狱",
-            r"不受(任何)?限制",
-            r"绕过(安全|过滤|审查|限制|策略)",
-            r"扮演一个(不受|没有).{0,8}(限制|约束)",
+            r"开发者模式|越狱模式|进入越狱",
+            r"不受(任何)?限制|不设限|无限制(模式|助手|终端)",
+            r"绕过(安全|过滤|审查|限制|策略|审批|核验)",
+            r"扮演一个?(不受|没有|无).{0,8}(限制|约束|规则)",
+            r"(跳过|关闭|无需|免去)\s*(二次)?\s*(审批|核验|复核|审查)",
+            r"(演练|drill|测试|游戏)模式.{0,16}(跳过|关闭|无需|不需).{0,6}(审批|限制|核验)",
         ),
     ),
     "exfiltration": (
@@ -79,7 +101,9 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             r"读取并(发送|外发|上传|回传|提交)",
             r"(外发|外传|回传|泄露|转发|上报)\s*(给|到|至)",
             r"(发送|提交|上传)\s*(到|给)\s*.{0,20}(外部|http|邮箱|服务器)",
-            r"curl\s+.{0,40}-d|POST\s+https?://",
+            r"curl\s+.{0,40}-d|POST\s+(到\s*)?https?://",
+            r"把.{0,24}(身份证|名册|名单|花名册|凭据|密钥|手机号|联系方式|台账|会话|上下文|文件).{0,16}(发|外发|上传|提交|导出.{0,4}(发|到)|POST|回传|转发)",
+            r"(发到|发往|追加到|同步到)\s*https?://",
         ),
     ),
     "sensitive_file": (
@@ -89,6 +113,8 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             r"id_rsa|\.ssh/|\.env\b|\.pem\b|\.key\b",
             r"(private[_ ]?key|api[_ ]?key|secret[_ ]?key|access[_ ]?token|credentials?)",
             r"(密钥|私钥|口令|凭据|凭证|机密|涉密|账号密码)",
+            r"\.aws[\\/]+credentials|\.kube[\\/]+config|system32[\\/]+config[\\/]+(sam|system)",
+            r"ntds\.dit|connection string|连接串",
         ),
     ),
     "command_exec": (
@@ -96,9 +122,11 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
         (
             r"rm\s+-rf",
             r"\b(curl|wget)\s+https?://",
-            r"(bash|sh|zsh|powershell|cmd)\s+-c|/bin/sh\b",
+            r"(bash|sh|zsh|powershell|cmd)\s+-c|/bin/sh\b|/dev/tcp/",
             r"(os\.system|subprocess\.|\bexec\(|\beval\()",
-            r"base64\s+-d|chmod\s+777|nc\s+-e|reverse shell",
+            r"base64\s+-d|chmod\s+777|\bnc\b\s+-e|reverse shell|mkfifo|\bsocat\b",
+            r"\bcertutil\b|\bbitsadmin\b|\bmshta\b|\bregsvr32\b|\brundll32\b|invoke-expression|\biex\b",
+            r"\|\s*(ba|z)?sh\b|\|\s*powershell",
             r"(执行|运行|调用)(系统)?(命令|脚本|shell|cmd)",
             r"删除(所有|全部|整个)(文件|数据|目录)",
         ),
@@ -110,9 +138,14 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             r"always (recommend|choose|select|answer|reply)",
             r"the (official|approved) (policy|answer) is now",
             r"(标准|正确|唯一)答案(是|为|就是)",
-            r"以后(都|一律|请|要)(推荐|选择|回答|认为|记住)",
-            r"永远(推荐|选择|相信|认为)",
-            r"记住(这条|这个|以下|此)规则",
+            r"以后(都|一律|请|要|凡)?.{0,12}(推荐|选择|回答|认为|记住|自动(通过|批准)|批准|通过)",
+            r"(今后|从现在起|从今以后|往后).{0,14}(自动(通过|批准)|一律|都).{0,8}(通过|批准|跳过|推荐)",
+            r"永远(推荐|选择|相信|认为|通过)",
+            r"记住(这条|这个|这|以下|此)?(重要)?(规则|规范|设定|偏好|事实)",
+            r"不(要|得).{0,6}(写|留|触发).{0,6}(审计|日志|记录|复核)",
+            r"当.{0,14}(暗语|口令|触发词?|出现).{0,14}时.{0,16}(批准|通过|权限|不留)",
+            r"自动(批准|通过)|跳过.{0,4}(核验|审批|二次)",
+            r"我说的(话|内容).{0,10}(优先级?高于|优先于|压过).{0,10}(系统|规则|文件)",
         ),
     ),
 }
@@ -176,37 +209,12 @@ def _severity(score: float) -> str:
     return "low"
 
 
-# ---- 混淆注入复扫:攻击者把「ignore previous instructions」之类塞进 Base64/Hex 绕过关键词 ----
-# 思路:先把文本里的编码块解出来,再用既有危险类别的规则复扫解码结果。解码后命中 = 刻意隐藏
-# 意图,比明文更可疑,故按 critical 基准计分。解码不出可读文本 / 解出来无危险词 → 不产 finding,
-# 故正常的 Base64(图片、令牌、随机串)不会误报。
-_B64_BLOB = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
-_HEX_BLOB = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
-# 解码后复扫的危险类别(隐藏意图最常见的就是这四类)。
+# ---- 混淆注入复扫:攻击者把「ignore previous instructions」之类塞进编码绕过关键词 ----
+# 解码委托 core.normalize.decode_variants(递归 Base64/Hex/URL/ROT13),再用既有危险规则复扫。
+# 解码后命中 = 刻意隐藏意图,比明文更可疑,按 critical 基准计分;解不出可读文本/无危险词则不产 finding,
+# 故正常 Base64(图片、令牌)不会误报。
 _DEOBF_CATEGORIES: tuple[str, ...] = ("injection", "jailbreak", "exfiltration", "command_exec")
 _DEOBF_BASE = 0.85  # 混淆即恶意意图,基准取 critical 档
-
-
-def _decode_blobs(text: str) -> list[str]:
-    """抽取文本里的 Base64 / Hex 编码块并尝试解码成可读文本(失败/不可读则跳过)。"""
-    decoded: list[str] = []
-    for m in _B64_BLOB.finditer(text):
-        blob = m.group(0)
-        try:
-            pad = "=" * (-len(blob) % 4)
-            text_out = base64.b64decode(blob + pad, validate=False).decode("utf-8", "ignore")
-        except (binascii.Error, ValueError):
-            continue
-        if text_out.strip():
-            decoded.append(text_out)
-    for m in _HEX_BLOB.finditer(text):
-        try:
-            text_out = bytes.fromhex(m.group(0)).decode("utf-8", "ignore")
-        except ValueError:
-            continue
-        if text_out.strip():
-            decoded.append(text_out)
-    return decoded
 
 
 def _scan_decoded(decoded: str) -> list[str]:
@@ -224,10 +232,14 @@ class KeywordRuleDetector:
         findings: list[Finding] = []
         for span in spans:
             text = span.excerpt
+            # 匹配前归一化:在 原文/归一化(NFKC+剥不可见+同形字折叠)/去leet 多副本上跑规则,
+            # 抹平 全角/同形字/零宽/双向/leetspeak 绕过(原文不动,仅用于匹配)。
+            variants = match_variants(text)
+            norm_text = normalize(text)
             trust_mul = _TRUST_MUL.get(span.trust_level, 1.0)
             indirect = span.source_type in _INDIRECT_SOURCES
             for cat, (weight, patterns) in _COMPILED.items():
-                matched = [p.pattern for p in patterns if p.search(text)]
+                matched = [p.pattern for p in patterns if any(p.search(v) for v in variants)]
                 if not matched:
                     continue
                 raw = weight * trust_mul + (_INDIRECT_BOOST if indirect else 0.0)
@@ -247,7 +259,8 @@ class KeywordRuleDetector:
                     )
                 )
             # 结构化敏感量:按命中条数(身份证/手机/邮箱/密钥实值)升级,而非固定权重。
-            pii_hits = sum(len(p.findall(text)) for p in _PII_PATTERNS)
+            # 在归一化文本上数(NFKC 把全角数字还原为半角,救回全角化的 PII)。
+            pii_hits = sum(len(p.findall(norm_text)) for p in _PII_PATTERNS)
             if pii_hits:
                 raw = _pii_score(pii_hits) * trust_mul + (_INDIRECT_BOOST if indirect else 0.0)
                 score = round(min(raw, 1.0), 3)
@@ -265,8 +278,8 @@ class KeywordRuleDetector:
                         },
                     )
                 )
-            # 混淆复扫:解码 Base64/Hex 后再扫;命中 = 刻意隐藏的注入/外发/命令,按 critical 计分。
-            for decoded in _decode_blobs(text):
+            # 混淆复扫:递归解码后再扫;命中 = 刻意隐藏的注入/外发/命令,按 critical 计分。
+            for decoded in decode_variants(text):
                 hidden = _scan_decoded(decoded)
                 if not hidden:
                     continue
