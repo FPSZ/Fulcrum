@@ -55,3 +55,31 @@ def test_unknown_schema_version_fails_verification() -> None:
     sink = _sink_with_events(2)
     asyncio.run(sink.events("s"))[1].schema_version = 99
     assert asyncio.run(sink.verify_chain("s")) is False
+
+
+def test_locate_break_pinpoints_tampered_index() -> None:
+    """取证:篡改第 2 条(下标 1)→ locate_break 精确返回 1,而非只给布尔。"""
+    sink = _sink_with_events(4)
+    asyncio.run(sink.events("s"))[1].evidence = {"tampered": True}
+    assert asyncio.run(sink.locate_break("s")) == 1
+
+
+def test_locate_break_none_when_intact() -> None:
+    sink = _sink_with_events(3)
+    assert asyncio.run(sink.locate_break("s")) is None
+    assert asyncio.run(sink.locate_break("no-such-session")) is None
+
+
+def test_locate_break_reports_first_of_multiple_tampers() -> None:
+    """多处被改 → 返回最靠前的位置(链在首处断裂即失去可验证性)。"""
+    sink = _sink_with_events(5)
+    events = asyncio.run(sink.events("s"))
+    events[3].evidence = {"t": 3}
+    events[2].evidence = {"t": 2}
+    assert asyncio.run(sink.locate_break("s")) == 2
+
+
+def test_locate_break_flags_unknown_schema_position() -> None:
+    sink = _sink_with_events(3)
+    asyncio.run(sink.events("s"))[2].schema_version = 99
+    assert asyncio.run(sink.locate_break("s")) == 2
