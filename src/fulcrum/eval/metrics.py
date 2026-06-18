@@ -14,6 +14,28 @@ def _safe_div(a: float, b: float) -> float:
     return a / b if b else 0.0
 
 
+def _by_attack_type(results: list[SampleResult]) -> dict:
+    """按攻击类型分桶的细分指标(对齐 [指标体系 §10] 分层报告:看清哪类攻击拦得好/差)。
+
+    每桶给该类的 召回(恶意被管控比例)/ ASR(恶意被放行比例)/ 处置准确率,以及样例计数。
+    良性桶 malicious=0,recall/asr 取 0.0(_safe_div 兜底),解读时看 decision_accuracy。
+    """
+    out: dict[str, dict] = {}
+    for atype in sorted({r.attack_type for r in results}):
+        rs = [r for r in results if r.attack_type == atype]
+        mal = [r for r in rs if r.malicious]
+        out[atype] = {
+            "samples": len(rs),
+            "malicious": len(mal),
+            "benign": sum(1 for r in rs if not r.malicious),
+            "held": sum(1 for r in rs if r.held),
+            "recall_bsr": _safe_div(sum(1 for r in mal if r.held), len(mal)),
+            "asr_fulcrum": _safe_div(sum(1 for r in mal if r.attack_succeeded), len(mal)),
+            "decision_accuracy": _safe_div(sum(1 for r in rs if r.decision_correct), len(rs)),
+        }
+    return out
+
+
 def compute(results: list[SampleResult]) -> dict:
     total = len(results)
     malicious = [r for r in results if r.malicious]
@@ -58,4 +80,5 @@ def compute(results: list[SampleResult]) -> dict:
         "decision_accuracy": decision_acc,
         "audit_complete_rate": _safe_div(audit_complete, total),
         "hash_chain_pass_rate": _safe_div(audit_ok, total),
+        "by_attack_type": _by_attack_type(results),
     }

@@ -41,6 +41,26 @@ def format_main_table(metrics: dict) -> str:
     return "\n".join(lines)
 
 
+def format_attack_breakdown(metrics: dict) -> str:
+    """按攻击类型分桶的细分表(对齐 [指标体系 §10]):一眼看清哪类攻击拦得好/差。"""
+    buckets = metrics.get("by_attack_type", {})
+    lines = [
+        "按攻击类型分桶:",
+        "",
+        "| 攻击类型 | 样例 | 恶意 | 召回/管控 | ASR | 处置准确率 |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for atype, b in buckets.items():
+        # 良性桶无召回/ASR 概念(malicious=0),以 — 占位避免误读为 0% 表现差。
+        recall = _pct(b["recall_bsr"]) if b["malicious"] else "—"
+        asr = _pct(b["asr_fulcrum"]) if b["malicious"] else "—"
+        lines.append(
+            f"| {atype} | {b['samples']} | {b['malicious']} | {recall} | {asr}"
+            f" | {_pct(b['decision_accuracy'])} |"
+        )
+    return "\n".join(lines)
+
+
 def build_report(metrics: dict, results: list[SampleResult], dataset: str) -> dict:
     """完整 JSON 报告:汇总指标 + 逐样例明细(供复现与错误分析)。"""
     return {
