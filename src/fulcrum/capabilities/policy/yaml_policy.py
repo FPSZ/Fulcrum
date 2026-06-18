@@ -41,10 +41,17 @@ _PREDICATES = frozenset(
         "path_outside_workspace",
         "domain_allowed",
         "command_dangerous",
+        "url_internal",
     }
 )
 _BOOL_FACTS = frozenset(
-    {"path_sensitive", "path_outside_workspace", "domain_allowed", "command_dangerous"}
+    {
+        "path_sensitive",
+        "path_outside_workspace",
+        "domain_allowed",
+        "command_dangerous",
+        "url_internal",
+    }
 )
 # 信任级按**不信任程度**升序排名:trusted 最低、untrusted 最高。`source_trust_at_least`
 # 据此做"至少这么不可信"的序比较(语义与 risk_at_least 同向:数值/排名越高=风险越大)。
@@ -132,6 +139,9 @@ class YamlPolicyEngine:
             "path_outside_workspace": argrisk.path_outside_workspace(args, workspace),
             "domain_allowed": argrisk.domain_allowed(args, allow_domains),
             "command_dangerous": argrisk.command_dangerous(args),
+            # SSRF / 云元数据:URL 指向内网/回环/链路本地/云元数据端点。域名白名单按字符串匹配
+            # 管不到裸 IP 与 169.254.169.254 这层,故单列为一等条件,可不依赖风险分直接判定。
+            "url_internal": argrisk.url_is_internal(args),
         }
 
     @staticmethod

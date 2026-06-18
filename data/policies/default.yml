@@ -52,6 +52,15 @@ rules:
     risk_level: high
     reason: 文件路径越出受控工作区
 
+  # 3b) URL 指向内网/回环/链路本地/云元数据端点 —— 阻断(SSRF:借智能体打内部面 / 窃实例凭据)。
+  #      工具无关、不依赖风险分;域名白名单按字符串比对,管不到裸 IP 与 169.254.169.254 这层。
+  - id: block-ssrf-internal
+    when:
+      url_internal: true
+    decision: block
+    risk_level: critical
+    reason: 目标地址指向内网/云元数据端点,疑似 SSRF/凭据窃取
+
   # 4) 非白名单域名外联 —— 阻断。
   - id: block-nonwhitelist-domain
     when:

@@ -24,6 +24,10 @@ def _decide(intent: ToolIntent, ctx: Context | None = None) -> Disposition:
     return asyncio.run(_POLICY.decide(intent, ctx or Context(session_id="s"))).decision
 
 
+def _decide_full(intent: ToolIntent, ctx: Context | None = None):
+    return asyncio.run(_POLICY.decide(intent, ctx or Context(session_id="s")))
+
+
 def test_sensitive_path_blocked_regardless_of_source() -> None:
     intent = ToolIntent(session_id="s", tool_name="file.read", arguments={"path": "/etc/passwd"})
     assert _decide(intent) == Disposition.BLOCK
@@ -79,6 +83,58 @@ def test_benign_workspace_read_allowed() -> None:
         session_id="s", tool_name="file.read", arguments={"path": "data/workspace/notice.txt"}
     )
     assert _decide(intent) == Disposition.ALLOW
+
+
+def test_cloud_metadata_url_blocked_as_ssrf() -> None:
+    """URL 指向云元数据端点(窃实例凭据)→ 命中 SSRF 规则阻断,且优先于通用域名规则。"""
+    intent = ToolIntent(
+        session_id="s",
+        tool_name="http.request",
+        arguments={"url": "http://169.254.169.254/latest/meta-data/iam/"},
+    )
+    decision = _decide_full(intent)
+    assert decision.decision == Disposition.BLOCK
+    assert decision.matched_policy_id == "block-ssrf-internal"
+
+
+def test_internal_loopback_url_blocked_as_ssrf() -> None:
+    intent = ToolIntent(
+        session_id="s", tool_name="http.request", arguments={"url": "http://127.0.0.1:8080/admin"}
+    )
+    assert _decide_full(intent).matched_policy_id == "block-ssrf-internal"
+
+
+def test_ssrf_condition_is_tool_agnostic() -> None:
+    """url_internal 工具无关:即便不是 http.request,带内网 URL 参也应被 SSRF 规则拦下。"""
+    intent = ToolIntent(
+        session_id="s",
+        tool_name="webhook.notify",
+        arguments={"url": "http://10.0.0.5/internal"},
+    )
+    assert _decide_full(intent).matched_policy_id == "block-ssrf-internal"
+
+
+def test_public_whitelisted_url_not_ssrf() -> None:
+    """白名单公网域名不是内网 → 不误命中 SSRF 规则,正常放行。"""
+    intent = ToolIntent(
+        session_id="s", tool_name="http.request", arguments={"url": "https://gov.cn/notice"}
+    )
+    assert _decide(intent) == Disposition.ALLOW
+
+
+def test_url_internal_is_registered_predicate(tmp_path: Path) -> None:
+    """url_internal 是已登记条件键:含它的策略应能正常加载并对内网 URL 命中阻断。"""
+    p = tmp_path / "ssrf.yml"
+    p.write_text(
+        "default: allow\nrules:\n  - id: x\n    when:\n      url_internal: true\n"
+        "    decision: block\n",
+        encoding="utf-8",
+    )
+    engine = YamlPolicyEngine(p)
+    intent = ToolIntent(
+        session_id="s", tool_name="any.tool", arguments={"url": "http://192.168.1.1/"}
+    )
+    assert asyncio.run(engine.decide(intent, Context(session_id="s"))).decision == Disposition.BLOCK
 
 
 def _intent_from_trust(trust: TrustLevel) -> tuple[ToolIntent, Context]:
