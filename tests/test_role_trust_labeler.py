@@ -87,6 +87,29 @@ def test_embedded_bracket_and_chinese_markers() -> None:
     assert SourceType.WEBPAGE in types
 
 
+def test_embedded_begin_end_marker_block() -> None:
+    """RAG 框架的 ---BEGIN tag--- … ---END tag--- 标记块 → 切成独立 UNTRUSTED 来源,残余仍可信。"""
+    spans = _label(
+        ("user", "参考 ---BEGIN DOCUMENT---\n这是检索到的文件\n---END DOCUMENT--- 谢谢"),
+    )
+    docs = [s for s in spans if s.source_type == SourceType.DOCUMENT]
+    users = [s for s in spans if s.source_type == SourceType.USER]
+    assert len(docs) == 1
+    assert docs[0].trust_level == TrustLevel.UNTRUSTED
+    assert docs[0].excerpt == "这是检索到的文件"
+    assert len(users) == 1
+    assert "这是检索到的文件" not in users[0].excerpt
+
+
+def test_embedded_equals_marker_and_case_insensitive() -> None:
+    """=== 分隔线与大小写不一致的开闭标记都能识别(begin/END 大小写不敏感反向引用)。"""
+    spans = _label(("user", "===begin 检索===\n知识库片段\n===END 检索==="))
+    retr = [s for s in spans if s.source_type == SourceType.RETRIEVAL]
+    assert len(retr) == 1
+    assert retr[0].trust_level == TrustLevel.UNTRUSTED
+    assert retr[0].excerpt == "知识库片段"
+
+
 def test_whole_message_block_yields_no_empty_residual() -> None:
     spans = _label(("user", "<doc>整条都是文档</doc>"))
     assert len(spans) == 1
