@@ -10,7 +10,11 @@ from __future__ import annotations
 def load_builtin_capabilities() -> None:
     """显式导入所有内置能力实现,触发其 @capability 注册(幂等,可重复调用)。"""
     from .attribution import evidence, zero  # noqa: F401
-    from .detectors import keyword_rules, noop  # noqa: F401
+    from .detectors import (  # noqa: F401
+        keyword_rules,
+        ml_classifier,  # noqa: F401  # 神经语义兜底(可选重依赖,默认不入装配)
+        noop,
+    )
     from .labelers import passthrough, role_trust  # noqa: F401
     from .policy import allow_all, yaml_policy  # noqa: F401
     from .sandbox import echo_executor, restricted_executor  # noqa: F401
