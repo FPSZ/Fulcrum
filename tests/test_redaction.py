@@ -47,6 +47,28 @@ def test_redacts_legacy_15_digit_id_and_bank_card() -> None:
     assert "3101" in out and "7888" in out  # 保留首尾便于核对
 
 
+def test_redacts_uscc() -> None:
+    # 统一社会信用代码(18 位,GB 32100)曾因 18<24 且含字母两边规则都漏 → 整条明文落库。
+    out = redact("企业统一社会信用代码 91350100M000100Y43 已登记")
+    assert "91350100M000100Y43" not in out  # 整条不留明文
+    assert "91" in out and "0Y43" in out  # 保留首尾便于核对
+    assert "************" in out  # 中段 12 位打码
+    assert "已登记" in out  # 非敏感正文保留
+
+
+def test_id_card_not_swallowed_by_uscc_rule() -> None:
+    # 18 位纯数字身份证(末位为数字)也合 USCC 形:须先按身份证规则保留前 6 位,而非只留 2 位。
+    out = redact("身份证 110101199001011234")
+    assert "110101" in out  # 身份证保留前 6 位
+    assert "199001011234" not in out
+
+
+def test_non_uscc_token_not_over_redacted() -> None:
+    # 中段非 6 位连续数字 → 不误判为信用代码,普通 18 位工单号原样保留(避免过度打码)。
+    text = "工单 ABCD12CDEFGH345678 受理"
+    assert redact(text) == text
+
+
 def test_keeps_short_digit_runs() -> None:
     # 不过度打码:12 位订单号等 <15 位数字串原样保留(避免误伤非 PII 标识)。
     text = "订单号 123456789012 已受理"
