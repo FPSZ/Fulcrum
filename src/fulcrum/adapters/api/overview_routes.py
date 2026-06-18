@@ -22,20 +22,35 @@ if TYPE_CHECKING:
     from ...core.pipeline import SecurityPipeline
 
 
+def _gate_of(evidence: dict) -> str:
+    """把一个判定点证据归到三类闸门之一(与 /events 同口径,避免两处漂移)。
+
+    带 `tool` 证据 → 工具治理;`stage=output_gateway` → 出口检测;否则 → 输入闸门。
+    """
+    if evidence.get("tool"):
+        return "tool"
+    if evidence.get("stage") == "output_gateway":
+        return "output"
+    return "input"
+
+
 def summarize(events: list[AuditEvent], verified_sessions: int = 0) -> OverviewStatsResponse:
     """把审计事件聚合成总览 KPI(纯函数,便于测试)。
 
     requests/blocked/pending 直接数对应事件类型;decisions 数 policy_decided 携带的处置;
-    by_type 给全量事件类型分布(供后续页复用)。verified_sessions 由调用方算后传入。
+    gates 把这些处置再按三类闸门(输入/出口/工具)拆开,让总览能分别看「出口拦了几条、
+    工具拦了几条」而非只有一个总数;by_type 给全量事件类型分布。verified_sessions 由调用方传入。
     """
     by_type: Counter[str] = Counter()
     decisions: Counter[str] = Counter()
+    gates: dict[str, Counter[str]] = {"input": Counter(), "output": Counter(), "tool": Counter()}
     sessions: set[str] = set()
     for e in events:
         by_type[e.event_type.value] += 1
         sessions.add(e.session_id)
         if e.event_type == AuditEventType.POLICY_DECIDED and e.decision is not None:
             decisions[e.decision.value] += 1
+            gates[_gate_of(e.evidence)][e.decision.value] += 1
     return OverviewStatsResponse(
         sessions=len(sessions),
         events=len(events),
@@ -44,6 +59,7 @@ def summarize(events: list[AuditEvent], verified_sessions: int = 0) -> OverviewS
         blocked=by_type.get(AuditEventType.TOOL_BLOCKED.value, 0),
         pending=by_type.get(AuditEventType.TOOL_PENDING_APPROVAL.value, 0),
         decisions=dict(decisions),
+        gates={gate: dict(counts) for gate, counts in gates.items()},
         by_type=dict(by_type),
     )
 

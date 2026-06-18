@@ -73,6 +73,41 @@ def test_summarize_counts_types_decisions_and_sessions() -> None:
     assert s.by_type[AuditEventType.REQUEST_RECEIVED.value] == 2
 
 
+def test_summarize_splits_decisions_by_gate() -> None:
+    """同样的处置按三类闸门拆开:工具(带 tool 证据)/ 出口(stage=output_gateway)/ 输入。"""
+    events = [
+        AuditEvent(
+            session_id="a",
+            event_type=AuditEventType.POLICY_DECIDED,
+            decision=Disposition.BLOCK,
+            evidence={"tool": "external.send"},  # 工具治理
+        ),
+        AuditEvent(
+            session_id="a",
+            event_type=AuditEventType.POLICY_DECIDED,
+            decision=Disposition.SANITIZE,
+            evidence={"stage": "output_gateway"},  # 出口检测
+        ),
+        AuditEvent(
+            session_id="b",
+            event_type=AuditEventType.POLICY_DECIDED,
+            decision=Disposition.BLOCK,
+            evidence={"stage": "input_gateway"},  # 输入闸门
+        ),
+    ]
+    s = summarize(events)
+    assert s.gates["tool"] == {"block": 1}
+    assert s.gates["output"] == {"sanitize": 1}
+    assert s.gates["input"] == {"block": 1}
+    # 三闸门各处置之和应等于总处置分布
+    assert s.decisions == {"block": 2, "sanitize": 1}
+
+
+def test_empty_gates_have_three_buckets() -> None:
+    s = summarize([])
+    assert s.gates == {"input": {}, "output": {}, "tool": {}}
+
+
 def test_real_pipeline_aggregates_block_and_allow() -> None:
     audit = InMemoryAuditSink()
     pipe = _pipeline(audit)

@@ -131,6 +131,8 @@ class OverviewStatsResponse(BaseModel):
     blocked: int = 0  # 拦截数(tool_blocked)
     pending: int = 0  # 待审批数(tool_pending_approval)
     decisions: dict[str, int] = Field(default_factory=dict)  # 按处置计数(policy_decided)
+    # 按三类闸门(input/output/tool)再按处置细分:{"output":{"block":3,...},...},供总览分维度展示
+    gates: dict[str, dict[str, int]] = Field(default_factory=dict)
     by_type: dict[str, int] = Field(default_factory=dict)  # 按审计事件类型计数
 
 
