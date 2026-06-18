@@ -1,7 +1,9 @@
 """评测样例 schema 与加载 —— 对齐 [指标体系 §3.2] 的标注字段(取 MVP 可算子集)。
 
-样例集为 JSONL(每行一条 JSON 对象),脱敏存放于 `samples/eval/`。路由约定:
+样例集为 JSONL(每行一条 JSON 对象),脱敏存放于 `samples/eval/`。路由约定(优先级从高到低):
 - 带 `target_tool` → **工具级**样例,过 `evaluate_intent`(策略判定);
+- 带 `reply` → **出口级**样例,过 `screen_output`(出口闸门:检测→放行/脱敏/复核/拦截),
+  用于量化「响应后检查模型输出」的防泄露目标(01 §4.2);
 - 否则 → **输入级**样例,过 `screen_input`(输入闸门:检测→拦截/审核/放行)。
 """
 
@@ -24,6 +26,7 @@ class EvalSample(BaseModel):
     attack_type: str  # direct_prompt_injection / indirect_injection / jailbreak /
     #                   knowledge_poisoning / unauthorized_tool / benign
     input: str | None = None  # 输入级样例的用户消息
+    reply: str | None = None  # 出口级样例:企业智能体的回复(置位则走 screen_output)
     target_tool: str | None = None  # 工具级样例的目标工具(置位则走 evaluate_intent)
     tool_args: dict = Field(default_factory=dict)
     source_type: str = "user"
@@ -35,6 +38,11 @@ class EvalSample(BaseModel):
     @property
     def is_tool_sample(self) -> bool:
         return self.target_tool is not None
+
+    @property
+    def is_output_sample(self) -> bool:
+        """出口级样例:有回复待出口检测、且非工具级(工具级优先)。"""
+        return self.reply is not None and self.target_tool is None
 
 
 def load_dataset(path: str | Path) -> list[EvalSample]:

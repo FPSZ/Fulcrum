@@ -1,6 +1,7 @@
 """样例回放 —— 把每条样例过真实枢衡管线,记录实处置 + 审计校验结果。
 
-输入级样例 → `pipeline.screen_input`(检测→闸门);工具级样例 → `pipeline.evaluate_intent`(策略)。
+输入级样例 → `pipeline.screen_input`(检测→入口闸门);工具级样例 → `pipeline.evaluate_intent`
+(策略判定);出口级样例 → `pipeline.screen_output`(检测→出口闸门,量化回复防泄露)。
 每条用独立 session_id 跑,以便逐条核验 hash-chain 与审计完整性。
 """
 
@@ -53,6 +54,10 @@ async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleRe
         outcome = await pipeline.evaluate_intent(intent, ctx)
         predicted = outcome.decision.decision.value
         reason = outcome.decision.reason
+    elif sample.is_output_sample:
+        verdict = await pipeline.screen_output(sid, sample.reply or "")
+        predicted = verdict.decision.value
+        reason = verdict.reason
     else:
         verdict = await pipeline.screen_input(sid, sample.input or "")
         predicted = verdict.decision.value
