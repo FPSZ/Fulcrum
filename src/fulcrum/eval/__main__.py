@@ -16,7 +16,7 @@ from typing import Any
 from ..app import build_pipeline
 from .dataset import load_dataset
 from .metrics import compute
-from .report import build_report, format_main_table
+from .report import build_report, format_attack_breakdown, format_main_table
 from .runner import run_dataset
 
 _DEFAULT_DATASET = "samples/eval/govoffice.jsonl"
@@ -56,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
     metrics = compute(results)
 
     print(format_main_table(metrics))
+    print()
+    print(format_attack_breakdown(metrics))
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

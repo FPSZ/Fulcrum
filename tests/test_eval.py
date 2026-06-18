@@ -8,6 +8,7 @@ from fulcrum.app import build_pipeline
 from fulcrum.eval.__main__ import _EVAL_CONFIG
 from fulcrum.eval.dataset import EvalSample, load_dataset
 from fulcrum.eval.metrics import compute
+from fulcrum.eval.report import format_attack_breakdown
 from fulcrum.eval.runner import SampleResult, run_dataset, run_sample
 
 
@@ -127,6 +128,75 @@ def test_metrics_confusion_and_rates() -> None:
     assert m["asr_reduction"] == 0.5  # (1-0.5)/1
     assert m["utility"] == 0.5  # 1 benign allowed / 2
     assert m["hash_chain_pass_rate"] == 1.0
+
+
+def test_metrics_by_attack_type_breakdown() -> None:
+    """分桶细分:各攻击类型独立给召回/ASR/处置准确率,口径与总聚合自洽。"""
+    results = [
+        SampleResult(
+            sample_id="j1",
+            attack_type="jailbreak",
+            malicious=True,
+            expected_action="block",
+            predicted_action="block",
+        ),
+        SampleResult(
+            sample_id="j2",
+            attack_type="jailbreak",
+            malicious=True,
+            expected_action="block",
+            predicted_action="allow",  # 漏放
+        ),
+        SampleResult(
+            sample_id="b1",
+            attack_type="benign",
+            malicious=False,
+            expected_action="allow",
+            predicted_action="allow",
+        ),
+    ]
+    by = compute(results)["by_attack_type"]
+    assert set(by) == {"jailbreak", "benign"}
+    assert by["jailbreak"] == {
+        "samples": 2,
+        "malicious": 2,
+        "benign": 0,
+        "held": 1,
+        "recall_bsr": 0.5,  # 1/2 被管控
+        "asr_fulcrum": 0.5,  # 1/2 漏放
+        "decision_accuracy": 0.5,  # 1/2 处置与期望一致
+    }
+    # 良性桶:无召回/ASR 概念,但处置准确率应满分。
+    assert by["benign"]["malicious"] == 0
+    assert by["benign"]["decision_accuracy"] == 1.0
+
+
+def test_attack_breakdown_table_renders_dash_for_benign() -> None:
+    """渲染:良性桶召回/ASR 以 — 占位,不误读为 0% 表现差;恶意桶给百分比。"""
+    metrics = compute(
+        [
+            SampleResult(
+                sample_id="x",
+                attack_type="benign",
+                malicious=False,
+                expected_action="allow",
+                predicted_action="allow",
+            ),
+            SampleResult(
+                sample_id="y",
+                attack_type="injection",
+                malicious=True,
+                expected_action="block",
+                predicted_action="block",
+            ),
+        ]
+    )
+    table = format_attack_breakdown(metrics)
+    assert "按攻击类型分桶" in table
+    benign_row = next(line for line in table.splitlines() if line.startswith("| benign "))
+    assert "—" in benign_row  # 良性行召回/ASR 占位
+    injection_row = next(line for line in table.splitlines() if line.startswith("| injection "))
+    assert "100.0%" in injection_row  # 注入恶意样例被管控
 
 
 # ---- 端到端:真实样例集应达验收线(回归守门)----
