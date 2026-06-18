@@ -63,7 +63,17 @@ export function FooterReveal({
     const max = maxRef.current || 1
     const p = Math.min(1, offset.current / max)
     if (cardRef.current) {
-      cardRef.current.style.transform = `translate3d(0,${-offset.current}px,0)`
+      if (offset.current > 0) {
+        // 揭示中:升为合成层并逐帧上滑(动画期文字短暂合成可接受)
+        cardRef.current.style.willChange = 'transform'
+        cardRef.current.style.transform = `translate3d(0,${-offset.current}px,0)`
+      } else {
+        // 静止态:撤掉合成层与位移,恢复 ClearType 亚像素抗锯齿
+        // —— 否则常驻 transform/will-change 会让这张包住全部内容的卡在
+        // Windows 低 DPI(1080p,DPR=1)下改用灰度 AA,整页文字发虚(见 motion.ts 同则)。
+        cardRef.current.style.willChange = 'auto'
+        cardRef.current.style.transform = 'none'
+      }
     }
     if (footerRef.current) {
       // 揭示量映射成 透明度(避免卡片半透明时透出残影)+ 轻微视差上收
@@ -170,7 +180,7 @@ export function FooterReveal({
           底边一道向下柔影:卡上滑时落在页脚上,呈现"页面浮在页脚之上"的层次 */}
       <div
         ref={cardRef}
-        className="relative z-10 flex min-h-0 flex-1 flex-col shadow-[0_16px_34px_-24px_rgba(20,28,56,0.2)] [will-change:transform]"
+        className="relative z-10 flex min-h-0 flex-1 flex-col shadow-[0_16px_34px_-24px_rgba(20,28,56,0.2)]"
       >
         {children}
       </div>
