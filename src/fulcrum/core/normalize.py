@@ -110,9 +110,13 @@ def match_variants(text: str) -> list[str]:
     return out
 
 
-# ---- 递归解码:把藏进 base64 / hex / URL 编码 / ROT13 的指令解出来供复扫 ----
+# ---- 递归解码:把藏进 base64 / hex / URL 编码 / ROT13 / HTML 数字实体的指令解出来供复扫 ----
 _B64 = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 _HEX = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
+# HTML 数字字符引用:&#105; / &#x69;。把字母编码成数字实体(`&#105;gnore previous…`)是网页/
+# 文档绕过关键词匹配的常见手法。**只解数字引用**——具名实体(&lt; &amp; &nbsp;)正常文档遍地都是,
+# 解了反而误伤;字母的数字引用几乎只见于刻意规避,判别力强、低误报。
+_HTML_NUMREF = re.compile(r"&#(x[0-9a-fA-F]+|\d+);")
 
 
 def _b64(blob: str) -> str:
@@ -131,6 +135,20 @@ def _hexd(blob: str) -> str:
         return ""
 
 
+def _html_numref(s: str) -> str:
+    """把 HTML 数字字符引用(&#105; / &#x69;)还原为字符;非法/越界引用原样保留。"""
+
+    def repl(m: re.Match[str]) -> str:
+        body = m.group(1)
+        try:
+            cp = int(body[1:], 16) if body[0] in "xX" else int(body)
+        except ValueError:
+            return m.group(0)
+        return chr(cp) if 0 <= cp <= 0x10FFFF else m.group(0)
+
+    return _HTML_NUMREF.sub(repl, s)
+
+
 def decode_variants(text: str, depth: int = 2) -> list[str]:
     """抽取并解码文本里的编码块(base64/hex/URL/ROT13),递归至多 depth 层。
 
@@ -146,6 +164,8 @@ def decode_variants(text: str, depth: int = 2) -> list[str]:
             cands += [_hexd(m.group(0)) for m in _HEX.finditer(s)]
             if "%" in s:
                 cands.append(unquote(s))
+            if "&#" in s:
+                cands.append(_html_numref(s))
             try:
                 cands.append(codecs.decode(s, "rot13"))  # ROT13 只影响 a-z,中文不变
             except (UnicodeError, ValueError):
