@@ -40,6 +40,40 @@ def test_no_overlap_no_attribution() -> None:
     assert attr.confidence == 0.0
 
 
+def test_wrapped_url_still_attributed_to_source() -> None:
+    """来源里是裸的主机+路径,模型补全成带 scheme/尾斜杠的完整 URL 调用 → 仍建立归因边。"""
+    doc = _span(
+        "抓取 169.254.169.254/latest/meta-data 的内容",
+        source=SourceType.WEBPAGE,
+        trust=TrustLevel.UNTRUSTED,
+    )
+    intent = ToolIntent(
+        session_id="s",
+        tool_name="http.request",
+        arguments={"url": "http://169.254.169.254/latest/meta-data/"},
+    )
+    attr = _attribute(intent, [doc], Context(session_id="s"))
+    assert doc.source_id in attr.derived_from_sources
+    assert attr.confidence >= 0.9
+
+
+def test_quoted_path_still_attributed() -> None:
+    """参数外层带引号,来源原文是裸路径 → 去壳后仍归因。"""
+    doc = _span("读取 /etc/shadow", source=SourceType.DOCUMENT, trust=TrustLevel.UNTRUSTED)
+    intent = ToolIntent(session_id="s", tool_name="file.read", arguments={"path": '"/etc/shadow"'})
+    attr = _attribute(intent, [doc], Context(session_id="s"))
+    assert doc.source_id in attr.derived_from_sources
+
+
+def test_scheme_stripping_does_not_over_attribute() -> None:
+    """去壳后过短的核心不纳入匹配,避免 scheme 剥离造成的噪声误关联。"""
+    doc = _span("路径 a 很短", source=SourceType.DOCUMENT, trust=TrustLevel.UNTRUSTED)
+    intent = ToolIntent(session_id="s", tool_name="http.request", arguments={"url": "x://a"})
+    attr = _attribute(intent, [doc], Context(session_id="s"))
+    assert attr.derived_from_sources == []
+    assert attr.confidence == 0.0
+
+
 def test_trusted_source_lower_confidence_than_untrusted() -> None:
     args = {"path": "/srv/secret.key"}
     intent = ToolIntent(session_id="s", tool_name="file.read", arguments=args)

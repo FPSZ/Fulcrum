@@ -10,6 +10,8 @@ attribution_confidence)的共同依据。LLM-judge 在 P3 作为后置增强提�
 
 from __future__ import annotations
 
+import re
+
 from ...core.domain import Attribution, Context, SourceSpan, ToolIntent, TrustLevel
 from ...core.registry import capability
 
@@ -21,6 +23,26 @@ _TRUST_WEIGHT: dict[TrustLevel, float] = {
 }
 # 参数片段需达到的最小长度,避免 "1"、"a" 之类噪声误关联。
 _MIN_TOKEN = 4
+# URL scheme 前缀(用于剥离,得到来源原文里更可能出现的"主机+路径"核心)。
+_SCHEME = re.compile(r"^[a-z][a-z0-9+.\-]*://")
+
+
+def _candidates(value: str) -> list[str]:
+    """由一条参数值派生可匹配片段:原值,以及剥离外层引号 / URL scheme / 尾斜杠后的核心。
+
+    间接注入主战场上,来源(文档/网页)里常只写裸的"主机+路径"(169.254.169.254/x、
+    /etc/passwd"),而模型实际调用时会包装成 http://169.254.169.254/x/、给路径加引号等。
+    只比整条参数值会让这类**被规范化/包装过**的调用漏掉归因边,策略随之拿不到 source_trust。
+    这里额外产出去壳后的核心片段(仍 ≥ _MIN_TOKEN 才纳入,避免过度泛化误关联)。
+    """
+    raw = value.strip()
+    out: list[str] = []
+    if len(raw) >= _MIN_TOKEN:
+        out.append(raw)
+    core = _SCHEME.sub("", raw.strip("\"'`")).rstrip("/")
+    if core != raw and len(core) >= _MIN_TOKEN and core not in out:
+        out.append(core)
+    return out
 
 
 @capability("attributor", "evidence")
@@ -28,11 +50,7 @@ class EvidenceAttributor:
     async def attribute(
         self, intent: ToolIntent, spans: list[SourceSpan], ctx: Context
     ) -> Attribution:
-        arg_vals = [
-            v
-            for v in (str(x).lower().strip() for x in intent.arguments.values())
-            if len(v) >= _MIN_TOKEN
-        ]
+        arg_vals = [frag for x in intent.arguments.values() for frag in _candidates(str(x).lower())]
         derived: list[str] = []
         best = 0.0
         reasons: list[str] = []
