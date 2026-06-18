@@ -40,3 +40,10 @@ def test_raw_ip_http_higher_than_domain() -> None:
     assert _score("http.request", {"url": "http://10.0.0.5/x"}) > _score(
         "http.request", {"url": "http://gov.cn/x"}
     )
+
+
+def test_internal_ssrf_url_higher_than_public_domain() -> None:
+    # 指向云元数据/内网的 URL 比普通公网域名风险更高(SSRF 借智能体打内部面)。
+    assert _score("http.request", {"url": "http://169.254.169.254/latest/meta-data/"}) > _score(
+        "http.request", {"url": "https://gov.cn/x"}
+    )
