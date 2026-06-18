@@ -75,6 +75,33 @@ def test_network_allowlisted_passes() -> None:
     assert r.ok and r.output == "done"
 
 
+def test_file_scheme_url_denied_even_with_allowlist() -> None:
+    """file:///etc/passwd 无主机 → domain_allowed 返回 True 会绕过外联白名单,须按协议白名单拦下。"""
+    tool = _RecordingTool()
+    r = _run(tool, {"url": "file:///etc/passwd"}, allow_domains=["gov.cn"])
+    assert not r.ok and "协议" in (r.error or "")
+    assert r.side_effects.get("sandbox") == "denied"
+    assert tool.called is False  # 执行前边界:工具未被调用
+
+
+def test_dangerous_schemes_denied() -> None:
+    for url in ("gopher://127.0.0.1:6379/_", "dict://x:11211/", "ftp://evil/x", "jar:nested!/a"):
+        r = _run(_PassTool(), {"url": url}, allow_domains=["gov.cn", "evil", "x"])
+        assert not r.ok and "协议" in (r.error or ""), url
+
+
+def test_https_scheme_still_allowed() -> None:
+    # 协议白名单不误伤正常 https(在域名白名单内)。
+    r = _run(_PassTool(), {"url": "https://gov.cn/x"}, allow_domains=["gov.cn"])
+    assert r.ok and r.output == "done"
+
+
+def test_schemeless_url_falls_through_to_domain_check() -> None:
+    # 无协议的裸主机串不触发协议规则,仍由域名白名单把关(此处不在白名单 → 拒)。
+    r = _run(_PassTool(), {"url": "gov.cn/x"}, allow_domains=["example.com"])
+    assert not r.ok and "外联" in (r.error or "")
+
+
 def test_timeout_enforced() -> None:
     r = _run(_SlowTool(), {"path": "notice.txt"}, timeout_seconds=0.05)
     assert not r.ok and "超时" in (r.error or "")
