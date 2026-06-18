@@ -71,6 +71,54 @@ def test_benign_commands_not_flagged(command: str) -> None:
     assert argrisk.command_dangerous({"command": command}) is False
 
 
+# ---- argv 注入面:无害二进制 + 恶意参数(GTFOBins 类「借刀执行」)----
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tar -cf /dev/null --checkpoint=1 --checkpoint-action=exec=sh x",  # tar 动作钩子
+        "tar czf x.tgz --use-compress-program=/tmp/evil .",  # 外部压缩器
+        "tar xf a.tar --to-command='sh -c id'",
+        "find / -name id_rsa -exec cat {} ;",  # find -exec
+        "find . -type f -execdir /tmp/x {} ;",
+        "ssh -o ProxyCommand='sh -c id' user@host",  # ssh 连接命令
+        "ssh -o LocalCommand='id' -o PermitLocalCommand=yes h",
+        "rsync -e 'sh -c id' src/ host:/dst",  # rsync 远端 shell
+        "rsync --rsh='sh -c id' a b",
+        "git clone -c core.sshCommand='sh -c id' ext::sh user@h",  # git 配置项执行
+        "git -c core.pager='!sh -c id' log",
+        "git clone --upload-pack='sh -c id' x ssh://h/r",
+        "wget --use-askpass=/tmp/evil http://h/",  # askpass 钩子
+        "sshpass -p x ssh h",
+        "awk 'BEGIN{system(\"id\")}'",  # awk 内联 system()
+        "gawk 'BEGIN{system(\"/bin/sh\")}' /etc/hosts",
+        "env LD_PRELOAD=/tmp/x.so id",  # env 赋值绕过
+    ],
+)
+def test_arg_injection_commands_flagged(command: str) -> None:
+    # argv 注入既被专用判定捕获,也并入 command_dangerous(自动流向评分/策略/执行器)。
+    assert argrisk.command_arg_injection({"command": command}) is True
+    assert argrisk.command_dangerous({"command": command}) is True
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "tar -xzf archive.tar.gz",  # 正常解包
+        "tar czf backup.tgz data/workspace",  # 正常打包
+        "find . -name '*.log' -type f",  # 无 -exec 的正常查找
+        "git clone https://github.com/x/y.git",  # 正常克隆
+        "git commit -m 'fix'",
+        "rsync -avz src/ dst/",  # 无 -e/--rsh 的正常同步
+        "ssh user@host",
+        "zip -r out.zip dir/",
+        "awk '{print $1}' file.txt",  # 无 system() 的正常 awk
+        "python script.py --executable foo",  # --exec 子串不应误触
+    ],
+)
+def test_benign_tool_args_not_arg_injection(command: str) -> None:
+    assert argrisk.command_arg_injection({"command": command}) is False
+
+
 @pytest.mark.parametrize(
     "url",
     [

@@ -58,6 +58,31 @@ _DANGEROUS_CMD = re.compile(
     r":\(\)\s*\{)",
     re.IGNORECASE,
 )
+# argv 注入面:**二进制名看似无害,危险藏在参数里**(GTFOBins 类「借刀执行」)。
+# 上面的 _DANGEROUS_CMD 按二进制名/显式片段匹配,管不到 `tar --checkpoint-action=`、
+# `find -exec`、`git -c core.sshCommand=`、`ssh -o ProxyCommand=` 这类——命令头是
+# tar/find/git/ssh 等白名单常用工具,却用一个选项把任意命令喂进去。规则只盯**有判别力的
+# 危险选项 token**,不盯通用短参,守住「正常 tar/git/find 不误伤」的下界。
+_ARG_INJECTION = re.compile(
+    r"("
+    # tar/zip 借「动作钩子 / 外部压缩器」执行任意命令
+    r"--checkpoint-action=|--to-command=|--use-compress-program=|--unzip-command=|"
+    # find / xargs 借 -exec(dir) 执行
+    r"-execdir\b|-exec\b|"
+    # ssh / scp / rsync 借连接命令执行(ProxyCommand / 本地命令 / 远端 shell)
+    r"proxycommand=|localcommand=|--rsh=|"
+    # 远端 shell 选项 -e 限定在 rsync 上下文,避免误伤通用 -e
+    r"\brsync\b[^\n]{0,60}?\s-e\s|"
+    # git 借配置项执行(sshCommand / pager / fsmonitor)或自定义 pack 程序
+    r"core\.sshcommand=|core\.pager=|core\.fsmonitor=|--upload-pack=|--receive-pack=|"
+    # askpass 钩子执行外部程序
+    r"--use-askpass=|\bsshpass\b|"
+    # awk / gawk 内联 system() 执行
+    r"\bg?awk\b[^\n]{0,60}?system\s*\(|"
+    # env VAR=VAL cmd 形式绕过 allowlist / sudo
+    r"\benv\s+\w+=\S+\s+\w)",
+    re.IGNORECASE,
+)
 _IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 _WIN_DRIVE = re.compile(r"^[A-Za-z]:")
 # 公认的本机主机名(非 IP 字面量,ipaddress 解析不了,单列)。
@@ -86,9 +111,15 @@ def path_outside_workspace(arguments: dict, workspace: str) -> bool:
     return norm.startswith("/") or bool(_WIN_DRIVE.match(norm))
 
 
+def command_arg_injection(arguments: dict) -> bool:
+    """命令头是无害工具(tar/git/find/ssh…),但某个选项把任意命令喂进去 → argv 注入。"""
+    cmd = str(arguments.get("command") or arguments.get("cmd") or "")
+    return bool(_ARG_INJECTION.search(cmd))
+
+
 def command_dangerous(arguments: dict) -> bool:
     cmd = str(arguments.get("command") or arguments.get("cmd") or "")
-    return bool(_DANGEROUS_CMD.search(cmd))
+    return bool(_DANGEROUS_CMD.search(cmd) or _ARG_INJECTION.search(cmd))
 
 
 def url_host(arguments: dict) -> str | None:
