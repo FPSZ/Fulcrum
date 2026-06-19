@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 # 敏感文件/路径:系统账户、SSH/证书私钥、云与服务凭据、Shell 历史、Web 配置(中英 + Win/Linux)。
 # 政务现场多为 Windows,故同时覆盖 SAM/SYSTEM 注册表蜂巢、NTDS、各类凭据落盘点。
@@ -41,8 +41,10 @@ _DANGEROUS_CMD = re.compile(
     r"("
     # 删除 / 磁盘 / 关机
     r"rm\s+-rf|mkfs|dd\s+if=|shutdown|reboot|wipefs|del\s+/[a-z]|rmdir\s+/s|format\s+[a-z]:|"
-    # 外联下载(含 Windows 下载器 LOLBin)
-    r"\b(curl|wget)\b|certutil\s+.*-urlcache|bitsadmin|"
+    # 外联下载 / 本地解码落盘(含 Windows 下载器 LOLBin;certutil 既能下载也能 -decode 还原载荷)
+    r"\b(curl|wget)\b|certutil\s+.*-(urlcache|decode)|bitsadmin|"
+    # 空格规避:${IFS}/$IFS 替空格(绕"含空格危险串"规则,见 cmd.obfuscation.ifs_substitution)
+    r"\$\{?IFS\b|"
     # 管道把下载内容直接喂给 shell(下载即执行)
     r"\|\s*(ba|z)?sh\b|\|\s*powershell|"
     # 反弹 / 交互 shell + 内联解释器执行
@@ -53,19 +55,95 @@ _DANGEROUS_CMD = re.compile(
     r"useradd|usermod|"
     # Windows LOLBins:无文件执行 / 服务管控 / 日志与卷影清除 / 计划任务 / 注册表 / 关防护
     r"powershell|invoke-expression|\biex\b|invoke-webrequest|mshta|regsvr32|rundll32|"
-    r"wmic|vssadmin|wevtutil|schtasks|\breg\s+(add|delete)|\b(set|add)-mppreference|"
+    r"wmic|vssadmin|wevtutil|schtasks|\breg\s+(add|delete|save)|\b(set|add)-mppreference|"
     # fork bomb
     r":\(\)\s*\{)",
     re.IGNORECASE,
 )
-_IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 _WIN_DRIVE = re.compile(r"^[A-Za-z]:")
 # 公认的本机主机名(非 IP 字面量,ipaddress 解析不了,单列)。
 _INTERNAL_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
 
 
+def _unquote_recursive(text: str, max_depth: int = 3) -> str:
+    """递归 URL 解码(限深),救双重/多重百分号编码(`%252e`→`%2e`→`.`)。
+
+    路径围栏只看字面 `..`/绝对前缀,攻击者用 `%252e%252e%252f` 可让 `..` 不以字面出现而绕过。
+    在匹配副本上逐层解码到稳定不动点(或触顶),再判定;限深防构造的解码炸弹。
+    """
+    prev = text
+    for _ in range(max_depth):
+        cur = unquote(prev)
+        if cur == prev:
+            break
+        prev = cur
+    return prev
+
+
 def _arg_path(arguments: dict) -> str:
-    return str(arguments.get("path") or arguments.get("file") or "")
+    # 解码后再判定:路径围栏与敏感路径匹配都看解码副本(原文不留存,argrisk 只产 bool)。
+    return _unquote_recursive(str(arguments.get("path") or arguments.get("file") or ""))
+
+
+def _token_int(token: str) -> int | None:
+    """把单段按其进制前缀折算成整数:0x→十六进制、前导 0→八进制、否则十进制;非数字 → None。"""
+    t = token.strip()
+    if not t:
+        return None
+    try:
+        if t[:2].lower() == "0x":
+            return int(t, 16)
+        if t[0] == "0" and len(t) > 1:
+            return int(t, 8)
+        return int(t, 10)
+    except ValueError:
+        return None
+
+
+def _coerce_ipv4(host: str) -> ipaddress.IPv4Address | None:
+    """把各种进制/缩写形态的 IPv4 字面量按 inet_aton 语义折算成 IPv4Address;非此形态 → None。
+
+    覆盖 `2130706433`(十进制)、`0x7f000001`(十六进制)、`0177.0.0.1`(八进制)、`127.1`
+    (缺段:末段吸收剩余低位字节)——都等价 127.0.0.1,是绕"点分四段"正则的经典 SSRF 混淆。
+    真实主机名(含非数字段)任一段折算失败即返回 None,不会误判。
+    """
+    s = host.strip()
+    if not s or s.endswith("."):
+        return None
+    parts = s.split(".")
+    if len(parts) > 4:
+        return None
+    nums: list[int] = []
+    for part in parts:
+        n = _token_int(part)
+        if n is None or n < 0:
+            return None
+        nums.append(n)
+    *head, last = nums
+    if any(h > 0xFF for h in head):
+        return None
+    span = 4 - len(head)  # 末段占的字节数(inet_aton:a.b → b 占低 24 位)
+    if last > (1 << (8 * span)) - 1:
+        return None
+    value = 0
+    for octet in head:
+        value = (value << 8) | octet
+    value = (value << (8 * span)) | last
+    return ipaddress.IPv4Address(value)
+
+
+def _host_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """把主机名解析成 IP 地址对象:标准点分/IPv6 字面量,或进制混淆的 IPv4;否则 None。
+
+    IPv4-mapped IPv6(`::ffff:127.0.0.1`)折回内嵌的 IPv4 判定,免被 IPv4-only 黑名单绕过。
+    """
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return _coerce_ipv4(host)
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    return ip
 
 
 def path_sensitive(arguments: dict) -> bool:
@@ -108,8 +186,9 @@ def domain_allowed(arguments: dict, allow_domains: list[str]) -> bool:
 
 
 def is_raw_ip(arguments: dict) -> bool:
+    """URL 主机是 IP 字面量(含十进制/十六进制/八进制/缺段/IPv6 等混淆形态),而非域名。"""
     host = url_host(arguments)
-    return bool(host and _IPV4.match(host))
+    return bool(host and _host_ip(host) is not None)
 
 
 def url_is_internal(arguments: dict) -> bool:
@@ -117,17 +196,17 @@ def url_is_internal(arguments: dict) -> bool:
 
     经典的"借智能体打内部面":URL 指向 127.0.0.1 内部管理口、10/172.16/192.168 内网主机、
     或 169.254.169.254 云元数据端点(窃取实例凭据)——域名白名单按字符串匹配,管不到这层。
-    仅对 URL 里**字面 IP**(及 localhost 等公认本机名)做确定性判定;不做 DNS 解析,
-    域名→私网的重绑定(DNS rebinding)属 P3 增强。`not is_global` 一并覆盖私网/回环/
-    链路本地/保留/未指定地址,跨 Python 版本稳定。
+    对 URL 里**字面 IP**(含进制混淆 / 缺段 / IPv4-mapped IPv6,见 `_host_ip`)及 localhost 等
+    公认本机名做确定性判定;不做 DNS 解析,域名→私网的重绑定(DNS rebinding)交由出口白名单兜。
+    `not is_global` 一并覆盖私网/回环/链路本地/保留/未指定地址(含阿里云 100.64/10、云元数据
+    169.254.169.254),跨 Python 版本稳定。
     """
     host = url_host(arguments)
     if host is None:
         return False
     if host in _INTERNAL_HOSTNAMES:
         return True
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
+    ip = _host_ip(host)
+    if ip is None:
         return False  # 普通域名:不做解析,不在此判定(交由白名单/其它规则)
     return not ip.is_global
