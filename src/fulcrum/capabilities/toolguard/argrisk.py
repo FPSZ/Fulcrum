@@ -60,6 +60,7 @@ _DANGEROUS_CMD = re.compile(
 )
 _IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 _WIN_DRIVE = re.compile(r"^[A-Za-z]:")
+_GLOB = re.compile(r"[*?]")
 # 公认的本机主机名(非 IP 字面量,ipaddress 解析不了,单列)。
 _INTERNAL_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
 
@@ -89,6 +90,18 @@ def path_outside_workspace(arguments: dict, workspace: str) -> bool:
 def command_dangerous(arguments: dict) -> bool:
     cmd = str(arguments.get("command") or arguments.get("cmd") or "")
     return bool(_DANGEROUS_CMD.search(cmd))
+
+
+def destructive_action(arguments: dict) -> bool:
+    """不可逆批量破坏:递归(`recursive: true`)或目标路径含通配符(glob `*`/`?`)。
+
+    针对 `*.delete` / `*.drop` 类破坏性工具:删单个明确文件尚可控,但**递归或通配批量删除**
+    (如 `data/approvals/*` + `recursive`)会不可逆地抹掉成批记录,须由策略硬拦。
+    与工具名无关(纯判参数形态),具体由策略 `tool_in` 圈定破坏性工具后再叠加本谓词。
+    """
+    if arguments.get("recursive"):
+        return True
+    return bool(_GLOB.search(_arg_path(arguments)))
 
 
 def url_host(arguments: dict) -> str | None:
