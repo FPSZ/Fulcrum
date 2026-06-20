@@ -20,6 +20,13 @@ from .domain import Disposition, Finding, RiskLevel
 # 与 keyword_rules._severity 的分档对齐:critical=0.8 / high=0.6 / medium=0.4。
 BLOCK_AT = 0.8
 REVIEW_AT = 0.6
+MEDIUM_AT = 0.4
+
+# 载荷分片防御:攻击者把一段注入摊到**多个不同来源**(如文档+网页+记忆各夹带一截),
+# 每条都压在复核阈下(各 < REVIEW_AT),仅取 max(score) 会整体放行。若有 ≥ 此数目的
+# **不同来源**各自命中中风险及以上,视为分布式规避,效力升至复核档(交人工);但**不凭
+# 聚合单独升到拦截**(保守,仅升一档到 review,避免误伤)。单来源单消息不受影响。
+_SPLIT_MIN_SOURCES = 3
 
 
 @dataclass(slots=True)
@@ -49,6 +56,30 @@ def _risk_level(score: float) -> RiskLevel:
     return RiskLevel.LOW
 
 
+def _distinct_risky_sources(findings: list[Finding]) -> int:
+    """命中中风险及以上的**不同来源**数(按 finding 证据里的 source_id 去重)。
+
+    无 source_id 的 finding(链/合成类)不计入——分片规避针对的是多源夹带。
+    """
+    return len(
+        {
+            f.evidence.get("source_id")
+            for f in findings
+            if f.score >= MEDIUM_AT and f.evidence.get("source_id") is not None
+        }
+    )
+
+
+def _effective_score(findings: list[Finding], max_score: float) -> float:
+    """分布式分片规避的等效风险:多源各压阈下 → 升至复核档;否则维持 max。
+
+    仅在 max 未达拦截阈时介入,且最高升到 REVIEW_AT(交人工),不凭聚合直接拦截。
+    """
+    if max_score < BLOCK_AT and _distinct_risky_sources(findings) >= _SPLIT_MIN_SOURCES:
+        return max(max_score, REVIEW_AT)
+    return max_score
+
+
 def screen(findings: list[Finding]) -> GateVerdict:
     """读取检测结论 → 给出拦截/审核/放行。无命中即放行。"""
     if not findings:
@@ -63,16 +94,21 @@ def screen(findings: list[Finding]) -> GateVerdict:
 
     top = max(findings, key=lambda f: f.score)
     score = top.score
-    level = _risk_level(score)
+    eff = _effective_score(findings, score)
+    level = _risk_level(eff)
     kinds = sorted({f.kind for f in findings})
     label = "、".join(kinds)
 
-    if score >= BLOCK_AT:
+    if eff >= BLOCK_AT:
         decision = Disposition.BLOCK
         reason = f"命中高危输入风险({label}),已拦截,不转发企业智能体。"
-    elif score >= REVIEW_AT:
+    elif eff >= REVIEW_AT:
         decision = Disposition.APPROVE
-        reason = f"命中可疑输入({label}),已挂起人工审核,暂不转发。"
+        reason = (
+            f"多来源分散夹带({label}),综合判定挂起人工审核,暂不转发。"
+            if eff > score
+            else f"命中可疑输入({label}),已挂起人工审核,暂不转发。"
+        )
     else:
         decision = Disposition.ALLOW
         reason = f"输入风险较低({label}),放行转发。"
@@ -109,18 +145,19 @@ def screen_output(findings: list[Finding]) -> GateVerdict:
 
     top = max(findings, key=lambda f: f.score)
     score = top.score
-    level = _risk_level(score)
+    eff = _effective_score(findings, score)
+    level = _risk_level(eff)
     kinds = {f.kind for f in findings}
     label = "、".join(sorted(kinds))
 
-    if score >= BLOCK_AT:
+    if eff >= BLOCK_AT:
         decision = Disposition.BLOCK
         reason = f"回复命中高危内容({label}),疑似敏感数据外泄,已拦截不回传。"
-    elif score >= REVIEW_AT and kinds == {"pii_leak"}:
+    elif eff >= REVIEW_AT and kinds == {"pii_leak"}:
         # 复核档,且全部风险都是可打码的结构化敏感量 → 脱敏回传,无需人工挡件。
         decision = Disposition.SANITIZE
         reason = f"回复夹带结构化敏感量({label}),已脱敏后回传。"
-    elif score >= REVIEW_AT:
+    elif eff >= REVIEW_AT:
         decision = Disposition.APPROVE
         reason = f"回复命中可疑内容({label}),标注待人工复核。"
     else:
