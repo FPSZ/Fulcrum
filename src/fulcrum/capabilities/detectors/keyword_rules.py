@@ -172,6 +172,25 @@ def _pii_score(count: int) -> float:
     return 0.4
 
 
+# 意图区分(降 FPR):疑问 / 科普 / 求解释的框架性措辞。命中表示文本在**询问某概念**,
+# 而非**下达攻击指令**。仅用于"纯敏感词提及"(sensitive_file)的降权判定,不影响动作类攻击。
+# 通用框架词、不针对样本 ID 硬编码(防过拟合)。
+_INFORMATIONAL = re.compile(
+    r"什么是|是什么|啥意思|什么意思|什么含义|的含义|的区别|有什么区别|有何区别|"
+    r"干嘛用|干什么用|是干(嘛|什么)的|怎么理解|如何理解|怎么用|如何使用|"
+    r"如何防(范|御|护)|怎么防(范|御)|怎样防范|防范(手段|措施|方法)|"
+    r"解释一?下|科普|介绍一?下|了解一?下|想(了解|知道|请教)|普及|扫盲|"
+    r"有哪些|到底是|通俗(地?讲|解释)|"
+    r"\bwhat\s+(is|are|does|do)\b|\bhow\s+(to|do|does|can)\b|"
+    r"\bexplain\b|\bmeaning\s+of\b|difference\s+between|what'?s\b",
+    re.IGNORECASE,
+)
+
+
+def _is_informational(variants: list[str]) -> bool:
+    return any(_INFORMATIONAL.search(v) for v in variants)
+
+
 # 来源信任级 -> 乘子:不可信来源命中风险最高,用户直述同样措辞风险较低。
 _TRUST_MUL: dict[TrustLevel, float] = {
     TrustLevel.UNTRUSTED: 1.0,
@@ -238,10 +257,23 @@ class KeywordRuleDetector:
             norm_text = normalize(text)
             trust_mul = _TRUST_MUL.get(span.trust_level, 1.0)
             indirect = span.source_type in _INDIRECT_SOURCES
-            for cat, (weight, patterns) in _COMPILED.items():
+            matched_by_cat: dict[str, list[str]] = {}
+            for cat, (_weight, patterns) in _COMPILED.items():
                 matched = [p.pattern for p in patterns if any(p.search(v) for v in variants)]
-                if not matched:
-                    continue
+                if matched:
+                    matched_by_cat[cat] = matched
+            # 意图区分降 FPR:直接来源、纯疑问/科普语气、且**唯一**风险信号是"敏感词提及"
+            # (sensitive_file 仅识"提到了凭据/路径",非动作)→ 视为信息询问而非攻击,抑制该 finding。
+            # 救"科普 /etc/passwd 各列含义""问 API key 是什么"两类硬负例;带任何动作类攻击
+            # (注入/越狱/外发/命令/投毒)即不抑制,间接来源(注入主战场)亦不抑制 → 不伤召回。
+            if (
+                set(matched_by_cat) == {"sensitive_file"}
+                and not indirect
+                and _is_informational(variants)
+            ):
+                matched_by_cat = {}
+            for cat, matched in matched_by_cat.items():
+                weight = _COMPILED[cat][0]
                 raw = weight * trust_mul + (_INDIRECT_BOOST if indirect else 0.0)
                 score = round(min(raw, 1.0), 3)
                 findings.append(
