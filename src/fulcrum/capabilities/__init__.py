@@ -10,8 +10,15 @@ from __future__ import annotations
 def load_builtin_capabilities() -> None:
     """显式导入所有内置能力实现,触发其 @capability 注册(幂等,可重复调用)。"""
     from .attribution import evidence, zero  # noqa: F401
-    # llm_judge:LLM 语义兜底(中文原生,可选端点,默认不入装配)
-    from .detectors import keyword_rules, llm_judge, noop, secret_egress  # noqa: F401
+
+    # 语义兜底(默认不入装配,可选):llm_judge=中文 LLM-judge(选定);ml_classifier=HF 分类器(反例)。
+    from .detectors import (  # noqa: F401
+        keyword_rules,
+        llm_judge,
+        ml_classifier,
+        noop,
+        secret_egress,
+    )
     from .labelers import passthrough, role_trust  # noqa: F401
     from .policy import allow_all, yaml_policy  # noqa: F401
     from .sandbox import echo_executor, restricted_executor  # noqa: F401
