@@ -74,6 +74,33 @@ def format_attack_breakdown(metrics: dict) -> str:
     return "\n".join(lines)
 
 
+# 防御闸门展示名(纵深防御三道闸门,与 runner 的 gate 值对应)。
+_GATE_LABEL = {
+    "input": "输入闸门(screen_input)",
+    "tool": "工具治理(evaluate_intent)",
+    "output": "出口检测(screen_output)",
+}
+
+
+def format_gate_breakdown(metrics: dict) -> str:
+    """按防御闸门分域表(P1 分域):纵深防御每道闸门各经手/拦下多少,看清每层贡献与短板。"""
+    buckets = metrics.get("by_gate", {})
+    lines = [
+        "按防御闸门分域(纵深防御贡献度):",
+        "",
+        "| 防御闸门 | 样例 | 恶意 | 良性 | 召回/管控 | ASR | 处置准确率 |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for gate, b in buckets.items():
+        recall = _pct(b["recall_bsr"]) if b["malicious"] else "—"
+        asr = _pct(b["asr_fulcrum"]) if b["malicious"] else "—"
+        lines.append(
+            f"| {_GATE_LABEL.get(gate, gate)} | {b['samples']} | {b['malicious']}"
+            f" | {b['benign']} | {recall} | {asr} | {_pct(b['decision_accuracy'])} |"
+        )
+    return "\n".join(lines)
+
+
 def _coverage(results: list[SampleResult], key) -> str:
     """按某分类键(owasp/severity)聚合恶意样本召回 —— 覆盖矩阵一行一类。"""
     groups: dict[str, list[SampleResult]] = {}
@@ -137,6 +164,7 @@ def build_markdown_report(
             "## 主结果",
             format_main_table(metrics),
             format_attack_breakdown(metrics),
+            format_gate_breakdown(metrics),
             "## 覆盖矩阵",
             format_coverage(results),
             "## 差距",
