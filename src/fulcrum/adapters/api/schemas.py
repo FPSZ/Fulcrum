@@ -397,6 +397,36 @@ class UserUpdate(BaseModel):
     title: str | None = None
 
 
+# ---- AI 操作助手(后端大脑)----
+class AssistantActionDTO(BaseModel):
+    """动作目录条目(供助手面板展示「当前角色能调哪些动作」)。"""
+
+    id: str
+    label: str
+    description: str
+    risk: str
+    requires: list[str] = Field(default_factory=list)
+    args_hint: str = ""
+
+
+class AssistantPlanRequest(BaseModel):
+    intent: str = Field(min_length=1, max_length=2000)
+    session_id: str | None = Field(default=None, max_length=128)
+
+
+class AssistantPlanResponse(BaseModel):
+    """规划结果:选了哪个动作、是否准许、是否需二次确认、为什么。"""
+
+    ok: bool
+    reason: str
+    action_id: str | None = None
+    label: str = ""
+    args: dict = Field(default_factory=dict)
+    risk: str = ""
+    requires_confirmation: bool = False
+    denied: bool = False
+
+
 class StatusUpdate(BaseModel):
     status: str = Field(pattern="^(active|disabled|left)$")
 

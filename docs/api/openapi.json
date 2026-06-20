@@ -1609,6 +1609,112 @@
         }
       }
     },
+    "/assistant/actions": {
+      "get": {
+        "summary": "Assistant Actions",
+        "operationId": "assistant_actions_assistant_actions_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AssistantActionDTO"
+                  },
+                  "title": "Response Assistant Actions Assistant Actions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/plan": {
+      "post": {
+        "summary": "Assistant Plan",
+        "operationId": "assistant_plan_assistant_plan_post",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/gateway-config": {
       "get": {
         "summary": "Get Config",
@@ -1928,6 +2034,129 @@
         },
         "type": "object",
         "title": "ApproveRequest"
+      },
+      "AssistantActionDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "risk": {
+            "type": "string",
+            "title": "Risk"
+          },
+          "requires": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requires"
+          },
+          "args_hint": {
+            "type": "string",
+            "title": "Args Hint",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "description",
+          "risk"
+        ],
+        "title": "AssistantActionDTO",
+        "description": "动作目录条目(供助手面板展示「当前角色能调哪些动作」)。"
+      },
+      "AssistantPlanRequest": {
+        "properties": {
+          "intent": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Intent"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intent"
+        ],
+        "title": "AssistantPlanRequest"
+      },
+      "AssistantPlanResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          },
+          "risk": {
+            "type": "string",
+            "title": "Risk",
+            "default": ""
+          },
+          "requires_confirmation": {
+            "type": "boolean",
+            "title": "Requires Confirmation",
+            "default": false
+          },
+          "denied": {
+            "type": "boolean",
+            "title": "Denied",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "reason"
+        ],
+        "title": "AssistantPlanResponse",
+        "description": "规划结果:选了哪个动作、是否准许、是否需二次确认、为什么。"
       },
       "AuditChainEventDTO": {
         "properties": {
