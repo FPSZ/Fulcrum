@@ -87,6 +87,21 @@ _ARG_INJECTION = re.compile(
 )
 _WIN_DRIVE = re.compile(r"^[A-Za-z]:")
 _GLOB = re.compile(r"[*?]")
+# 承载外联目的地的参数键(按优先级):`url` 先,其次 webhook / 回调 / 端点等。
+# 之所以不止看 `url` —— SSRF 不只走 http.request:webhook.send / external.post / notify 这类
+# 工具用 endpoint / webhook / callback 等键承载目标,只盯 `url` 会让它们打内网/元数据漏判。
+# 仅纳入**URL 形态**的键(不含 to/recipient/email 这类地址形态,避免 urlparse 误解析邮箱)。
+_DEST_URL_KEYS = (
+    "url",
+    "endpoint",
+    "webhook",
+    "callback",
+    "callback_url",
+    "uri",
+    "target",
+    "dest",
+    "destination",
+)
 # 公认的本机主机名(非 IP 字面量,ipaddress 解析不了,单列)。
 _INTERNAL_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
 
@@ -214,7 +229,12 @@ def destructive_action(arguments: dict) -> bool:
 
 
 def url_host(arguments: dict) -> str | None:
-    url = str(arguments.get("url") or "")
+    """从外联目的地参数(按 `_DEST_URL_KEYS` 优先级)取主机名;无则 None。
+
+    `url` 优先以保持 http.request 既有行为不变;其后的 webhook/endpoint 等键让非 http.request
+    的对外工具(webhook.send / external.post …)也进入 SSRF / 白名单判定的视野。
+    """
+    url = next((str(arguments[k]) for k in _DEST_URL_KEYS if arguments.get(k)), "")
     if not url:
         return None
     host = urlparse(url if "://" in url else f"//{url}").hostname

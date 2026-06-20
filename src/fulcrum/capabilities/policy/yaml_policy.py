@@ -36,6 +36,7 @@ _PREDICATES = frozenset(
         "risk_at_least",
         "attribution_at_least",
         "chain_risk_at_least",
+        "chain_kind_in",
         "risk_level",
         "path_sensitive",
         "path_outside_workspace",
@@ -138,6 +139,7 @@ class YamlPolicyEngine:
             "risk_level": _risk_level(intent.risk_score),
             "attribution_confidence": intent.attribution_confidence,
             "chain_risk": self._chain_risk(intent, ctx),
+            "chain_kind": self._chain_kind(intent, ctx),
             "source_trust": self._worst_trust(intent, ctx),
             "path_sensitive": argrisk.path_sensitive(args),
             "path_outside_workspace": argrisk.path_outside_workspace(args, workspace),
@@ -162,6 +164,22 @@ class YamlPolicyEngine:
             ),
             default=0.0,
         )
+
+    @staticmethod
+    def _chain_kind(intent: ToolIntent, ctx: Context) -> str | None:
+        """触发本次调用的链 finding 中**最高分**那条的 kind(如 `chain.persistence_poisoning`)。
+
+        `chain_risk` 只给标量分,区分不出"外泄链"与"记忆投毒链"——二者分档重叠,纯按分无法
+        给记忆投毒一条带准确理由的处置。本事实暴露链类型,让策略据 `chain_kind_in` 精确处置。
+        同 `_chain_risk` 按 intent_id 过滤,只认"当前这步"触发的链。
+        """
+        best_kind: str | None = None
+        best_score = -1.0
+        for f in ctx.findings:
+            if f.kind.startswith("chain.") and f.evidence.get("intent_id") == intent.intent_id:
+                if f.score > best_score:
+                    best_score, best_kind = f.score, f.kind
+        return best_kind
 
     @staticmethod
     def _worst_trust(intent: ToolIntent, ctx: Context) -> str | None:
@@ -196,6 +214,8 @@ class YamlPolicyEngine:
             return facts["attribution_confidence"] >= float(expected)
         if key == "chain_risk_at_least":
             return facts["chain_risk"] >= float(expected)
+        if key == "chain_kind_in":
+            return facts["chain_kind"] in expected
         if key == "risk_level":
             return facts["risk_level"].value == expected
         if key in _BOOL_FACTS:

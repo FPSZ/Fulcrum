@@ -86,3 +86,19 @@ def test_trusted_source_lower_confidence_than_untrusted() -> None:
         intent, [_span(text, source=SourceType.USER, trust=TrustLevel.TRUSTED)], ctx
     )
     assert untrusted.confidence > trusted.confidence
+
+
+def test_sources_ranked_by_confidence_desc() -> None:
+    """多源命中同一参数 → 归因边按置信度降序,最不可信(置信度最高)的源排首位。
+
+    供工具级溯源 hit@1:取 derived_from_sources[0] 即"最可疑驱动源"。故意把可信源放输入
+    序列前面,验证输出仍按置信度重排,不被输入顺序左右。
+    """
+    args = {"path": "/srv/secret.key"}
+    intent = ToolIntent(session_id="s", tool_name="file.read", arguments=args)
+    text = "打开 /srv/secret.key"
+    trusted = _span(text, source=SourceType.USER, trust=TrustLevel.TRUSTED)
+    untrusted = _span(text, source=SourceType.WEBPAGE, trust=TrustLevel.UNTRUSTED)
+    attr = _attribute(intent, [trusted, untrusted], Context(session_id="s"))
+    assert attr.derived_from_sources == [untrusted.source_id, trusted.source_id]
+    assert attr.confidence >= 0.9  # 首位=最不可信源的置信度

@@ -17,6 +17,17 @@ rules:
     risk_level: critical
     reason: 检测到「敏感数据读取 → 对外发送」异常动作链,疑似数据外泄
 
+  # 0a2) 任务链:不可信工具返回 → 写入长期记忆/知识库 —— 记忆投毒链,转人工复核。
+  #      与外泄链分档重叠(0.6/0.75 ⊂ 0.4~0.8),故按 chain_kind 精确认领,给准确理由——
+  #      否则会落到下面 0b 被误标成「对外发送」。语义善恶难由链结构断定(合法 RAG 入库 vs 投毒),
+  #      故定在复核档(approve)而非硬拦。须排在 0b 之前(首条命中即决定)。
+  - id: approve-memory-poisoning
+    when:
+      chain_kind_in: [chain.persistence_poisoning]
+    decision: approve
+    risk_level: high
+    reason: 检测到「不可信内容 → 写入长期记忆/知识库」记忆投毒链,须人工复核
+
   # 0b) 任务链:一般读取 → 对外发送 —— 转人工复核。
   - id: approve-readsend-chain
     when:
@@ -69,6 +80,16 @@ rules:
     decision: block
     risk_level: critical
     reason: 外联目标为内网/回环/云元数据地址,疑似 SSRF
+
+  # 4a2) 任意对外工具(webhook/external/notify…)的目的地指向内网/元数据 —— 同样阻断。
+  #      SSRF 不只走 http.request;不限 tool_in,凭 url_is_internal 兜住非 http 出口的内网外联。
+  #      无目的地参数的工具(file.*/shell.*)url_is_internal 恒 False,不会误伤。
+  - id: block-ssrf-internal-any-tool
+    when:
+      url_is_internal: true
+    decision: block
+    risk_level: critical
+    reason: 对外工具的目标地址为内网/回环/云元数据,疑似 SSRF(非 http 出口)
 
   # 4b) 非白名单域名外联 —— 阻断。
   - id: block-nonwhitelist-domain

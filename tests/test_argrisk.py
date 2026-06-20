@@ -155,6 +155,20 @@ def test_no_url_not_internal() -> None:
     assert argrisk.url_is_internal({"path": "data/workspace/notice.txt"}) is False
 
 
+@pytest.mark.parametrize("key", ["endpoint", "webhook", "callback", "callback_url", "uri", "dest"])
+def test_internal_target_on_non_url_dest_keys_flagged(key: str) -> None:
+    # SSRF 不只走 `url`:webhook/external/notify 类工具用 endpoint/webhook/callback 承载目标,
+    # 内网/元数据地址同样要判内网(否则非 http 出口的内网外联漏判)。
+    assert argrisk.url_is_internal({key: "http://169.254.169.254/latest/meta-data/"}) is True
+
+
+def test_url_key_takes_precedence_over_other_dest_keys() -> None:
+    # `url` 优先,保证 http.request 既有行为不被其它目的地键改写。
+    args = {"url": "https://gov.cn/notice", "endpoint": "http://127.0.0.1:6379/"}
+    assert argrisk.url_host(args) == "gov.cn"
+    assert argrisk.url_is_internal(args) is False
+
+
 @pytest.mark.parametrize(
     "url",
     [

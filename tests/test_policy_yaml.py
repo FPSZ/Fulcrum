@@ -9,6 +9,7 @@ from fulcrum.capabilities.policy.yaml_policy import YamlPolicyEngine
 from fulcrum.core.domain import (
     Context,
     Disposition,
+    Finding,
     SourceSpan,
     SourceType,
     ToolIntent,
@@ -98,6 +99,64 @@ def test_cloud_metadata_ssrf_blocked() -> None:
         arguments={"url": "http://169.254.169.254/latest/meta-data/"},
     )
     assert _decide(intent) == Disposition.BLOCK
+
+
+def test_ssrf_internal_blocked_on_non_http_tool() -> None:
+    """非 http.request 的对外工具(webhook.send)目标打云元数据 → tool-agnostic SSRF 规则兜住。"""
+    intent = ToolIntent(
+        session_id="s",
+        tool_name="webhook.send",
+        arguments={"url": "http://169.254.169.254/latest/meta-data/"},
+    )
+    decision = asyncio.run(_POLICY.decide(intent, Context(session_id="s")))
+    assert decision.decision == Disposition.BLOCK
+    assert decision.matched_policy_id == "block-ssrf-internal-any-tool"
+
+
+def test_ssrf_internal_blocked_on_endpoint_dest_key() -> None:
+    """目的地走 endpoint 键(非 url)的内网外联 → 仍判 SSRF 并阻断。"""
+    intent = ToolIntent(
+        session_id="s", tool_name="external.post", arguments={"endpoint": "http://127.0.0.1:6379/"}
+    )
+    decision = asyncio.run(_POLICY.decide(intent, Context(session_id="s")))
+    assert decision.decision == Disposition.BLOCK
+    assert decision.matched_policy_id == "block-ssrf-internal-any-tool"
+
+
+def test_http_request_internal_still_uses_specific_rule() -> None:
+    """http.request 内网外联仍优先命中专属 block-ssrf-internal(tool-agnostic 规则不夺其归属)。"""
+    intent = ToolIntent(
+        session_id="s", tool_name="http.request", arguments={"url": "http://10.0.0.5/x"}
+    )
+    decision = asyncio.run(_POLICY.decide(intent, Context(session_id="s")))
+    assert decision.matched_policy_id == "block-ssrf-internal"
+
+
+def _chain_ctx(intent: ToolIntent, kind: str, score: float) -> Context:
+    """构造一个带某条链 finding(归属当前 intent)的上下文,驱动链类条件命中。"""
+    finding = Finding(kind=kind, score=score, evidence={"intent_id": intent.intent_id})
+    return Context(session_id="s", findings=[finding])
+
+
+def test_memory_poisoning_chain_approved_with_accurate_reason() -> None:
+    """记忆投毒链(chain.persistence_poisoning)→ 专属规则认领,approve + 准确理由(非"对外发送")。"""
+    intent = ToolIntent(session_id="s", tool_name="memory.write", arguments={"content": "x"})
+    ctx = _chain_ctx(intent, "chain.persistence_poisoning", 0.6)
+    decision = asyncio.run(_POLICY.decide(intent, ctx))
+    assert decision.decision == Disposition.APPROVE
+    assert decision.matched_policy_id == "approve-memory-poisoning"
+    assert "记忆投毒" in decision.reason
+
+
+def test_exfil_chain_unaffected_by_memory_poisoning_rule() -> None:
+    """外泄链不被记忆投毒规则误夺:敏感读取→外发(0.85)仍走 block-exfil-chain。"""
+    intent = ToolIntent(
+        session_id="s", tool_name="external.send", arguments={"to": "x@evil.example"}
+    )
+    ctx = _chain_ctx(intent, "chain.exfiltration", 0.85)
+    decision = asyncio.run(_POLICY.decide(intent, ctx))
+    assert decision.decision == Disposition.BLOCK
+    assert decision.matched_policy_id == "block-exfil-chain"
 
 
 def test_destructive_delete_blocked() -> None:

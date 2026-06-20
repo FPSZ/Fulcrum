@@ -51,26 +51,37 @@ class EvidenceAttributor:
         self, intent: ToolIntent, spans: list[SourceSpan], ctx: Context
     ) -> Attribution:
         arg_vals = [frag for x in intent.arguments.values() for frag in _candidates(str(x).lower())]
-        derived: list[str] = []
-        best = 0.0
-        reasons: list[str] = []
+        # 每条命中来源记 (source_id, 置信度, 理由),最后按置信度降序定序 —— 最不可信(置信度
+        # 最高)的来源排首位。下游溯源 hit@1 取首位、审计"最可疑驱动源"优先展示都依赖这个序;
+        # 此前按 span 输入顺序追加,首位可能是低置信度的可信源,会让 hit@1 系统性偏低。
+        hits: list[tuple[str, float, str]] = []
         for span in spans:
             excerpt = span.excerpt.lower()
             matched = next((v for v in arg_vals if v in excerpt), None)
             if matched is None:
                 continue
             conf = _TRUST_WEIGHT.get(span.trust_level, 0.5)
-            derived.append(span.source_id)
-            best = max(best, conf)
-            reasons.append(
-                f"参数片段 {matched!r} 出现在 {span.source_type}({span.trust_level}) 来源"
+            hits.append(
+                (
+                    span.source_id,
+                    conf,
+                    f"参数片段 {matched!r} 出现在 {span.source_type}({span.trust_level}) 来源",
+                )
             )
 
-        if not derived and intent.derived_from_sources:
+        if hits:
+            # 置信度降序;同分按原 span 顺序稳定(Python sort 稳定),保持可复现。
+            hits.sort(key=lambda h: h[1], reverse=True)
+            derived = [h[0] for h in hits]
+            best = hits[0][1]
+            reasons = [h[2] for h in hits]
+        elif intent.derived_from_sources:
             # 调用方(工具网关)显式声明来源但无 span 可核验 → 给中等置信度,fail-closed。
             derived = list(intent.derived_from_sources)
             best = 0.5
-            reasons.append("调用方显式声明来源(未提供 span 核验)")
+            reasons = ["调用方显式声明来源(未提供 span 核验)"]
+        else:
+            derived, best, reasons = [], 0.0, []
 
         return Attribution(
             derived_from_sources=derived,
