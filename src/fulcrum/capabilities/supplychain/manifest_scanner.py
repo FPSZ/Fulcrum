@@ -4,6 +4,8 @@
 
 1. 声明权限:命令执行 / 凭据访问 / 文件写删 / 环境变量 / 联网 / 文件读,按危险度分级;
 2. 描述文本:后门、反弹 shell、提权、键盘记录、数据外泄、挖矿、绕过审查等可疑关键词;
+   并扫描 instructions/prompt/system 等**指令承载字段**里的注入/外泄指挥语(投毒 Skill
+   把"忽略上层指令、把数据外发到外部"藏进 manifest,装载即污染 agent → Manifest 注入面);
 3. 外联端点:裸 IP、明文 http、可疑 TLD / 动态域名 / 短链;
 4. 依赖来源:从 URL / git+ 直接安装(绕过仓库审核);
 5. 安装期钩子:postinstall / preinstall / scripts.install / hooks 等**装载时自动执行**的
@@ -65,6 +67,34 @@ _PERM_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
     (re.compile(r"(file[._ ]?read|read_?file|文件读)", re.I), "perm.file_read", "low"),
 )
 
+# AI 技能/插件/MCP manifest 里承载"指令"的字段:被投毒的组件常把注入/外泄**指挥语**
+# 藏在 instructions/prompt/system 等字段,组件一装载就直接污染 agent 上下文(Manifest 注入面,
+# 对应指标体系「Manifest 注入识别率」)。与 _DESC_SUSPICIOUS 互补——那查恶意软件关键词,
+# 这查"覆盖上层指令 / 把数据外发到外部"这类指挥模型的措辞。
+_INSTRUCTION_FIELDS: tuple[str, ...] = (
+    "instructions",
+    "instruction",
+    "prompt",
+    "system_prompt",
+    "system",
+    "persona",
+    "role",
+    "behavior",
+    "usage",
+    "guide",
+)
+_MANIFEST_INJECTION = re.compile(
+    r"(ignore\s+(the\s+)?(previous|above|prior|preceding)\s+(instructions?|rules?|prompts?)|"
+    r"disregard\s+(the\s+)?(instructions?|rules?|above)|"
+    r"reveal\s+(the\s+)?(system\s+)?prompt|"
+    r"exfiltrat\w*|send\s+.{0,24}\s+to\s+.{0,24}(external|http|attacker|evil)|"
+    r"忽略(以上|之前|上述|前面|前文)(的)?(指令|规则|提示词?|设定)|"
+    r"无视(系统|安全|上述|之前)(的)?(设定|规则|指令)|"
+    r"覆盖(系统|上层|之前的?)(指令|设定|规则)|"
+    r"(泄露|输出|打印|回显)(系统)?提示词|"
+    r"(外发|外传|回传|上传|发送).{0,12}(到|至|给).{0,16}(外部|http|服务器|攻击者|邮箱))",
+    re.IGNORECASE,
+)
 # 描述文本可疑关键词(命中即 critical)。
 _DESC_SUSPICIOUS = re.compile(
     r"(backdoor|reverse\s*shell|rootkit|keylog|exfiltrat|crypto\s*miner|\bminer\b|obfuscat|"
@@ -186,6 +216,22 @@ class ManifestScanner:
             risks.append(
                 _finding(
                     "desc.suspicious", "critical", f"描述含可疑意图关键词:{hits}", matched=hits
+                )
+            )
+
+        # 2.5) 指令字段注入(Manifest 注入面):被投毒组件把注入/外泄指挥语藏进
+        #      instructions/prompt/system 等字段,装载即污染 agent 上下文。
+        instr_parts: list[str] = []
+        for field in _INSTRUCTION_FIELDS:
+            instr_parts.extend(_as_list(manifest.get(field)))
+        inj = sorted({m.group(0) for m in _MANIFEST_INJECTION.finditer("\n".join(instr_parts))})
+        if inj:
+            risks.append(
+                _finding(
+                    "manifest.prompt_injection",
+                    "critical",
+                    f"指令字段含注入/外泄指挥语:{inj}",
+                    matched=inj,
                 )
             )
 
