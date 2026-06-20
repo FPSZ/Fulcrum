@@ -3,11 +3,11 @@ import { Bot, CornerDownLeft, Lock, Sparkles, Wand2 } from 'lucide-react'
 import { Badge, type BadgeTone, Button, Card, Dialog, Input, toast } from '@/components/ui'
 import { useNavigateFeature } from '@/lib/nav'
 import {
-  ACTION_NAV,
+  actionNav,
   isExecutable,
   RISK_LABEL,
   SAMPLE_INTENTS,
-  SEED_ACTIONS,
+  seedActions,
   type ActionRisk,
   type PlanResult,
 } from './data'
@@ -25,9 +25,9 @@ function disposition(plan: PlanResult): { tone: BadgeTone; label: string } {
 
 export function AssistantPage() {
   const navigate = useNavigateFeature()
-  // 接真后端:有动作目录(按角色权限过滤)用真;无权限/不可达/空 → 回退演示 seed。
+  // 接真后端:有动作目录(按角色权限过滤)用真;无权限/不可达/空 → 回退各模块聚合的 seed。
   const live = useAssistantActions().data
-  const actions = live && live.length > 0 ? live : SEED_ACTIONS
+  const actions = live && live.length > 0 ? live : seedActions()
 
   const [intent, setIntent] = useState('')
   const [planning, setPlanning] = useState(false)
@@ -51,7 +51,7 @@ export function AssistantPage() {
   // 真执行:只读导航/筛选 → 切到对应页;高危写操作执行入口排后,诚实提示走各自守卫端点。
   const execute = (p: PlanResult) => {
     setConfirmOpen(false)
-    const target = p.action_id ? ACTION_NAV[p.action_id] : undefined
+    const target = p.action_id ? actionNav()[p.action_id] : undefined
     if (target) {
       navigate(target)
       toast.success(`已为你打开「${p.label}」`)

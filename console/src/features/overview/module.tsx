@@ -12,4 +12,14 @@ export const overviewModule = defineFeature({
   requires: 'overview.view',
   component: OverviewPage,
   resources: [overviewResourceSpec],
+  actions: [
+    {
+      id: 'nav.overview',
+      label: '打开安全总览',
+      description: '导航到安全总览页(KPI + 实时事件概览)',
+      risk: 'read_only',
+      requires: ['overview.view'],
+      navTo: 'overview',
+    },
+  ],
 })

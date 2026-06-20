@@ -10,4 +10,14 @@ export const auditModule = defineFeature({
   order: 60,
   requires: 'audit.view',
   component: AuditPage,
+  actions: [
+    {
+      id: 'nav.audit',
+      label: '打开审计溯源',
+      description: '导航到审计溯源页(会话 hash-chain)',
+      risk: 'read_only',
+      requires: ['audit.view'],
+      navTo: 'audit',
+    },
+  ],
 })

@@ -19,6 +19,31 @@ import type { ResourceSpec } from '@/lib/backup'
 export const FEATURE_GROUPS = ['监测', '管控', '取证', '系统'] as const
 export type FeatureGroup = (typeof FEATURE_GROUPS)[number]
 
+/** AI 操作助手可调动作的风险分级:只读可直接执行;一般需留意;高危必须二次确认。 */
+export type ModuleActionRisk = 'read_only' | 'normal' | 'high'
+
+/**
+ * 一个功能模块贡献给「AI 操作助手」的可调动作。
+ * 注册即进助手动作目录 —— 与后端 @capability 注册动作对称:模块自带动作,装配清单一接就到。
+ * (前端目录仅作 seed/回退展示;运行时真目录仍由后端 GET /assistant/actions 按权限点过滤。)
+ */
+export interface ModuleAction {
+  /** 动作 id(与后端 catalog 同名,如 nav.events / policy.disable) */
+  id: string
+  /** 动作显示名 */
+  label: string
+  /** 动作说明 */
+  description: string
+  /** 风险分级 */
+  risk: ModuleActionRisk
+  /** 调用所需权限点(RBAC);助手能调的动作 = 角色能点的按钮 */
+  requires: string[]
+  /** 参数提示(JSON 形态);只读导航类可省 */
+  argsHint?: string
+  /** 只读动作可由助手面板直接执行时跳转的目标模块 id;缺省=面板不直接执行(仍走各自守卫端点) */
+  navTo?: string
+}
+
 export interface FeatureModule {
   /** 唯一 id,也是路由 key */
   id: string
@@ -40,6 +65,8 @@ export interface FeatureModule {
   resources?: ResourceSpec[]
   /** 可见所需权限点(RBAC):缺省=人人可见;设置后无此权限者导航/路由都看不到 */
   requires?: string
+  /** 该模块贡献给 AI 操作助手的可调动作(注册即进助手动作目录,与后端 catalog 对称) */
+  actions?: ModuleAction[]
 }
 
 /** 身份函数:仅为获得类型检查与补全 */
@@ -57,6 +84,11 @@ export function registerFeature(m: FeatureModule): void {
 /** 按 order 升序返回所有模块 */
 export function getFeatures(): FeatureModule[] {
   return [...registry.values()].sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
+}
+
+/** 汇总所有已注册模块贡献的助手可调动作(按模块 order 顺序展开)。 */
+export function getModuleActions(): ModuleAction[] {
+  return getFeatures().flatMap((f) => f.actions ?? [])
 }
 
 /** 按权限过滤后的可见模块(无 requires 的恒可见) */

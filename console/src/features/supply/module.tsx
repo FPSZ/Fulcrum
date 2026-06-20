@@ -11,4 +11,14 @@ export const supplyModule = defineFeature({
   badge: 2,
   requires: 'supply.view',
   component: SupplyPage,
+  actions: [
+    {
+      id: 'nav.supply',
+      label: '打开供应链',
+      description: '导航到供应链组件扫描页',
+      risk: 'read_only',
+      requires: ['supply.view'],
+      navTo: 'supply',
+    },
+  ],
 })
