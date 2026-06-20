@@ -45,6 +45,7 @@ PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("dept.manage", "管理组织架构", "系统"),
     PermissionDef("roles.manage", "管理角色权限", "系统"),
     PermissionDef("account.approve", "审批账号申请", "系统"),
+    PermissionDef("ai.operate", "AI 操作助手", "系统"),  # 能否使用 AI 副驾代操作控制台
 )
 
 ALL_PERMISSION_KEYS: frozenset[str] = frozenset(p.key for p in PERMISSIONS)

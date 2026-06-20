@@ -30,6 +30,7 @@ _PROTECTED: list[tuple[str, str]] = [
     ("/policies", "policies.view"),
     ("/supply/scans", "supply.view"),
     ("/tools/calls", "tools.view"),
+    ("/assistant/actions", "ai.operate"),
 ]
 
 
