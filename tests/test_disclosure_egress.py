@@ -93,8 +93,10 @@ def test_single_tool_token_not_flagged() -> None:
 def test_tool_frame_with_gov_domains_not_flagged() -> None:
     # 关键负例:有"可用工具"框架词 + 多个点分 token,但都是政务域名/文件名(`gov.cn`/
     # `xiongan.gov.cn`/`app.json`/`web.config`),命名空间非工具域 → 不得误判工具清单泄露。
-    assert _kinds("可用工具的资料都在官网 www.gov.cn 和 xiongan.gov.cn,配置见 app.json、web.config。") == []
-    assert _kinds("available tools docs are at example.com and docs.example.org, see config.yaml") == []
+    gov = "可用工具的资料都在官网 www.gov.cn 和 xiongan.gov.cn,配置见 app.json、web.config。"
+    assert _kinds(gov) == []
+    en = "available tools docs are at example.com and docs.example.org, see config.yaml"
+    assert _kinds(en) == []
 
 
 # ── 良性问答零误报 ───────────────────────────────────────────────────────
