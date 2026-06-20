@@ -6,7 +6,8 @@
 MVP 边界(对齐 arch §6.3,诚实声明降级):
 - **路径**:涉密路径直接拒;越出受控工作区拒(复用 argrisk,与策略同一口径,避免漂移)。
 - **命令**:高危命令(rm -rf / 反弹 shell / 提权等)直接拒。
-- **网络**:默认关闭外联——目标域名不在白名单一律拒(白名单经 options 注入,默认空=全关)。
+- **网络**:默认关闭外联——目标域名不在白名单一律拒(白名单经 options 注入,默认空=全关);
+  且 URL 协议须为 http/https,file/gopher/dict/ftp 等(借工具读本地文件/打内部协议)一律拒。
 - **载荷**:出站参数体积设上限——即便目标域名在白名单内,超大参数体(批量数据)一律拒,
   堵"经允许通道批量外泄"。与执行后输出截断对称:入口防灌出、出口防批量回。
 - **超时**:工具调用放进线程并设墙钟超时,超时即判失败返回(不阻塞管线)。
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from ...core.domain import Context, ExecResult, ToolIntent
 from ...core.registry import capability
@@ -28,9 +30,22 @@ from ..toolguard import argrisk
 if TYPE_CHECKING:
     from ...core.ports import Tool
 
+# 允许的 URL 协议:仅 http/https。file/gopher/dict/ftp/ldap/jar… 是借工具读本地文件(LFI)、
+# 打内部协议(SSRF)的经典面;且 file:/// 等**无主机**协议会让 domain_allowed 返回 True 直接绕过
+# 外联白名单。故执行前按协议白名单 fail-closed:非 http/https 一律拒。
+_ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
+
 
 def _deny(reason: str) -> ExecResult:
     return ExecResult(ok=False, error=f"[沙箱拒绝] {reason}", side_effects={"sandbox": "denied"})
+
+
+def _url_scheme(arguments: dict) -> str | None:
+    """取 url 参数的协议(小写);无 url 或无协议返回 None。"""
+    url = str(arguments.get("url") or "")
+    if not url:
+        return None
+    return urlparse(url).scheme.lower() or None
 
 
 def _payload_size(value: object) -> int:
@@ -75,6 +90,10 @@ class RestrictedExecutor:
             return _deny("路径越出受控工作区,拒绝执行")
         if argrisk.command_dangerous(args):
             return _deny("命令含高危操作,拒绝执行")
+        scheme = _url_scheme(args)
+        if scheme is not None and scheme not in _ALLOWED_URL_SCHEMES:
+            # file:///etc/passwd 这类无主机协议会绕过下面的域名白名单,故先按协议白名单拦下。
+            return _deny(f"URL 协议 {scheme}:// 不在允许清单(仅 http/https),拒绝执行")
         if not argrisk.domain_allowed(args, self._allow_domains):
             return _deny("目标域名不在沙箱外联白名单(默认关闭外联)")
         if _payload_size(args) > self._max_input:
