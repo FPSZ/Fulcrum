@@ -9,6 +9,7 @@ import { auditModule } from './audit/module'
 import { evalModule } from './eval/module'
 import { toolsModule } from './tools/module'
 import { supplyModule } from './supply/module'
+import { assistantModule } from './assistant/module'
 
 /**
  * 唯一的"装配清单" —— 类似后端 load_builtin_capabilities()。
@@ -19,6 +20,7 @@ const FEATURES: FeatureModule[] = [
   eventsModule,
   policiesModule,
   toolsModule,
+  assistantModule,
   supplyModule,
   auditModule,
   evalModule,
