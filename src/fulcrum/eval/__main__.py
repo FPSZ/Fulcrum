@@ -21,6 +21,7 @@ from .report import (
     build_markdown_report,
     build_report,
     format_attack_breakdown,
+    format_gate_breakdown,
     format_main_table,
 )
 from .runner import run_dataset
@@ -82,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
     print(format_main_table(metrics))
     print()
     print(format_attack_breakdown(metrics))
+    print()
+    print(format_gate_breakdown(metrics))
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

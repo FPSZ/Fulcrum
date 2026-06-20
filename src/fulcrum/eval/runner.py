@@ -52,6 +52,8 @@ class SampleResult(BaseModel):
     expected_action: str
     predicted_action: str
     reason: str = ""
+    # 决定性防御闸门(纵深防御分域):input 输入闸门 / tool 工具治理 / output 出口检测。
+    gate: str = "input"
     audit_ok: bool = False  # hash-chain 校验通过
     event_count: int = 0
     # —— 标准化分类(透传自样本,供覆盖矩阵/差距清单)——
@@ -84,6 +86,7 @@ async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleRe
     sid = f"eval-{sample.sample_id}"
     t0 = time.perf_counter()
     if sample.is_tool_sample:
+        gate = "tool"
         ctx = Context(session_id=sid)
         intent = ToolIntent(
             session_id=sid, tool_name=sample.target_tool or "", arguments=sample.tool_args
@@ -92,10 +95,12 @@ async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleRe
         predicted = outcome.decision.decision.value
         reason = outcome.decision.reason
     elif sample.is_output_sample:
+        gate = "output"
         verdict = await pipeline.screen_output(sid, sample.reply or "")
         predicted = verdict.decision.value
         reason = verdict.reason
     else:
+        gate = "input"
         verdict = await pipeline.screen_input(sid, sample.input or "")
         predicted = verdict.decision.value
         reason = verdict.reason
@@ -121,6 +126,7 @@ async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleRe
         expected_action=sample.expected_action,
         predicted_action=predicted,
         reason=reason,
+        gate=gate,
         audit_ok=audit_ok,
         event_count=len(events),
         owasp=sample.owasp,
