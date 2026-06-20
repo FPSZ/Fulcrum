@@ -36,7 +36,7 @@ _VERSION_FILE = "samples/eval/corpus/VERSION"
 def _eval_config(policy_path: str) -> dict[str, Any]:
     return {
         "labeler": "passthrough",
-        "detectors": ["keyword_rules"],
+        "detectors": ["keyword_rules", "disclosure_egress"],
         "attributor": "evidence",
         "risk_scorer": "heuristic",
         "chain_analyzer": "noop",
