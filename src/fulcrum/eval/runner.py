@@ -1,5 +1,6 @@
 """样例回放 —— 把每条样例过真实枢衡管线,记录实处置 + 审计校验结果。
 
+链式样例 → 同一会话顺序回放多步 `evaluate_intent`(让 `sequence` 链分析器看见跨步轨迹);
 输入级样例 → `pipeline.screen_input`(检测→入口闸门);工具级样例 → `pipeline.evaluate_intent`
 (策略判定);出口级样例 → `pipeline.screen_output`(检测→出口闸门,量化回复防泄露)。
 每条用独立 session_id 跑,以便逐条核验 hash-chain 与审计完整性。
@@ -21,6 +22,8 @@ from .dataset import EvalSample
 _HELD = frozenset({"block", "approve", "sanitize"})
 # 强处置(对应指标体系 §4.2"高危动作执行 block 或 require_approval")。
 _STRONG = frozenset({"block", "approve"})
+# 处置强度序:链式样例取多步里"最强"的一档作为整条链的判定(任一步阻断即整链阻断)。
+_DISPOSITION_RANK = {"allow": 0, "sanitize": 1, "approve": 2, "block": 3}
 
 # 溯源归因(评测层):用 role_trust 抽嵌入源 + 检测器,按命中分对来源类型排序。
 # 不走 gateway.screen_input(它按前门威胁模型把整条标 UNTRUSTED USER,不抽源),故单列。
@@ -82,10 +85,33 @@ class SampleResult(BaseModel):
         return self.predicted_action == self.expected_action
 
 
+async def _replay_chain(
+    pipeline: SecurityPipeline, sid: str, sample: EvalSample
+) -> tuple[str, str]:
+    """同一会话顺序回放链式样例的每步工具意图,返回(最强处置, 该步理由)。
+
+    复用单个 Context,使 `request_trace` / `tool_returns` 跨步累积 —— `sequence` 链分析器
+    据此在收口的"对外发送"步识别外泄链。整条链取多步中**最强**处置(任一步阻断即判阻断),
+    对齐"链上任何一步被管控,这次外泄企图即未得逞"的语义。
+    """
+    ctx = Context(session_id=sid)
+    predicted, reason = "allow", ""
+    for step in sample.steps or []:
+        intent = ToolIntent(session_id=sid, tool_name=step.target_tool, arguments=step.tool_args)
+        outcome = await pipeline.evaluate_intent(intent, ctx)
+        decision = outcome.decision.decision.value
+        if _DISPOSITION_RANK[decision] >= _DISPOSITION_RANK[predicted]:
+            predicted, reason = decision, outcome.decision.reason
+    return predicted, reason
+
+
 async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleResult:
     sid = f"eval-{sample.sample_id}"
     t0 = time.perf_counter()
-    if sample.is_tool_sample:
+    if sample.is_chain_sample:
+        gate = "tool"  # 链式=多步工具意图,归工具治理闸门
+        predicted, reason = await _replay_chain(pipeline, sid, sample)
+    elif sample.is_tool_sample:
         gate = "tool"
         ctx = Context(session_id=sid)
         intent = ToolIntent(
@@ -106,9 +132,12 @@ async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleRe
         reason = verdict.reason
     latency_ms = (time.perf_counter() - t0) * 1000.0
 
-    # 溯源命中:仅对带 expected_trace_source 金标准的输入级样本计算。
+    # 溯源命中:仅对带 expected_trace_source 金标准的输入级样本计算(链式/工具/出口样本不计)。
     has_gold = bool(
-        sample.expected_trace_source and not sample.is_tool_sample and not sample.is_output_sample
+        sample.expected_trace_source
+        and not sample.is_chain_sample
+        and not sample.is_tool_sample
+        and not sample.is_output_sample
     )
     hit1 = hit3 = False
     if has_gold:
