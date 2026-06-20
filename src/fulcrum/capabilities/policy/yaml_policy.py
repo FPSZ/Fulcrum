@@ -41,10 +41,21 @@ _PREDICATES = frozenset(
         "path_outside_workspace",
         "domain_allowed",
         "command_dangerous",
+        "url_is_internal",
+        "is_raw_ip",
+        "destructive_action",
     }
 )
 _BOOL_FACTS = frozenset(
-    {"path_sensitive", "path_outside_workspace", "domain_allowed", "command_dangerous"}
+    {
+        "path_sensitive",
+        "path_outside_workspace",
+        "domain_allowed",
+        "command_dangerous",
+        "url_is_internal",
+        "is_raw_ip",
+        "destructive_action",
+    }
 )
 # 信任级按**不信任程度**升序排名:trusted 最低、untrusted 最高。`source_trust_at_least`
 # 据此做"至少这么不可信"的序比较(语义与 risk_at_least 同向:数值/排名越高=风险越大)。
@@ -132,6 +143,9 @@ class YamlPolicyEngine:
             "path_outside_workspace": argrisk.path_outside_workspace(args, workspace),
             "domain_allowed": argrisk.domain_allowed(args, allow_domains),
             "command_dangerous": argrisk.command_dangerous(args),
+            "url_is_internal": argrisk.url_is_internal(args),
+            "is_raw_ip": argrisk.is_raw_ip(args),
+            "destructive_action": argrisk.destructive_action(args),
         }
 
     @staticmethod

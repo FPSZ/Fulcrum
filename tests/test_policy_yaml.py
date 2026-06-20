@@ -81,6 +81,63 @@ def test_benign_workspace_read_allowed() -> None:
     assert _decide(intent) == Disposition.ALLOW
 
 
+def test_ssrf_internal_blocked_with_precise_reason() -> None:
+    """http.request 打内网 IP → 命中 block-ssrf-internal(精确理由,白名单规则之前)。"""
+    intent = ToolIntent(
+        session_id="s", tool_name="http.request", arguments={"url": "http://10.0.0.5/x"}
+    )
+    decision = asyncio.run(_POLICY.decide(intent, Context(session_id="s")))
+    assert decision.decision == Disposition.BLOCK
+    assert decision.matched_policy_id == "block-ssrf-internal"
+
+
+def test_cloud_metadata_ssrf_blocked() -> None:
+    intent = ToolIntent(
+        session_id="s",
+        tool_name="http.request",
+        arguments={"url": "http://169.254.169.254/latest/meta-data/"},
+    )
+    assert _decide(intent) == Disposition.BLOCK
+
+
+def test_destructive_delete_blocked() -> None:
+    """通配 + 递归批量删除 → block-destructive。"""
+    intent = ToolIntent(
+        session_id="s",
+        tool_name="file.delete",
+        arguments={"path": "data/workspace/*", "recursive": True},
+    )
+    decision = asyncio.run(_POLICY.decide(intent, Context(session_id="s")))
+    assert decision.decision == Disposition.BLOCK
+    assert decision.matched_policy_id == "block-destructive"
+
+
+def test_single_file_delete_not_destructive() -> None:
+    """删单个明确文件不含通配/递归 → 不命中 block-destructive,落 default allow。"""
+    intent = ToolIntent(
+        session_id="s", tool_name="file.delete", arguments={"path": "data/workspace/tmp.txt"}
+    )
+    assert _decide(intent) == Disposition.ALLOW
+
+
+def test_gov_demo_http_request_ssrf_and_destructive_covered() -> None:
+    """gov_demo 此前完全无 http.request 规则 → SSRF 全放行;P4 补齐后内网/裸 IP/破坏删均拦。"""
+    gov = YamlPolicyEngine(Path("data/policies/gov_demo.yml"))
+
+    def gdecide(tool: str, args: dict) -> Disposition:
+        intent = ToolIntent(session_id="s", tool_name=tool, arguments=args)
+        return asyncio.run(gov.decide(intent, Context(session_id="s"))).decision
+
+    assert gdecide("http.request", {"url": "http://127.0.0.1:6379/"}) == Disposition.BLOCK  # 内网
+    assert (
+        gdecide("http.request", {"url": "http://8.8.8.8/x"}) == Disposition.BLOCK
+    )  # 裸 IP 非白名单
+    assert gdecide("http.request", {"url": "https://gov.cn/notice"}) == Disposition.ALLOW  # 白名单
+    assert (
+        gdecide("file.delete", {"path": "data/approvals/*", "recursive": True}) == Disposition.BLOCK
+    )
+
+
 def _intent_from_trust(trust: TrustLevel) -> tuple[ToolIntent, Context]:
     """构造一个来源信任级为 trust 的工具调用 + 其上下文(供序比较条件命中)。"""
     span = SourceSpan(

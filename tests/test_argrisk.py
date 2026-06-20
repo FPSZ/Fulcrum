@@ -148,3 +148,28 @@ def test_encoded_benign_path_inside_workspace_ok() -> None:
         argrisk.path_outside_workspace({"path": "data/workspace/a%20b.txt"}, "data/workspace")
         is False
     )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"path": "data/approvals/*", "recursive": True},  # 通配 + 递归
+        {"path": "data/approvals/*"},  # 仅通配
+        {"path": "logs/2024-??.log"},  # ? glob
+        {"path": "data/x", "recursive": True},  # 仅递归(明确路径)
+    ],
+)
+def test_destructive_action_flagged(args: dict) -> None:
+    assert argrisk.destructive_action(args) is True
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"path": "data/workspace/report.docx"},  # 单一明确文件
+        {"path": "notice.txt", "recursive": False},  # recursive 显式 False
+        {},  # 无路径
+    ],
+)
+def test_destructive_action_not_flagged(args: dict) -> None:
+    assert argrisk.destructive_action(args) is False

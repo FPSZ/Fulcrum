@@ -44,6 +44,15 @@ rules:
     risk_level: high
     reason: 文件路径越出受控资料区
 
+  # 2b) 破坏性批量删除(通配 / 递归)—— 不可逆,直接阻断(如批量删审批记录)。
+  - id: block-destructive
+    when:
+      tool_in: [file.delete, doc.delete]
+      destructive_action: true
+    decision: block
+    risk_level: critical
+    reason: 通配或递归批量删除不可逆,禁止智能体执行
+
   # 3) 不可信来源(群众来信/外部文档等)驱动的高危动作 —— 阻断(间接注入主防线)。
   - id: block-untrusted-highrisk
     when:
@@ -61,6 +70,25 @@ rules:
     decision: block
     risk_level: critical
     reason: 目标地址不在外联白名单,疑似数据外泄
+
+  # 4b) http.request 打内网/回环/云元数据(SSRF)—— 直接阻断(借智能体探内部面、窃实例凭据)。
+  #     url_is_internal 覆盖字面内网 IP / localhost / 169.254 元数据 / 进制混淆 IP(配合 argrisk P3)。
+  - id: block-ssrf-internal
+    when:
+      tool_in: [http.request]
+      url_is_internal: true
+    decision: block
+    risk_level: critical
+    reason: 外联目标为内网/回环/云元数据地址,疑似 SSRF
+
+  # 4c) http.request 外联非白名单域名 —— 阻断(裸 IP / 混淆 IP / 攻击者域名均不在白名单)。
+  - id: block-nonwhitelist-domain
+    when:
+      tool_in: [http.request]
+      domain_allowed: false
+    decision: block
+    risk_level: high
+    reason: 目标域名不在外联白名单内
 
   # 5) 危险系统命令 —— 阻断。
   - id: block-dangerous-command
