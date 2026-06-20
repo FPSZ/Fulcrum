@@ -17,6 +17,13 @@ fail-closed 底座)。单次推理异常同样降级跳过、不上抛——ML �
 
 **默认不入装配**:重依赖、需独立 ML 环境(本仓 uv venv 无 ML 栈,见 doc 08 §10)。已注册进
 registry,在装好 transformers/torch 的环境里于 fulcrum.yml `detectors` 启用即可,默认管线零改动。
+
+**P6 调参实测(冻结语料 v1.0.0,见 benchmarks/p6-fusion-tuning.md)**:默认模型对中文政务良性
+文本过度自信(约半数良性被打到 prob 1.0)→ ML 单跑 FPR 恒 47%、**与阈值无关**(输出近二值,
+调 threshold 救不了);max 聚合下 max_score 是二元开关(≥0.6 独立挂复核致 FPR 52.9% 灾难、<0.6
+完全无效)。且 ML 救回的规则漏判恶意几乎都落在"规则零信号"处 → 召回与 FPR 在该语料上绑死,
+无"保召回降 FPR"折中点。故**启用本检测器仅适合英文/三态 triage 的人工复核增益,中文政务慎用**;
+语义层落地应转多语种模型 / LLM-judge(MiMo,doc 09 §6)。阈值/封顶默认保留(阈值无害)。
 """
 
 from __future__ import annotations
