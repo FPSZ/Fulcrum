@@ -15,6 +15,7 @@ def load_builtin_capabilities() -> None:
     from .detectors import (  # noqa: F401
         keyword_rules,
         llm_judge,
+        manifest_guard,
         ml_classifier,
         noop,
         secret_egress,
