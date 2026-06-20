@@ -12,4 +12,14 @@ export const toolsModule = defineFeature({
   danger: true,
   requires: 'tools.view',
   component: ToolsPage,
+  actions: [
+    {
+      id: 'nav.tools',
+      label: '打开工具网关',
+      description: '导航到工具调用治理页',
+      risk: 'read_only',
+      requires: ['tools.view'],
+      navTo: 'tools',
+    },
+  ],
 })
