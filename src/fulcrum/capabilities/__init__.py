@@ -13,6 +13,7 @@ def load_builtin_capabilities() -> None:
 
     # 语义兜底(默认不入装配,可选):llm_judge=中文 LLM-judge(选定);ml_classifier=HF 分类器(反例)。
     from .detectors import (  # noqa: F401
+        disclosure_egress,
         keyword_rules,
         llm_judge,
         manifest_guard,
