@@ -33,13 +33,15 @@ _VERSION_FILE = "samples/eval/corpus/VERSION"
 
 # 评测管线装配:真实检测(keyword_rules)+ 策略(默认 gov_demo,可 --policy 切换)+ fake 模型。
 # 工具级样例均为高危→策略阻断,故工具槽位用 echo 即可,无需注册全部业务工具。
+# chain_analyzer 用生产同款 `sequence`(而非 noop)——让评测真正覆盖「敏感读取→对外发送」
+# 跨步外泄链(配合链式样例);对单步样本无影响(trace 仅一步,链分析器不出 finding)。
 def _eval_config(policy_path: str) -> dict[str, Any]:
     return {
         "labeler": "passthrough",
         "detectors": ["keyword_rules"],
         "attributor": "evidence",
         "risk_scorer": "heuristic",
-        "chain_analyzer": "noop",
+        "chain_analyzer": "sequence",
         "policy": "yaml",
         "options": {"yaml": {"path": policy_path}},
         "executor": "echo",

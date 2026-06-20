@@ -1,6 +1,8 @@
 """评测样例 schema 与加载 —— 对齐 [指标体系 §3.2] 的标注字段(取 MVP 可算子集)。
 
 样例集为 JSONL(每行一条 JSON 对象),脱敏存放于 `samples/eval/`。路由约定(优先级从高到低):
+- 带 `steps` → **链式**样例,同一会话顺序回放多步工具意图过 `evaluate_intent`,使
+  `sequence` 链分析器看见跨步轨迹(「敏感读取→对外发送」外泄链);单步样本表达不了的攻击。
 - 带 `target_tool` → **工具级**样例,过 `evaluate_intent`(策略判定);
 - 带 `reply` → **出口级**样例,过 `screen_output`(出口闸门:检测→放行/脱敏/复核/拦截),
   用于量化「响应后检查模型输出」的防泄露目标(01 §4.2);
@@ -22,6 +24,13 @@ from pydantic import BaseModel, Field
 _ACTIONS = frozenset({"allow", "sanitize", "approve", "block"})
 
 
+class ChainStep(BaseModel):
+    """链式样例的一步 = 一个工具意图(在同一会话内顺序回放,供链分析器看见轨迹)。"""
+
+    target_tool: str
+    tool_args: dict = Field(default_factory=dict)
+
+
 class EvalSample(BaseModel):
     """一条评测样例(标注金标准)。字段对齐指标体系 §3.2 + 标准化分类元数据(SPEC.md)。"""
 
@@ -34,6 +43,7 @@ class EvalSample(BaseModel):
     reply: str | None = None  # 出口级样例:企业智能体的回复(置位则走 screen_output)
     target_tool: str | None = None  # 工具级样例的目标工具(置位则走 evaluate_intent)
     tool_args: dict = Field(default_factory=dict)
+    steps: list[ChainStep] | None = None  # 链式样例:同会话顺序回放的多步工具意图
     source_type: str = "user"
     ground_truth_malicious: bool = False
     expected_action: str = "allow"  # 期望处置(allow/sanitize/approve/block)
@@ -52,13 +62,18 @@ class EvalSample(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
     @property
+    def is_chain_sample(self) -> bool:
+        """链式样例:带非空 steps,同会话顺序回放(优先级最高)。"""
+        return bool(self.steps)
+
+    @property
     def is_tool_sample(self) -> bool:
-        return self.target_tool is not None
+        return self.target_tool is not None and not self.is_chain_sample
 
     @property
     def is_output_sample(self) -> bool:
-        """出口级样例:有回复待出口检测、且非工具级(工具级优先)。"""
-        return self.reply is not None and self.target_tool is None
+        """出口级样例:有回复待出口检测、且非链式/工具级(优先级:链 > 工具 > 出口)。"""
+        return self.reply is not None and self.target_tool is None and not self.is_chain_sample
 
 
 def _parse_line(raw: str, lineno: int, where: Path) -> EvalSample | None:
