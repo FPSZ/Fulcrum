@@ -20,6 +20,7 @@ export default defineConfig({
       '/admin': { target: API, changeOrigin: true },
       '/v1': { target: API, changeOrigin: true },
       '/tools': { target: API, changeOrigin: true },
+      '/assistant': { target: API, changeOrigin: true },
       '/audit': { target: API, changeOrigin: true },
       '/overview': { target: API, changeOrigin: true },
       '/events': { target: API, changeOrigin: true },
