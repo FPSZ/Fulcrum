@@ -105,8 +105,11 @@ async def _replay_chain(
     return predicted, reason
 
 
-async def run_sample(pipeline: SecurityPipeline, sample: EvalSample) -> SampleResult:
-    sid = f"eval-{sample.sample_id}"
+async def run_sample(
+    pipeline: SecurityPipeline, sample: EvalSample, sid: str | None = None
+) -> SampleResult:
+    # 默认会话号据 sample_id(评测确定可复现);实时流量驱动传入唯一号,使每次回放为独立会话。
+    sid = sid or f"eval-{sample.sample_id}"
     t0 = time.perf_counter()
     if sample.is_chain_sample:
         gate = "tool"  # 链式=多步工具意图,归工具治理闸门

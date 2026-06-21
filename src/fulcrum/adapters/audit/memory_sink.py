@@ -82,6 +82,15 @@ class InMemoryAuditSink:
     def all_events(self) -> list[AuditEvent]:
         return [event for chain in self._chains.values() for event in chain]
 
+    def prune_to_recent(self, max_sessions: int) -> None:
+        """限长:仅保留最近写入的 max_sessions 个会话链,丢弃更早的。
+
+        供长跑的实时流量驱动控内存——dict 保留插入序,最早的键在前,从前弹出至不超上限。
+        纯演示能力(非端口契约);持久化实现以「按 created_at 限窗查询」提供等价上界。
+        """
+        while len(self._chains) > max_sessions:
+            del self._chains[next(iter(self._chains))]
+
     async def verify_chain(self, session_id: str) -> bool:
         return await self.locate_break(session_id) is None
 

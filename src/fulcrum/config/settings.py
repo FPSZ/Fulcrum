@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     # 前端静态资源目录(生产:指向已构建的 console/dist);留空则只提供 API
     frontend_dir: str = ""
 
+    # ── 实时流量驱动(仅演示/可视化)──────────────────────────────────
+    # 把攻击语料库持续喂进运行中的管线(真跑 screen_input/evaluate_intent/screen_output),
+    # 让首页 KPI / 实时事件页显示**真实管线判定**而非演示 seed。默认关闭,生产/测试不受影响;
+    # 演示时置 FULCRUM_LIVE_FEED_ENABLED=1 开启。仅在内存审计 sink 下生效。
+    live_feed_enabled: bool = False
+    live_feed_dataset: str = "samples/eval/corpus"
+    live_feed_interval_seconds: float = 2.0
+    live_feed_max_sessions: int = 300
+
     # 审计/运行目录
     audit_db_path: str = "data/runtime/fulcrum.sqlite"
 
