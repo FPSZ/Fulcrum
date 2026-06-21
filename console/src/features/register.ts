@@ -1,6 +1,7 @@
 import { registerFeature, type FeatureModule } from '@/lib/module'
 import { registerResource } from '@/lib/backup'
 import { eventsModule } from './events/module'
+import { gatewayModule } from './gateway/module'
 import { overviewModule } from './overview/module'
 import { settingsModule } from './settings/module'
 import { usersModule } from './admin/module'
@@ -17,6 +18,7 @@ import { assistantModule } from './assistant/module'
  */
 const FEATURES: FeatureModule[] = [
   overviewModule,
+  gatewayModule,
   eventsModule,
   policiesModule,
   toolsModule,
