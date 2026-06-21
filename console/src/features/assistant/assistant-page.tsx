@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bot, CornerDownLeft, Lock, Sparkles, Wand2 } from 'lucide-react'
+import { CornerDownLeft, Lock, Sparkles, Wand2 } from 'lucide-react'
 import { Badge, type BadgeTone, Button, Card, Dialog, Input, toast } from '@/components/ui'
 import { useNavigateFeature } from '@/lib/nav'
 import {
@@ -68,16 +68,10 @@ export function AssistantPage() {
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-4">
-      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-ink">
-          <Bot className="h-4 w-4 text-accent" />
-          AI 操作助手
-        </h2>
-        <span className="text-[13px] text-ink-3">
-          用自然语言下达意图,助手在<span className="font-medium text-ink-2">权限闸门内</span>
-          规划受治理动作:只读可直接执行,高危必须二次确认,每次规划都写入审计链。
-        </span>
-      </div>
+      <p className="mb-4 text-[13px] text-ink-3">
+        用自然语言下达意图,助手在<span className="font-medium text-ink-2">权限闸门内</span>
+        规划受治理动作:只读可直接执行,高危必须二次确认,每次规划都写入审计链。
+      </p>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         {/* 左:意图输入 + 规划结果 */}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Package, ShieldAlert } from 'lucide-react'
+import { ShieldAlert } from 'lucide-react'
 import { Badge, type BadgeTone, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { SCAN_REPORTS, type Rating, type Severity } from './data'
@@ -76,9 +76,6 @@ export function SupplyPage() {
               </Badge>
               <span className="text-[13px] text-ink-3">{report.kind} · {report.risks.length} 项风险</span>
             </div>
-            <p className="mt-1 text-[12.5px] text-ink-3">
-              静态扫描(不执行组件代码):声明权限 / 可疑描述 / 外联端点 / 依赖来源 → 按最严重项评级。
-            </p>
 
             <Card className="mt-3 overflow-hidden">
               <table className="w-full text-[14px]">
@@ -104,10 +101,6 @@ export function SupplyPage() {
                 </tbody>
               </table>
             </Card>
-            <p className="mt-3 flex items-center gap-2 text-[12.5px] text-ink-3">
-              <Package className="h-3.5 w-3.5" />
-              扫描入口:<code className="text-ink-2">python -m fulcrum.scan &lt;manifest&gt;</code>(组件上线的离线关切,不在每请求管线内)
-            </p>
           </>
         ) : null}
       </div>

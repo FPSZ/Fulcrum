@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { Plug, ShieldX } from 'lucide-react'
 import { Badge, type BadgeTone, Card, Segmented } from '@/components/ui'
 import { TOOL_CALLS, type Disposition, type Trust } from './data'
 import { useToolCalls } from './use-tools'
@@ -42,11 +41,10 @@ export function ToolsPage() {
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h2 className="text-[15px] font-semibold text-ink">工具调用管控</h2>
-        <span className="text-[13px] text-ink-3">
-          每次高危工具调用都过「归因 → 评分 → 任务链 → 策略 → 沙箱执行」;近 {calls.length}{' '}
-          次,其中 <span className="font-medium text-crit">{held}</span> 次被管控(阻断/审批)。
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-3">
+        <span>
+          近 {calls.length} 次调用,其中{' '}
+          <span className="font-medium text-crit">{held}</span> 次被管控(阻断 / 审批)
         </span>
       </div>
 
@@ -104,12 +102,6 @@ export function ToolsPage() {
           </tbody>
         </table>
       </Card>
-
-      <div className="flex items-center gap-2 pb-2 text-[12.5px] text-ink-3">
-        <ShieldX className="h-3.5 w-3.5" />
-        放行的高危调用经受限执行器(`restricted`)沙箱边界 + 超时执行;<Plug className="h-3.5 w-3.5" />
-        管线入口 `evaluate_intent` / `/tools/call`。
-      </div>
     </div>
   )
 }

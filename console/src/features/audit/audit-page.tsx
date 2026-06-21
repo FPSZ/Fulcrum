@@ -101,10 +101,6 @@ export function AuditPage() {
                 ))}
               </ol>
             </Card>
-            <p className="mt-3 text-[12.5px] text-ink-3">
-              每个事件 `event_hash = sha256(prev_hash + 事件内容)`,环环相扣;任一被篡改则后续校验失败。
-              数据来自 <code className="text-ink-2">/audit/&#123;session_id&#125;</code>(append-only 防篡改链)。
-            </p>
           </>
         ) : null}
       </div>

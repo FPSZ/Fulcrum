@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Check, FlaskConical, X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { Badge, type BadgeTone, Card, Segmented } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { EVAL_REPORT, METRIC_ROWS } from './data'
@@ -143,11 +143,6 @@ export function EvalPage() {
           </tbody>
         </table>
       </Card>
-
-      <div className="flex items-center gap-2 pb-2 text-[12.5px] text-ink-3">
-        <FlaskConical className="h-3.5 w-3.5" />
-        运行入口:<code className="text-ink-2">python -m fulcrum.eval</code> · 报告 docs/eval/results/latest.json
-      </div>
     </div>
   )
 }
