@@ -45,9 +45,9 @@ src/
     auth/                  LoginPage(门禁过场 + 下滑揭示页脚)
   features/
     register.ts            ★ 唯一装配清单:加页面在此加一行
-    placeholders.tsx       未实现页面的占位模块
-    overview/              实时总览(KPI/图表 + 实时事件流 + 查看更多跳转)
-    events/                实时事件页(master-detail + 证据归因链)
+    gateway/               网关实测(端到端真驱动 /gateway/chat:输入闸门→转发企业智能体→出口闸门)
+    overview/              实时总览(KPI 接真;趋势图/事件流为合成动画 use-live.ts)
+    events/                实时事件页(master-detail + 证据归因链,接 /events)
       module.tsx · backup.ts · evidence-chain.tsx · events-page.tsx …
     admin/                 用户管理(部门树 · 成员 · 自定义角色 · 申请审批,RBAC)
     settings/              系统设置(8 类二级导航)+ module.tsx
@@ -89,9 +89,10 @@ src/
 - ✅ 功能模块插件系统(`lib/module` + `features/register.ts`)
 - ✅ 备份导入系统(`lib/backup`,版本化容器 + 资源注册表)
 - ✅ 登录鉴权页(门禁过场)+ 统一页脚(下滑揭示 · rAF 丝滑惯性 · 生产力页免揭示)
-- ✅ 实时总览页(KPI/图表 + 实时事件流)、实时事件页(master-detail + 证据归因链)
-- ✅ 用户管理页(部门树 · 成员 · 自定义角色 · 申请审批,RBAC)、系统设置页(8 类)
-- 🚧 策略中心 / 工具网关 / 供应链 / 审计溯源 / 评测验证(占位)
-- ⏳ 接后端 OpenAPI(当前为备份导入的 mock 数据)
+- ✅ **网关实测页**(端到端真驱动 `/gateway/chat`:输入闸门→转发企业智能体→出口闸门 + 一键样例)
+- ✅ 业务页接真后端(TanStack Query 轮询):实时事件 / 工具网关 / 策略中心 / 审计溯源 / 评测验证 / 供应链 / 用户管理(RBAC)/ 操作助手 —— "有真用真,否则回退演示 seed";后端置 `FULCRUM_LIVE_FEED_ENABLED=1` 实时流量驱动后显真实管线判定
+- ⚠️ 实时总览页:**KPI 四卡接真**(`/overview/stats`),但趋势曲线 + 流动事件流仍是**合成动画**(`use-live.ts`,待接 `/events` 真时序)
+- ⚠️ 系统设置页:仅「上游接入」接真后端,其余 7 类为表单占位
+- ⏳ 首页趋势图接真时序 / 审计 SQLite 持久化(真实可用对账见 [10-页面验收标准](../docs/plan/10-页面验收标准.md) §4)
 
-> 跨前后端的完整进度以 [docs/plan/03-进度看板.md](../docs/plan/03-进度看板.md) 为准。
+> 跨前后端的完整进度以 [docs/plan/03-进度看板.md](../docs/plan/03-进度看板.md) 为准;真实可用/端到端验收口径以 [docs/plan/10-页面验收标准.md](../docs/plan/10-页面验收标准.md) 为准。
