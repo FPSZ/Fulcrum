@@ -28,6 +28,7 @@ export function toSecurityEvent(d: SecurityEventDTO): SecurityEvent {
   return {
     id: d.id,
     time: fmtTime(d.time),
+    ts: d.time,
     sess: d.sess,
     srcType: SRC_MAP[d.src_type] ?? '用户',
     trust: TRUST_MAP[d.trust] ?? 'untrusted',

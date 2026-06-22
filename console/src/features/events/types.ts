@@ -14,6 +14,8 @@ export type SourceType =
 export interface SecurityEvent {
   id: string
   time: string
+  /** 原始时间戳(epoch 秒);接真后端时带,供总览按真实时间分桶。备份演示数据可缺省。 */
+  ts?: number
   sess: string
   srcType: SourceType
   trust: TrustLevel
