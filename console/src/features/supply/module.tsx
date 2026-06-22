@@ -9,7 +9,6 @@ export const supplyModule = defineFeature({
   icon: Package,
   group: '管控',
   order: 50,
-  badge: 2,
   requires: 'supply.view',
   component: SupplyPage,
   resources: [scanResourceSpec],

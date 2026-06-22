@@ -9,7 +9,6 @@ export const toolsModule = defineFeature({
   icon: Plug,
   group: '管控',
   order: 40,
-  badge: 5,
   danger: true,
   requires: 'tools.view',
   component: ToolsPage,

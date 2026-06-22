@@ -58,13 +58,15 @@ interface Cat {
   label: string
   icon: LucideIcon
 }
+// 顺序按用途分组,从基础到进阶:
+// 实例标识 → 安全核心(网关+模型) → 治理合规(审计+通知) → 数据维护 → 开发者 → 关于
 const CATS: Cat[] = [
   { id: 'general', label: '通用', icon: SlidersHorizontal },
   { id: 'gateway', label: '安全网关', icon: ShieldCheck },
   { id: 'models', label: '模型接入', icon: Boxes },
   { id: 'audit', label: '审计与留存', icon: FileSearch },
-  { id: 'data', label: '数据与备份', icon: DatabaseBackup },
   { id: 'notifications', label: '通知', icon: Bell },
+  { id: 'data', label: '数据与备份', icon: DatabaseBackup },
   { id: 'developer', label: '开发者', icon: Code2 },
   { id: 'about', label: '关于', icon: Info },
 ]
@@ -157,7 +159,7 @@ function GeneralPanel() {
               value={form.instance_name}
               onChange={(e) => set('instance_name', e.target.value)}
               disabled={ro}
-              className="w-[280px]"
+              className="w-full"
             />
           </SettingRow>
           <SettingRow label="部署环境">

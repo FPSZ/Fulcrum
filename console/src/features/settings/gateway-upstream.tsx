@@ -133,7 +133,7 @@ export function GatewayUpstreamPanel() {
           value={form.name}
           onChange={(e) => set('name', e.target.value)}
           disabled={ro}
-          className="w-[280px]"
+          className="w-full"
         />
       </SettingRow>
 
@@ -143,7 +143,7 @@ export function GatewayUpstreamPanel() {
           onValueChange={(v) => set('protocol', v as GatewayProtocol)}
           options={PROTOCOLS}
           disabled={ro}
-          className="min-w-[260px]"
+          className="w-full"
         />
       </SettingRow>
 
@@ -153,7 +153,7 @@ export function GatewayUpstreamPanel() {
           onChange={(e) => set('endpoint', e.target.value)}
           disabled={ro}
           placeholder="http://host:port"
-          className="w-[300px]"
+          className="w-full"
         />
       </SettingRow>
 
@@ -163,7 +163,7 @@ export function GatewayUpstreamPanel() {
           onChange={(e) => set('path', e.target.value)}
           disabled={ro}
           placeholder={PATH_HINT[form.protocol]}
-          className="w-[240px]"
+          className="w-full"
         />
       </SettingRow>
 
@@ -174,7 +174,7 @@ export function GatewayUpstreamPanel() {
             onChange={(e) => set('model', e.target.value)}
             disabled={ro}
             placeholder="如 gpt-4o-mini / mimo-v2.5-pro"
-            className="w-[240px]"
+            className="w-full"
           />
         </SettingRow>
       )}
@@ -186,7 +186,7 @@ export function GatewayUpstreamPanel() {
               value={form.rest_message_field}
               onChange={(e) => set('rest_message_field', e.target.value)}
               disabled={ro}
-              className="w-[200px]"
+              className="w-full"
             />
           </SettingRow>
           <SettingRow label="响应取值路径" hint="点路径从响应取回复,如 data.answer">
@@ -194,7 +194,7 @@ export function GatewayUpstreamPanel() {
               value={form.rest_response_path}
               onChange={(e) => set('rest_response_path', e.target.value)}
               disabled={ro}
-              className="w-[200px]"
+              className="w-full"
             />
           </SettingRow>
         </>
@@ -216,7 +216,7 @@ export function GatewayUpstreamPanel() {
             onChange={(e) => set('auth_header', e.target.value)}
             disabled={ro}
             placeholder="X-Api-Key"
-            className="w-[200px]"
+            className="w-full"
           />
         </SettingRow>
       )}
@@ -233,7 +233,7 @@ export function GatewayUpstreamPanel() {
             }}
             disabled={ro}
             placeholder={pwdPlaceholder}
-            className="w-[280px]"
+            className="w-full"
           />
         </SettingRow>
       )}
@@ -244,7 +244,7 @@ export function GatewayUpstreamPanel() {
           value={String(form.timeout_seconds)}
           onChange={(e) => set('timeout_seconds', Number(e.target.value) || 0)}
           disabled={ro}
-          className="w-[100px]"
+          className="w-full"
         />
       </SettingRow>
 

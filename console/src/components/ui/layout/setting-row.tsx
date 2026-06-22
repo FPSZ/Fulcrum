@@ -46,7 +46,9 @@ export function SettingRow({
         <div className="text-[15px] font-medium text-ink">{label}</div>
         {hint && <div className="mt-0.5 text-[14px] leading-relaxed text-ink-3">{hint}</div>}
       </div>
-      <div className="flex max-w-full shrink-0 items-center gap-2 sm:pt-0.5 [&_input]:max-w-full">
+      {/* 控件列:桌面端固定 300px 并右对齐 —— 所有行的控件左右缘对齐成一列。
+          输入框(input)与下拉(role=combobox)撑满整列;开关(role=switch)、按钮、徽标贴右。 */}
+      <div className="flex w-full items-center justify-end gap-2 sm:w-[300px] sm:shrink-0 sm:pt-0.5 [&_input]:w-full [&_input]:max-w-full [&_[role=combobox]]:w-full">
         {children}
       </div>
     </div>
