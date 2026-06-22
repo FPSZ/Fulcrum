@@ -17,6 +17,8 @@ from .observability import configure_logging
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from .adapters.gateway import UpstreamForwarder
+
 
 def _load_builtins() -> None:
     """显式注册所有内置实现:capabilities + 内置 adapter(model/audit)。"""
@@ -69,14 +71,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # 供应链扫描器经组装根注入 API(不入管线装配 —— 离线关切;adapters 不依赖 capabilities)。
     scanner = registry.create("scanner", "manifest")
     app = build_api(pipeline, build_auth_bundle(settings), settings, upstream, store, scanner)
-    _maybe_start_live_feed(app, pipeline, settings)
+    _maybe_start_live_feed(app, pipeline, settings, upstream)
     return app
 
 
-def _maybe_start_live_feed(app: FastAPI, pipeline: SecurityPipeline, settings: Settings) -> None:
+def _maybe_start_live_feed(
+    app: FastAPI,
+    pipeline: SecurityPipeline,
+    settings: Settings,
+    upstream: UpstreamForwarder | None = None,
+) -> None:
     """演示开关:把攻击语料持续喂进运行中的管线,让首页 KPI / 实时事件页显示真实管线判定。
 
     默认关闭(生产/测试不受影响);仅内存审计 sink 下生效。开启置 FULCRUM_LIVE_FEED_ENABLED=1。
+    `FULCRUM_LIVE_FEED_GATEWAY=1` 再走真网关流(政企智能体 :8800 在环,见 `live_feed`)。
     """
     if not settings.live_feed_enabled:
         return
@@ -91,6 +99,8 @@ def _maybe_start_live_feed(app: FastAPI, pipeline: SecurityPipeline, settings: S
         settings.live_feed_dataset,
         settings.live_feed_interval_seconds,
         settings.live_feed_max_sessions,
+        upstream=upstream,
+        gateway_mode=settings.live_feed_gateway,
     )
     # 用 Starlette Router 的生命周期钩子列表(跨版本稳定;build_api 未设自定义 lifespan)。
     app.router.on_startup.append(feed.start)

@@ -19,13 +19,20 @@ import random
 from typing import TYPE_CHECKING
 
 from .adapters.audit.memory_sink import InMemoryAuditSink
-from .eval.dataset import load_dataset
+from .core.domain import Disposition
+from .eval.dataset import EvalSample, load_dataset
 from .eval.runner import run_sample
 
 if TYPE_CHECKING:
+    from .adapters.gateway import UpstreamForwarder
     from .core.pipeline import SecurityPipeline
 
 _log = logging.getLogger("fulcrum.live_feed")
+
+
+def _is_message_sample(s: EvalSample) -> bool:
+    """input 级样例(纯用户消息)——可走真网关流;工具/链/出口级样例无单条消息,留给检测回放。"""
+    return s.input is not None and not (s.is_chain_sample or s.is_tool_sample or s.is_output_sample)
 
 
 class LiveTrafficFeed:
@@ -37,13 +44,31 @@ class LiveTrafficFeed:
         dataset_path: str,
         interval_seconds: float = 2.0,
         max_sessions: int = 300,
+        upstream: UpstreamForwarder | None = None,
+        gateway_mode: bool = False,
     ) -> None:
         self._pipeline = pipeline
         self._dataset_path = dataset_path
         self._interval = max(0.2, interval_seconds)
         self._max_sessions = max_sessions
+        self._upstream = upstream
+        # gateway 模式需有上游(政企智能体)才生效;否则退回纯检测回放。
+        self._gateway = gateway_mode and upstream is not None
         self._task: asyncio.Task[None] | None = None
         self._seq = 0
+
+    async def _gateway_turn(self, sid: str, message: str) -> None:
+        """input 级样例走真网关流:判恶意 → 放行才转 MiMo 政企智能体 → 出口检测(政企智能体在环)。
+
+        与 `/gateway/chat` 同口径:攻击在输入闸门拦下/挂起(不调模型),正常请求才转发企业智能体
+        取真实回复并过出口闸门。screen_input/screen_output 各自落审计链,前端即显真实端到端。
+        """
+        verdict = await self._pipeline.screen_input(sid, message)
+        if verdict.decision != Disposition.ALLOW or self._upstream is None:
+            return
+        reply = await self._upstream.chat(sid, message)
+        if reply.ok and reply.reply:
+            await self._pipeline.screen_output(sid, reply.reply)
 
     def start(self) -> None:
         """在运行中的事件循环上挂起后台驱动(uvicorn startup 调用)。"""
@@ -69,10 +94,11 @@ class LiveTrafficFeed:
             return
         sink = self._pipeline.audit
         _log.info(
-            "实时流量驱动启动:%d 条语料,每 %.1fs 一条,最多留 %d 会话",
+            "实时流量驱动启动:%d 条语料,每 %.1fs 一条,最多留 %d 会话,模式=%s",
             len(samples),
             self._interval,
             self._max_sessions,
+            "gateway(政企智能体在环)" if self._gateway else "pipeline(纯检测)",
         )
         order = list(range(len(samples)))
         while True:
@@ -82,7 +108,10 @@ class LiveTrafficFeed:
                 self._seq += 1
                 sid = f"live-{self._seq:06d}"
                 try:
-                    await run_sample(self._pipeline, sample, sid=sid)
+                    if self._gateway and _is_message_sample(sample):
+                        await self._gateway_turn(sid, sample.input or "")
+                    else:
+                        await run_sample(self._pipeline, sample, sid=sid)
                 except Exception as exc:  # noqa: BLE001 —— 单条回放失败不影响后续
                     _log.debug("实时流量样例 %s 回放失败:%s", sample.sample_id, exc)
                 if isinstance(sink, InMemoryAuditSink):

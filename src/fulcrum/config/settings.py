@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     live_feed_dataset: str = "samples/eval/corpus"
     live_feed_interval_seconds: float = 2.0
     live_feed_max_sessions: int = 300
+    # gateway 模式:input 级样例走**真网关流**(screen_input→放行才转发 MiMo 政企智能体→screen_output),
+    # 政企智能体(:8800,真连 MiMo)在环,首页/事件/网关页显示真实端到端活动;
+    # 默认 False = 纯检测管线回放(不调模型,零 token 成本)。
+    live_feed_gateway: bool = False
 
     # 审计/运行目录
     audit_db_path: str = "data/runtime/fulcrum.sqlite"
