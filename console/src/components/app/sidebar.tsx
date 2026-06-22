@@ -3,6 +3,7 @@ import { LogOut, Sparkles } from 'lucide-react'
 import { Avatar, IconButton, Tooltip } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
+import { useDevMode } from '@/lib/dev-mode'
 import { ease } from '@/lib/motion'
 import { FEATURE_GROUPS, getFeaturesFor } from '@/lib/module'
 
@@ -21,7 +22,8 @@ export function Sidebar({
   onNavigate: (id: string) => void
 }) {
   const { user, has, logout } = useAuth()
-  const features = getFeaturesFor(has)
+  const [devMode] = useDevMode()
+  const features = getFeaturesFor(has, devMode)
   const displayName = user?.displayName || '未登录'
   const sections = FEATURE_GROUPS.map((group) => ({
     group,

@@ -65,6 +65,8 @@ export interface FeatureModule {
   resources?: ResourceSpec[]
   /** 可见所需权限点(RBAC):缺省=人人可见;设置后无此权限者导航/路由都看不到 */
   requires?: string
+  /** 开发者专属页:仅开发/答辩用(评测验证、网关实测),默认隐藏,开「开发者模式」才显示 */
+  dev?: boolean
   /** 该模块贡献给 AI 操作助手的可调动作(注册即进助手动作目录,与后端 catalog 对称) */
   actions?: ModuleAction[]
 }
@@ -91,9 +93,12 @@ export function getModuleActions(): ModuleAction[] {
   return getFeatures().flatMap((f) => f.actions ?? [])
 }
 
-/** 按权限过滤后的可见模块(无 requires 的恒可见) */
-export function getFeaturesFor(can: (perm: string) => boolean): FeatureModule[] {
-  return getFeatures().filter((f) => !f.requires || can(f.requires))
+/** 按权限 + 开发者模式过滤后的可见模块(无 requires 的恒可见;dev 页仅 devMode 开启时显) */
+export function getFeaturesFor(
+  can: (perm: string) => boolean,
+  devMode = false,
+): FeatureModule[] {
+  return getFeatures().filter((f) => (!f.requires || can(f.requires)) && (!f.dev || devMode))
 }
 
 export function getFeature(id: string): FeatureModule | undefined {
@@ -106,6 +111,6 @@ export function getDefaultFeatureId(): string {
 }
 
 /** 当前权限下的默认模块 id(可见集合里 order 最小者) */
-export function getDefaultFeatureIdFor(can: (perm: string) => boolean): string {
-  return getFeaturesFor(can)[0]?.id ?? ''
+export function getDefaultFeatureIdFor(can: (perm: string) => boolean, devMode = false): string {
+  return getFeaturesFor(can, devMode)[0]?.id ?? ''
 }

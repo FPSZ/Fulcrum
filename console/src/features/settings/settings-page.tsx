@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   Bell,
   Boxes,
+  Code2,
   DatabaseBackup,
   FileSearch,
   Info,
@@ -11,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Badge, Button, Input, Select, SettingRow, SettingSection, Switch } from '@/components/ui'
+import { useDevMode } from '@/lib/dev-mode'
 import { cn } from '@/lib/utils'
 import { BackupSettings } from '../backup/backup-settings'
 import { GatewayUpstreamPanel } from './gateway-upstream'
@@ -28,6 +30,7 @@ const CATS: Cat[] = [
   { id: 'data', label: '数据与备份', icon: DatabaseBackup },
   { id: 'notifications', label: '通知', icon: Bell },
   { id: 'members', label: '成员与权限', icon: Users },
+  { id: 'developer', label: '开发者', icon: Code2 },
   { id: 'about', label: '关于', icon: Info },
 ]
 
@@ -96,6 +99,7 @@ export function SettingsPage() {
             {cat === 'data' && <BackupSettings />}
             {cat === 'notifications' && <NotificationsPanel />}
             {cat === 'members' && <MembersPanel />}
+            {cat === 'developer' && <DeveloperPanel />}
             {cat === 'about' && <AboutPanel />}
           </div>
         </div>
@@ -283,6 +287,29 @@ function MembersPanel() {
         <Button size="sm" variant="primary">
           邀请
         </Button>
+      </SettingRow>
+    </SettingSection>
+  )
+}
+
+function DeveloperPanel() {
+  const [devMode, setDevMode] = useDevMode()
+  return (
+    <SettingSection
+      title="开发者"
+      desc="面向开发/答辩/联调的页面;真·政企管理员日常用不到,默认隐藏。"
+    >
+      <SettingRow
+        label="开发者模式"
+        hint="开启后侧栏显示「网关实测」「评测验证」等开发者专属页"
+      >
+        <Switch checked={devMode} onCheckedChange={setDevMode} />
+      </SettingRow>
+      <SettingRow label="网关实测" hint="手动发请求看网关分级处置 + 端到端链路(开发/演示)">
+        <Badge tone={devMode ? 'accent' : 'neutral'}>{devMode ? '显示' : '隐藏'}</Badge>
+      </SettingRow>
+      <SettingRow label="评测验证" hint="测试集 ASR/FPR/召回记分卡(开发/答辩)">
+        <Badge tone={devMode ? 'accent' : 'neutral'}>{devMode ? '显示' : '隐藏'}</Badge>
       </SettingRow>
     </SettingSection>
   )

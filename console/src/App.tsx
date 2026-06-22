@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { AppShell } from './components/app/app-shell'
 import { FooterReveal } from './components/app/footer-reveal'
@@ -8,6 +8,7 @@ import { Toaster, TooltipProvider } from './components/ui'
 import { AuthProvider, useAuth } from './lib/auth'
 import { BackupProvider } from './lib/backup'
 import { BackgroundLayer, BackgroundProvider } from './lib/background'
+import { useDevMode } from './lib/dev-mode'
 import { ease } from './lib/motion'
 import { getDefaultFeatureIdFor, getFeature } from './lib/module'
 import { NavProvider } from './lib/nav'
@@ -46,9 +47,15 @@ function PageTransition({ id, children }: { id: string; children: ReactNode }) {
 /** 登录后的主控制台(外壳 + 当前页面) */
 function AppView() {
   const { has } = useAuth()
+  const [devMode] = useDevMode()
   const [view, setView] = useState(() =>
     getFeature('overview') && has('overview.view') ? 'overview' : getDefaultFeatureIdFor(has),
   )
+  // 关掉开发者模式时若正停在开发者页 → 回退默认页(避免停在已隐藏的页)
+  useEffect(() => {
+    const f = getFeature(view)
+    if (f?.dev && !devMode) setView(getDefaultFeatureIdFor(has, false))
+  }, [devMode, view, has])
   return (
     <BackupProvider>
       <TooltipProvider delayDuration={250}>

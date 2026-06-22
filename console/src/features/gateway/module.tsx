@@ -9,6 +9,7 @@ export const gatewayModule = defineFeature({
   group: '监测',
   order: 15, // 紧随安全总览,作为「看网关如何防护」的入口
   requires: 'events.view',
+  dev: true, // 开发/演示/联调用;真·政企管理员日常用不到,默认隐藏
   component: GatewayPage,
   actions: [
     {
