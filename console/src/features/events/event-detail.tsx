@@ -38,8 +38,8 @@ function ConversationPanel({ event, sessionEvents }: { event: SecurityEvent; ses
       current: t.id === event.id,
     }))
 
-  const Header = (
-    <div className="flex items-center gap-2 px-[18px] pb-1 pt-3.5">
+  const header = (
+    <div className="flex items-center gap-2 px-[18px] pb-3.5 pt-5">
       <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-mute">对话</span>
       <span className="inline-flex items-center gap-1 rounded-full bg-ok/12 px-1.5 py-0.5 text-[11px] font-medium text-ok">
         <ShieldCheck className="h-3 w-3" />
@@ -50,56 +50,58 @@ function ConversationPanel({ event, sessionEvents }: { event: SecurityEvent; ses
 
   if (turns.length === 0) {
     return (
-      <>
-        {Header}
-        <p className="px-[18px] pb-1 text-[13px] leading-relaxed text-ink-3">
-          本事件为工具调用治理,无关联对话上下文(工具意图与参数见下方证据归因链)。
+      <div className="pb-5">
+        {header}
+        <p className="px-[18px] text-[13px] leading-relaxed text-ink-3">
+          本事件为工具调用治理,无对话上下文(工具意图与参数见下方证据归因链)。
         </p>
-      </>
+      </div>
     )
   }
 
   const shown = expanded ? turns : turns.slice(-2)
   return (
-    <>
-      {Header}
-      <div className="space-y-2 px-[18px] pb-1">
-        {shown.map((m) => (
-          <div
-            key={m.id}
-            className={cn(
-              'rounded-lg border px-3 py-2',
-              m.role === 'ai' ? 'border-accent/25 bg-accent/5' : 'border-line bg-surface',
-              m.current && 'ring-1 ring-accent/40',
-            )}
-          >
-            <div className="mb-1 flex items-center gap-1.5">
-              {m.role === 'ai' ? (
-                <Bot className="h-3.5 w-3.5 text-accent" />
-              ) : (
-                <User className="h-3.5 w-3.5 text-ink-3" />
-              )}
-              <span className="text-[12px] font-semibold text-ink-2">
-                {m.role === 'ai' ? 'AI 智能体' : '用户'}
-              </span>
-              {m.current && <span className="text-[11px] text-accent-ink">当前事件</span>}
-              <span className="ml-auto font-data text-[11.5px] text-ink-mute">{m.time}</span>
+    <div className="pb-5">
+      {header}
+      {/* 聊天样式:AI 左、用户右,气泡留白,不套硬框 */}
+      <div className="space-y-5 px-[18px]">
+        {shown.map((m) => {
+          const isUser = m.role === 'user'
+          const Icon = isUser ? User : Bot
+          return (
+            <div key={m.id} className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}>
+              <div className="flex items-center gap-1.5 text-[11.5px] text-ink-mute">
+                <Icon className={cn('h-3.5 w-3.5', isUser ? 'text-ink-3' : 'text-accent')} />
+                <span className="font-medium text-ink-3">{isUser ? '用户' : 'AI 智能体'}</span>
+                {m.current && <span className="text-accent-ink">· 当前</span>}
+                <span className="font-data">· {m.time}</span>
+              </div>
+              <div
+                className={cn(
+                  'max-w-[85%] whitespace-pre-wrap break-words px-3.5 py-2.5 text-[13.5px] leading-relaxed text-ink',
+                  isUser
+                    ? 'rounded-[16px] rounded-tr-[4px] bg-accent/10'
+                    : 'rounded-[16px] rounded-tl-[4px] bg-surface-2',
+                  m.current && 'ring-1 ring-accent/30',
+                )}
+              >
+                {m.text}
+              </div>
             </div>
-            <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{m.text}</p>
-          </div>
-        ))}
+          )
+        })}
       </div>
       {turns.length > 2 && (
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="focus-ring mx-[18px] mb-1 inline-flex items-center gap-1 rounded-sm text-[13px] font-medium text-accent-ink hover:underline"
+          className="focus-ring ml-[18px] mt-4 inline-flex items-center gap-1 text-[13px] font-medium text-accent-ink hover:underline"
         >
-          {expanded ? '收起' : `查看完整对话(共 ${turns.length} 条)`}
+          {expanded ? '收起对话' : `查看完整对话(共 ${turns.length} 条)`}
           <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
         </button>
       )}
-    </>
+    </div>
   )
 }
 
