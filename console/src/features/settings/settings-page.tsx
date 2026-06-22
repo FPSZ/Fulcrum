@@ -128,7 +128,7 @@ export function SettingsPage() {
 
         {/* 内容 */}
         <div className="min-w-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-6">
-          <div className="w-full max-w-[1100px]">
+          <div className="mx-auto w-full max-w-[880px]">
             {cat === 'general' && <GeneralPanel />}
             {cat === 'gateway' && <GatewayPanel />}
             {cat === 'models' && <ModelsPanel />}
