@@ -95,6 +95,11 @@ export function EventsPage() {
 
   const selected = events.find((e) => e.id === selectedId) ?? null
   const idx = ordered.indexOf(selectedId)
+  // 同会话的全部事件 → 供详情页重建用户↔AI对话(真实数据,非编造)
+  const sessionEvents = useMemo(
+    () => (selected ? events.filter((x) => x.sess === selected.sess) : []),
+    [events, selected],
+  )
 
   const toggleGroup = (disp: Disposition) =>
     setCollapsed((prev) => {
@@ -170,6 +175,7 @@ export function EventsPage() {
             event={selected}
             index={idx}
             total={ordered.length}
+            conversation={sessionEvents}
             onBack={compact ? () => setSelectedId('') : undefined}
             onPrev={idx > 0 ? () => setSelectedId(ordered[idx - 1]) : undefined}
             onNext={

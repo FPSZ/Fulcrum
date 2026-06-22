@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowLeft, ChevronDown, ChevronUp, Check, FileSearch } from 'lucide-react'
+import { ArrowLeft, Bot, ChevronDown, ChevronUp, Check, FileSearch, ShieldCheck, User } from 'lucide-react'
 import { Badge, Button, IconButton, KeyValue, StatusDot } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { useConversationDisplay } from '@/lib/conversation-pref'
 import { detailSwap } from '@/lib/motion'
 import { EvidenceChain } from './evidence-chain'
 import {
@@ -14,10 +16,98 @@ import {
 } from './meta'
 import type { SecurityEvent } from './types'
 
+/**
+ * 事件对话(用户↔AI)—— 从同会话的真实事件重建,贴在证据归因链上方。
+ *
+ * 合规:文本取**后端落库前已脱敏**的 excerpt(数据最小化),由「事件对话展示」开关控制是否呈现
+ * (见 `lib/conversation-pref`)。默认显最新 2 条,「查看完整对话」展开全部;工具治理类事件无对话上下文。
+ */
+function ConversationPanel({ event, sessionEvents }: { event: SecurityEvent; sessionEvents: SecurityEvent[] }) {
+  const [show] = useConversationDisplay()
+  const [expanded, setExpanded] = useState(false)
+  if (!show) return null
+
+  const turns = [...sessionEvents]
+    .filter((t) => t.excerpt?.trim() && (t.policy === '前置网关' || t.policy === '出口检测'))
+    .sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0))
+    .map((t) => ({
+      id: t.id,
+      role: t.policy === '出口检测' ? ('ai' as const) : ('user' as const),
+      text: t.excerpt,
+      time: t.time,
+      current: t.id === event.id,
+    }))
+
+  const Header = (
+    <div className="flex items-center gap-2 px-[18px] pb-1 pt-3.5">
+      <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-mute">对话</span>
+      <span className="inline-flex items-center gap-1 rounded-full bg-ok/12 px-1.5 py-0.5 text-[11px] font-medium text-ok">
+        <ShieldCheck className="h-3 w-3" />
+        已脱敏
+      </span>
+    </div>
+  )
+
+  if (turns.length === 0) {
+    return (
+      <>
+        {Header}
+        <p className="px-[18px] pb-1 text-[13px] leading-relaxed text-ink-3">
+          本事件为工具调用治理,无关联对话上下文(工具意图与参数见下方证据归因链)。
+        </p>
+      </>
+    )
+  }
+
+  const shown = expanded ? turns : turns.slice(-2)
+  return (
+    <>
+      {Header}
+      <div className="space-y-2 px-[18px] pb-1">
+        {shown.map((m) => (
+          <div
+            key={m.id}
+            className={cn(
+              'rounded-lg border px-3 py-2',
+              m.role === 'ai' ? 'border-accent/25 bg-accent/5' : 'border-line bg-surface',
+              m.current && 'ring-1 ring-accent/40',
+            )}
+          >
+            <div className="mb-1 flex items-center gap-1.5">
+              {m.role === 'ai' ? (
+                <Bot className="h-3.5 w-3.5 text-accent" />
+              ) : (
+                <User className="h-3.5 w-3.5 text-ink-3" />
+              )}
+              <span className="text-[12px] font-semibold text-ink-2">
+                {m.role === 'ai' ? 'AI 智能体' : '用户'}
+              </span>
+              {m.current && <span className="text-[11px] text-accent-ink">当前事件</span>}
+              <span className="ml-auto font-data text-[11.5px] text-ink-mute">{m.time}</span>
+            </div>
+            <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{m.text}</p>
+          </div>
+        ))}
+      </div>
+      {turns.length > 2 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="focus-ring mx-[18px] mb-1 inline-flex items-center gap-1 rounded-sm text-[13px] font-medium text-accent-ink hover:underline"
+        >
+          {expanded ? '收起' : `查看完整对话(共 ${turns.length} 条)`}
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+        </button>
+      )}
+    </>
+  )
+}
+
 export function EventDetail({
   event: e,
   index,
   total,
+  conversation,
   onBack,
   onPrev,
   onNext,
@@ -25,6 +115,7 @@ export function EventDetail({
   event: SecurityEvent
   index: number
   total: number
+  conversation?: SecurityEvent[]
   onBack?: () => void
   onPrev?: () => void
   onNext?: () => void
@@ -127,7 +218,10 @@ export function EventDetail({
               </KeyValue>
             </div>
 
-            <div className="px-[18px] pb-0.5 pt-3.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-mute">
+            {/* 对话(用户↔AI)—— 真实重建,贴在证据链上方 */}
+            <ConversationPanel event={e} sessionEvents={conversation ?? []} />
+
+            <div className="border-t border-line px-[18px] pb-0.5 pt-3.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-mute">
               证据归因链
             </div>
             <EvidenceChain event={e} />

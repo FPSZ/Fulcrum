@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Badge, Button, Input, Select, SettingRow, SettingSection, Switch } from '@/components/ui'
+import { useConversationDisplay } from '@/lib/conversation-pref'
 import { useDevMode } from '@/lib/dev-mode'
 import { cn } from '@/lib/utils'
 import { BackupSettings } from '../backup/backup-settings'
@@ -208,10 +209,17 @@ function ModelsPanel() {
 }
 
 function AuditPanel() {
+  const [convShow, setConvShow] = useConversationDisplay()
   return (
-    <SettingSection title="审计与留存" desc="hash-chain 审计与数据留存策略。">
+    <SettingSection title="审计与留存" desc="hash-chain 审计、对话留存展示与数据留存策略。">
       <SettingRow label="hash-chain 审计" hint="事件以哈希链串联,可验证不可篡改(强制开启)">
         <Switch defaultChecked disabled />
+      </SettingRow>
+      <SettingRow
+        label="事件对话展示"
+        hint="详情页呈现用户↔AI对话。已脱敏"
+      >
+        <Switch checked={convShow} onCheckedChange={setConvShow} />
       </SettingRow>
       <SettingRow label="链校验频率">
         <Select
