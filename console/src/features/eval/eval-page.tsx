@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { Check, X } from 'lucide-react'
-import { Badge, type BadgeTone, Card, Segmented } from '@/components/ui'
+import { Check, FlaskConical, X } from 'lucide-react'
+import { Badge, type BadgeTone, Card, EmptyState, Segmented } from '@/components/ui'
 import { cn } from '@/lib/utils'
-import { EVAL_REPORT, METRIC_ROWS } from './data'
+import { METRIC_ROWS } from './data'
 import { useEvalReport } from './use-eval'
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
@@ -28,19 +28,28 @@ const FILTERS: { value: Filter; label: string }[] = [
 ]
 
 export function EvalPage() {
-  // 接真后端:有最近评测报告则用真;无报告/无权限/不可达 → 回退演示 seed。
-  const report = useEvalReport().data ?? EVAL_REPORT
-  const { dataset, metrics, samples } = report
-  const t = metrics.totals
+  // 评测是离线产物(python -m fulcrum.eval → /eval/report)。无报告/不可达 → 诚实空态(绝不塞假指标)。
+  const report = useEvalReport().data
   const [filter, setFilter] = useState<Filter>('all')
-
   const rows = useMemo(
     () =>
-      samples.filter((s) =>
+      (report?.samples ?? []).filter((s) =>
         filter === 'all' ? true : filter === 'malicious' ? s.malicious : !s.malicious,
       ),
-    [filter, samples],
+    [filter, report],
   )
+
+  if (!report) {
+    return (
+      <EmptyState
+        icon={FlaskConical}
+        title="暂无评测报告"
+        hint="运行 uv run python -m fulcrum.eval --dataset samples/eval/corpus 生成报告后,这里显示 P0 主结果表与逐样例。"
+      />
+    )
+  }
+  const { dataset, metrics } = report
+  const t = metrics.totals
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">

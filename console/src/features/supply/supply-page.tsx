@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { ShieldAlert } from 'lucide-react'
-import { Badge, type BadgeTone, Card } from '@/components/ui'
+import { Package, ShieldAlert } from 'lucide-react'
+import { Badge, type BadgeTone, Card, EmptyState } from '@/components/ui'
+import { useResource } from '@/lib/backup'
 import { cn } from '@/lib/utils'
-import { SCAN_REPORTS, type Rating, type Severity } from './data'
+import { type Rating, type ScanReport, type Severity } from './data'
 import { useSupplyScans } from './use-supply'
 
 const RATING_TONE: Record<Rating, BadgeTone> = {
@@ -25,13 +26,24 @@ const SEV_TONE: Record<Severity, BadgeTone> = {
 }
 
 export function SupplyPage() {
-  // 接真后端:有真实扫描评级则用真;无权限/不可达/空 → 回退演示 seed。
+  // 三态:真后端扫描评级 → 真;否则用户载入的备份演示数据;都没有 → 诚实空态(绝不自动塞假数据)。
   const live = useSupplyScans().data
-  const reports = live && live.length > 0 ? live : SCAN_REPORTS
+  const backup = useResource<ScanReport>('supply')
+  const reports = live && live.length > 0 ? live : backup
   const [selectedId, setSelectedId] = useState('')
   // 选中项不在当前列表(初始 / 真数据替换 seed 后)→ 回退首条
   const report = reports.find((r) => r.component_id === selectedId) ?? reports[0] ?? null
   const activeId = report?.component_id ?? ''
+
+  if (reports.length === 0) {
+    return (
+      <EmptyState
+        icon={Package}
+        title="暂无组件扫描"
+        hint="登记组件清单(manifest)后由静态扫描评级。也可在「数据与备份」载入演示备份预览。"
+      />
+    )
+  }
 
   return (
     <div className="flex min-h-0 flex-1">

@@ -94,6 +94,36 @@ class GatewayProbeResponse(BaseModel):
     status_code: int | None = None
 
 
+# ---- /admin/settings(控制台通用设置:通用/审计留存/通知,设置页可配)----
+class BackendModelInfo(BaseModel):
+    """只读:后端模型出站配置(经 .env 注入,不在控制台改;此处仅如实回显)。"""
+
+    endpoint: str
+    model_name: str
+    key_set: bool
+
+
+class ConsoleSettingsWrite(BaseModel):
+    """更新控制台通用设置(实例级偏好,非安全红线)。"""
+
+    instance_name: str = Field(default="枢衡安全控制台", max_length=64)
+    environment: str = Field(default="demo", pattern="^(prod|staging|demo)$")
+    language: str = Field(default="zh", pattern="^(zh|en)$")
+    timezone: str = Field(default="sh", pattern="^(sh|utc)$")
+    chain_verify_freq: str = Field(default="event", pattern="^(event|5m|1h)$")
+    audit_retention: str = Field(default="1y", pattern="^(90d|180d|1y|forever)$")
+    export_format: str = Field(default="jsonl", pattern="^(jsonl|csv)$")
+    notify_severe: bool = True
+    notify_approval: bool = True
+    notify_channel: str = Field(default="inapp", pattern="^(inapp|webhook|email)$")
+
+
+class ConsoleSettingsPublic(ConsoleSettingsWrite):
+    """回前端:可写偏好 + 只读后端模型信息。"""
+
+    backend_model: BackendModelInfo
+
+
 # ---- /tools/call ----
 class ToolCallRequest(BaseModel):
     session_id: str

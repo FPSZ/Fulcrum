@@ -1,6 +1,7 @@
 import { Package } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
 import { SupplyPage } from './supply-page'
+import { scanResourceSpec } from './backup'
 
 export const supplyModule = defineFeature({
   id: 'supply',
@@ -11,6 +12,7 @@ export const supplyModule = defineFeature({
   badge: 2,
   requires: 'supply.view',
   component: SupplyPage,
+  resources: [scanResourceSpec],
   actions: [
     {
       id: 'nav.supply',

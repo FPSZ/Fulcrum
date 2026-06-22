@@ -1,6 +1,7 @@
 import { FileSearch } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
 import { AuditPage } from './audit-page'
+import { auditResourceSpec } from './backup'
 
 export const auditModule = defineFeature({
   id: 'audit',
@@ -10,6 +11,7 @@ export const auditModule = defineFeature({
   order: 60,
   requires: 'audit.view',
   component: AuditPage,
+  resources: [auditResourceSpec],
   actions: [
     {
       id: 'nav.audit',

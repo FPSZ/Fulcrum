@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { ArrowRight } from 'lucide-react'
-import { Badge, type BadgeTone, Card, Segmented } from '@/components/ui'
-import { POLICY_SET, type Disposition } from './data'
+import { ArrowRight, Scale } from 'lucide-react'
+import { Badge, type BadgeTone, Card, EmptyState, Segmented } from '@/components/ui'
+import { type Disposition } from './data'
 import { usePolicies } from './use-policies'
 
 const DISP_TONE: Record<Disposition, BadgeTone> = {
@@ -31,13 +31,23 @@ const FILTERS: { value: Filter; label: string }[] = [
 ]
 
 export function PoliciesPage() {
-  // 接真后端:有当前装配策略则用真;无权限/不可达/非 yaml 引擎 → 回退演示 seed。
-  const ps = usePolicies().data ?? POLICY_SET
+  // 策略是后端装配的配置事实(/policies),后端在跑即非空;不可达/非 yaml 引擎 → 诚实空态(不塞假数据)。
+  const ps = usePolicies().data
   const [filter, setFilter] = useState<Filter>('all')
   const rules = useMemo(
-    () => ps.rules.filter((r) => filter === 'all' || r.decision === filter),
-    [filter, ps.rules],
+    () => (ps ? ps.rules.filter((r) => filter === 'all' || r.decision === filter) : []),
+    [filter, ps],
   )
+
+  if (!ps) {
+    return (
+      <EmptyState
+        icon={Scale}
+        title="暂无装配策略"
+        hint="策略来自后端当前加载的 data/policies/*.yml。请确认安全网关后端在运行。"
+      />
+    )
+  }
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">

@@ -1,6 +1,7 @@
 import { Plug } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
 import { ToolsPage } from './tools-page'
+import { toolCallResourceSpec } from './backup'
 
 export const toolsModule = defineFeature({
   id: 'tools',
@@ -12,6 +13,7 @@ export const toolsModule = defineFeature({
   danger: true,
   requires: 'tools.view',
   component: ToolsPage,
+  resources: [toolCallResourceSpec],
   actions: [
     {
       id: 'nav.tools',

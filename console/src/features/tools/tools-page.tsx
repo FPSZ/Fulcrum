@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
-import { Badge, type BadgeTone, Card, Segmented } from '@/components/ui'
-import { TOOL_CALLS, type Disposition, type Trust } from './data'
+import { Plug } from 'lucide-react'
+import { Badge, type BadgeTone, Card, EmptyState, Segmented } from '@/components/ui'
+import { useResource } from '@/lib/backup'
+import { type Disposition, type ToolCall, type Trust } from './data'
 import { useToolCalls } from './use-tools'
 
 const DISP_TONE: Record<Disposition, BadgeTone> = {
@@ -27,9 +29,10 @@ const FILTERS: { value: Filter; label: string }[] = [
 
 export function ToolsPage() {
   const [filter, setFilter] = useState<Filter>('all')
-  // 接真后端:有工具治理流水则用真;无权限/不可达/无工具流量 → 回退演示 seed。
+  // 三态:真后端工具流水 → 真;否则用户载入的备份演示数据;都没有 → 诚实空态(绝不自动塞假数据)。
   const live = useToolCalls().data
-  const calls = live && live.length > 0 ? live : TOOL_CALLS
+  const backup = useResource<ToolCall>('tools')
+  const calls = live && live.length > 0 ? live : backup
   const rows = useMemo(
     () =>
       calls.filter((c) =>
@@ -38,6 +41,16 @@ export function ToolsPage() {
     [filter, calls],
   )
   const held = calls.filter((c) => c.decision !== 'allow').length
+
+  if (calls.length === 0) {
+    return (
+      <EmptyState
+        icon={Plug}
+        title="暂无工具调用"
+        hint="工具调用穿过枢衡(模型编排 / 直接调用)即在此显示。也可在「数据与备份」载入演示备份预览。"
+      />
+    )
+  }
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">

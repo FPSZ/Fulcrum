@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     upstream_agent_endpoint: str = "http://127.0.0.1:8800"
     # 网关上游接入配置落盘路径(JSON);Docker 部署挂卷于 data/runtime 即持久化。
     gateway_config_path: str = "data/runtime/gateway.json"
+    # 控制台通用设置(通用/审计留存/通知)落盘路径(JSON);同上挂卷即持久化。
+    console_settings_path: str = "data/runtime/console.json"
 
     # 装配清单路径(None 用包内默认 fulcrum.yml)
     capability_config: str | None = None
@@ -44,7 +46,7 @@ class Settings(BaseSettings):
     live_feed_dataset: str = "samples/eval/corpus"
     live_feed_interval_seconds: float = 2.0
     live_feed_max_sessions: int = 300
-    # gateway 模式:input 级样例走**真网关流**(screen_input→放行才转发 MiMo 政企智能体→screen_output),
+    # gateway 模式:input 级样例走**真网关流**(screen_input→放行才转发 MiMo→screen_output),
     # 政企智能体(:8800,真连 MiMo)在环,首页/事件/网关页显示真实端到端活动;
     # 默认 False = 纯检测管线回放(不调模型,零 token 成本)。
     live_feed_gateway: bool = False

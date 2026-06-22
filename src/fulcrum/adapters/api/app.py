@@ -111,6 +111,12 @@ def build_api(
         register_policies_routes(app, pipeline, deps)
         register_supply_routes(app, scanner, settings.supply_manifest_dir, deps)
         register_tools_routes(app, pipeline, deps)
+        # 控制台通用设置(通用/审计留存/通知):落盘持久化,设置页可读写。
+        from ..console_settings import ConsoleSettingsStore
+        from .settings_routes import register_console_settings_routes
+
+        console_store = ConsoleSettingsStore(settings.console_settings_path)
+        register_console_settings_routes(app, console_store, settings, deps)
         # AI 操作助手:模型后端默认从 .env(endpoint/key/name)装配,组装根可覆盖(测试注入假后端)。
         complete = assistant_complete or make_model_backend(
             settings.model_endpoint, settings.model_api_key, settings.model_name

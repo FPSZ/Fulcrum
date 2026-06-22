@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Link2, ShieldCheck } from 'lucide-react'
-import { Badge, type BadgeTone, Card } from '@/components/ui'
+import { FileSearch, Link2, ShieldCheck } from 'lucide-react'
+import { Badge, type BadgeTone, Card, EmptyState } from '@/components/ui'
+import { useResource } from '@/lib/backup'
 import { cn } from '@/lib/utils'
-import { AUDIT_SESSIONS, type Disposition, EVENT_LABEL } from './data'
+import { type AuditSession, type Disposition, EVENT_LABEL } from './data'
 import { useAuditSessions } from './use-audit'
 
 const DISP_TONE: Record<Disposition, BadgeTone> = {
@@ -19,13 +20,24 @@ const DISP_LABEL: Record<Disposition, string> = {
 }
 
 export function AuditPage() {
-  // 接真后端:有真实会话链则用真;无权限/不可达/空 → 回退演示 seed(纯前端预览不受影响)。
+  // 三态:真后端会话链 → 真;否则用户载入的备份演示数据;都没有 → 诚实空态(绝不自动塞假数据)。
   const live = useAuditSessions().data
-  const sessions = live && live.length > 0 ? live : AUDIT_SESSIONS
+  const backup = useResource<AuditSession>('audit')
+  const sessions = live && live.length > 0 ? live : backup
   const [selectedId, setSelectedId] = useState('')
   // 选中项不在当前列表(初始 / 真数据替换 seed 后)→ 回退首条
   const session = sessions.find((s) => s.session_id === selectedId) ?? sessions[0] ?? null
   const activeId = session?.session_id ?? ''
+
+  if (sessions.length === 0) {
+    return (
+      <EmptyState
+        icon={FileSearch}
+        title="暂无审计会话"
+        hint="安全网关处理请求后即生成 hash-chain 审计链。也可在「数据与备份」载入演示备份预览。"
+      />
+    )
+  }
 
   return (
     <div className="flex min-h-0 flex-1">

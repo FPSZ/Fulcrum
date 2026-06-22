@@ -173,3 +173,42 @@ export const saveGatewayConfig = (b: GatewayConfigWrite) =>
   api<GatewayConfig>('/admin/gateway-config', { method: 'PUT', body: JSON.stringify(b) })
 export const testGatewayConfig = (b: GatewayConfigWrite) =>
   api<GatewayProbeResult>('/admin/gateway-config/test', j(b))
+
+// ── 控制台通用设置(设置页:通用 / 审计留存 / 通知)──────────────
+export type SettingsEnv = 'prod' | 'staging' | 'demo'
+export type SettingsLang = 'zh' | 'en'
+export type SettingsTz = 'sh' | 'utc'
+export type ChainVerifyFreq = 'event' | '5m' | '1h'
+export type AuditRetention = '90d' | '180d' | '1y' | 'forever'
+export type ExportFormat = 'jsonl' | 'csv'
+export type NotifyChannel = 'inapp' | 'webhook' | 'email'
+
+/** 可写偏好(PUT 提交体);全量替换,保存任一子集都需带上其余字段。 */
+export interface ConsoleSettingsWrite {
+  instance_name: string
+  environment: SettingsEnv
+  language: SettingsLang
+  timezone: SettingsTz
+  chain_verify_freq: ChainVerifyFreq
+  audit_retention: AuditRetention
+  export_format: ExportFormat
+  notify_severe: boolean
+  notify_approval: boolean
+  notify_channel: NotifyChannel
+}
+
+/** 只读:后端模型出站配置(经 .env 注入,控制台不改,仅如实回显)。 */
+export interface BackendModelInfo {
+  endpoint: string
+  model_name: string
+  key_set: boolean
+}
+
+/** GET 返回:可写偏好 + 只读后端模型信息。 */
+export interface ConsoleSettings extends ConsoleSettingsWrite {
+  backend_model: BackendModelInfo
+}
+
+export const getConsoleSettings = () => api<ConsoleSettings>('/admin/settings')
+export const saveConsoleSettings = (b: ConsoleSettingsWrite) =>
+  api<ConsoleSettings>('/admin/settings', { method: 'PUT', body: JSON.stringify(b) })
