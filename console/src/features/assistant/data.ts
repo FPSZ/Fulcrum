@@ -74,3 +74,118 @@ export const SAMPLE_INTENTS = [
   '只看被阻断的实时事件',
   '临时停用策略 POL-014',
 ]
+
+// ─────────────────────────── 真 Agent(plan/11)·镜像后端 DTO ───────────────────────────
+
+/** 操作面三类:ui 前端执行 / read 后端只读 / write 提案-确认-可撤销。 */
+export type ToolKind = 'ui' | 'read' | 'write'
+
+/** 当前角色可调的一个工具(镜像 AssistantToolDTO,GET /assistant/tools)。 */
+export interface AssistantTool {
+  name: string
+  kind: ToolKind
+  label: string
+  description: string
+  risk: ActionRisk
+  requires: string[]
+  reversible: boolean
+}
+
+/** 前端待执行的 ui 指令(导航/筛选/开面板)。 */
+export interface UiDirective {
+  tool: string
+  label: string
+  args: Record<string, unknown>
+}
+
+/** 一步执行轨迹(透明展示助手调了什么)。 */
+export interface AssistantStep {
+  tool: string
+  kind: string
+  label: string
+  ok: boolean
+  detail: string
+}
+
+/** 写操作的待确认提案(可编辑卡片)。 */
+export interface ProposedAction {
+  tool: string
+  label: string
+  risk: string
+  args: Record<string, unknown>
+  requires: string[]
+  note: string
+  action_token: string
+  reversible: boolean
+}
+
+/** 一次 chat 的应答(镜像 AssistantChatResponse,POST /assistant/chat)。 */
+export interface ChatResponse {
+  session_id: string
+  reply: string
+  blocked: boolean
+  ui_directives: UiDirective[]
+  proposed_actions: ProposedAction[]
+  steps: AssistantStep[]
+}
+
+/** 确认执行应答(POST /assistant/confirm)。 */
+export interface ConfirmResponse {
+  ok: boolean
+  summary: string
+  action_id: string | null
+  reversible: boolean
+  undo_preview: string
+  error: string | null
+}
+
+/** 撤销应答(POST /assistant/undo)。 */
+export interface UndoResponse {
+  ok: boolean
+  summary: string
+  error: string | null
+}
+
+/** ui 工具 name → 前端功能页 id(导航直达)。后端 page 枚举与功能页 id 基本同名。 */
+export const PAGE_TO_FEATURE: Record<string, string> = {
+  overview: 'overview',
+  events: 'events',
+  policies: 'policies',
+  audit: 'audit',
+  supply: 'supply',
+  tools: 'tools',
+  settings: 'settings',
+  users: 'users',
+}
+
+/** 工具类别中文短名(侧栏分组 + 轨迹标签)。 */
+export const KIND_LABEL: Record<ToolKind, string> = {
+  ui: '界面',
+  read: '查询',
+  write: '操作',
+}
+
+/** 对话气泡里的一条消息(本地会话态)。 */
+export type ChatMessage =
+  | { id: string; role: 'user'; text: string }
+  | {
+      id: string
+      role: 'assistant'
+      text: string
+      pending: boolean
+      blocked: boolean
+      steps: AssistantStep[]
+      proposals: ProposalState[]
+    }
+
+/** 提案在前端的可编辑/执行态(包住后端提案 + 本地编辑参数 + 确认/撤销结果)。 */
+export interface ProposalState {
+  id: string
+  action: ProposedAction
+  editedArgs: Record<string, unknown>
+  status: 'editing' | 'confirming' | 'done' | 'cancelled' | 'undoing' | 'undone'
+  resultSummary: string
+  actionId: string | null
+  reversible: boolean
+  undoPreview: string
+}
