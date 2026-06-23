@@ -87,3 +87,38 @@ def test_super_admin_passes_all_guards(tmp_path: Path) -> None:
     for path, _perm in _PROTECTED:
         # 超管持全部权限点:不应被鉴权挡下(具体业务码可能 200/空,但绝不能 401/403)。
         assert client.get(path).status_code not in (401, 403), f"{path} 不应被超管鉴权挡下"
+
+
+def test_approval_request_then_resolve_lifecycle(tmp_path: Path) -> None:
+    """发起审批申请 → 进待审批 → 管理员批准放行 → 原工单隐去、代以放行结果行(端到端)。"""
+    client = _client(tmp_path)
+    _login(client, "admin", _ADMIN_PW)
+    sess = "assistant:web:lifecycle"
+
+    # ① 操作员在对话里发起审批申请 → 落一条真·待审批工单
+    r = client.post(
+        "/assistant/request-approval",
+        json={"session_id": sess, "stage": "output", "reason": "需导出名单", "excerpt": "片段"},
+    )
+    assert r.status_code == 200, r.text
+    rows = client.get("/events").json()
+    tickets = [e for e in rows if e["sess"] == sess and e["disp"] == "approve"]
+    assert len(tickets) == 1, "发起后应有且仅有一条待审批工单上墙"
+    ticket_id = tickets[0]["id"]
+
+    # ② 管理员批准放行 → 处置成功
+    rr = client.post(f"/events/{ticket_id}/resolve", json={"decision": "allow", "note": "核实无误"})
+    assert rr.status_code == 200, rr.text
+
+    rows2 = client.get("/events").json()
+    assert all(e["id"] != ticket_id for e in rows2), "处置后原待审工单应从墙上隐去"
+    allow_rows = [e for e in rows2 if e["sess"] == sess and e["disp"] == "allow"]
+    assert allow_rows, "处置后应出现一条放行结果行"
+
+
+def test_resolve_requires_handle_permission(tmp_path: Path) -> None:
+    """处置是写操作:仅 overview.view 的低权账号发起处置 → 403(鉴权先于业务)。"""
+    client = _client(tmp_path)
+    _login(client, "low", _LOW_PW)
+    resp = client.post("/events/any-id/resolve", json={"decision": "allow"})
+    assert resp.status_code == 403

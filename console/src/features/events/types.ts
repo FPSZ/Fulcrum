@@ -10,6 +10,15 @@ export type SourceType =
   | '工具返回'
   | '记忆'
 
+/** 折叠行:同一会话同一判定标题的多条事件归并成一行(代表=最新一条,count=归并条数)。
+ *  墙上以「一段对话 = 少数几行」呈现,点开仍能在详情重建整段对话——折叠只收展示,不丢数据。 */
+export interface FoldedRow {
+  rep: SecurityEvent
+  count: number
+  /** 桶内最严重等级(决定左侧色条),通常同级;混级时取最坏,不让高危被放行掩盖。 */
+  level: RiskLevel
+}
+
 /** 一条经过安全管线的事件(含来源归因链所需字段) */
 export interface SecurityEvent {
   id: string

@@ -1,6 +1,6 @@
 /** 会话事件流 API —— 对接后端 GET /events(审计判定点投影成事件行)。 */
 
-import { api } from './client'
+import { api, j } from './client'
 
 /** 后端 SecurityEventDTO 的镜像:枚举为后端原值,时间为 epoch 秒,前端再做薄映射。 */
 export interface SecurityEventDTO {
@@ -25,3 +25,7 @@ export interface SecurityEventDTO {
 
 export const fetchEvents = (limit = 200) =>
   api<SecurityEventDTO[]>(`/events?limit=${limit}`)
+
+/** 处置一条待审批事件:批准放行 / 维持阻断(需 events.handle;越权 → 后端 403)。 */
+export const resolveEvent = (id: string, decision: 'allow' | 'block', note = '') =>
+  api<{ ok: boolean }>(`/events/${encodeURIComponent(id)}/resolve`, j({ decision, note }))

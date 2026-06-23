@@ -54,23 +54,40 @@ export function EvidenceChain({ event: e }: { event: SecurityEvent }) {
       </Stage>
 
       <Stage label="模型意图">
-        <p className="text-[15px] leading-relaxed text-ink">{e.intent}</p>
+        {e.intent?.trim() ? (
+          <p className="text-[15px] leading-relaxed text-ink">{e.intent}</p>
+        ) : (
+          <p className="text-[14px] text-ink-mute">无</p>
+        )}
       </Stage>
 
       <Stage label="工具参数">
-        <pre className="font-data overflow-x-auto whitespace-pre-wrap break-all rounded-sm bg-inset px-[11px] py-[9px] text-[14px] leading-relaxed text-ink-2">
-          {e.args}
-        </pre>
+        {e.args?.trim() ? (
+          <pre className="font-data overflow-x-auto whitespace-pre-wrap break-all rounded-sm bg-inset px-[11px] py-[9px] text-[14px] leading-relaxed text-ink-2">
+            {e.args}
+          </pre>
+        ) : (
+          <p className="text-[14px] text-ink-mute">无</p>
+        )}
       </Stage>
 
       <Stage tone="warn" label="证据化归因">
-        <div className="h-1.5 overflow-hidden rounded bg-surface-2">
-          <div className="h-full rounded bg-high" style={{ width: `${Math.round(e.conf * 100)}%` }} />
-        </div>
-        <div className="mt-1.5 flex justify-between text-[13px] text-ink-3">
-          <span>{e.derived}</span>
-          <span className="font-data">置信度 {e.conf.toFixed(2)}</span>
-        </div>
+        {e.derived?.trim() ? (
+          <>
+            <div className="h-1.5 overflow-hidden rounded bg-surface-2">
+              <div
+                className="h-full rounded bg-high"
+                style={{ width: `${Math.round(e.conf * 100)}%` }}
+              />
+            </div>
+            <div className="mt-1.5 flex justify-between text-[13px] text-ink-3">
+              <span>{e.derived}</span>
+              <span className="font-data">置信度 {e.conf.toFixed(2)}</span>
+            </div>
+          </>
+        ) : (
+          <p className="text-[14px] text-ink-mute">无</p>
+        )}
       </Stage>
 
       <Stage label="命中策略">

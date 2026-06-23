@@ -189,6 +189,17 @@ class SecurityEventDTO(BaseModel):
     reason: str = ""  # 处置理由
 
 
+class EventResolveRequest(BaseModel):
+    """处置一条待审批事件:批准放行(allow)或维持阻断(block)。需 events.handle。"""
+
+    decision: Literal["allow", "block"]
+    note: str = Field(default="", max_length=400)
+
+
+class EventResolveResponse(BaseModel):
+    ok: bool = True
+
+
 # ---- /audit(会话审计链列表:append-only + hash-chain 的可视化溯源)----
 class AuditChainEventDTO(BaseModel):
     """链上一个审计事件(对齐审计页时间轴展示;不回大段 evidence,只取理由)。"""
@@ -506,6 +517,21 @@ class AssistantProposedActionDTO(BaseModel):
     before: dict = Field(default_factory=dict)  # 改动字段的当前值(before→after 差异)
 
 
+class AssistantApprovalRequestDTO(BaseModel):
+    """需管理员审批的「待发起申请」(闸判 APPROVE 时产出;不自动落工单)。
+
+    助手当面提示操作员「需审批,是否发起?」,由人点「发起申请」(/assistant/request-approval)
+    才真正进实时事件·待审批。stage:input=可疑输入待审 / output=回复待人工复核。
+    """
+
+    stage: str
+    title: str
+    reason: str
+    risk_level: str
+    excerpt: str = ""
+    score: float = 0.0
+
+
 class AssistantStepDTO(BaseModel):
     """一步执行轨迹(透明展示助手调了什么)。"""
 
@@ -523,7 +549,23 @@ class AssistantChatResponse(BaseModel):
     compressed: bool = False  # 本轮是否触发上下文自动压缩
     ui_directives: list[AssistantUiDirectiveDTO] = Field(default_factory=list)
     proposed_actions: list[AssistantProposedActionDTO] = Field(default_factory=list)
+    approval_requests: list[AssistantApprovalRequestDTO] = Field(default_factory=list)
     steps: list[AssistantStepDTO] = Field(default_factory=list)
+
+
+class AssistantRequestApprovalRequest(BaseModel):
+    """操作员在对话里「发起审批申请」:把某条 APPROVE 判定落成真·待审批工单。"""
+
+    session_id: str | None = Field(default=None, max_length=128)
+    stage: str = Field(default="output", max_length=16)  # input | output
+    reason: str = Field(default="", max_length=400)
+    risk_level: str = Field(default="medium", max_length=16)
+    excerpt: str = Field(default="", max_length=400)
+    score: float = 0.0
+
+
+class AssistantRequestApprovalResponse(BaseModel):
+    ok: bool = True
 
 
 class AssistantConfirmRequest(BaseModel):

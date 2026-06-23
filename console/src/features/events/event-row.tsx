@@ -1,7 +1,7 @@
 import { Tooltip } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { LEVEL_BAR, LEVEL_LABEL, SOURCE_ICON, TRUST_TONE } from './meta'
-import type { SecurityEvent } from './types'
+import type { RiskLevel, SecurityEvent } from './types'
 
 const TRUST_TEXT: Record<string, string> = {
   crit: 'text-crit',
@@ -11,16 +11,23 @@ const TRUST_TEXT: Record<string, string> = {
 
 export function EventRow({
   event: e,
+  count = 1,
+  level,
   selected,
   last,
   onSelect,
 }: {
   event: SecurityEvent
+  /** 折叠条数:>1 时该行代表同一会话同标题的多条判定,行尾标 ×N */
+  count?: number
+  /** 折叠桶内最坏等级(决定左侧色条);缺省回退代表事件自身等级 */
+  level?: RiskLevel
   selected: boolean
   last?: boolean
   onSelect: () => void
 }) {
   const SrcIcon = SOURCE_ICON[e.srcType]
+  const lvl = level ?? e.level
   return (
     <button
       type="button"
@@ -33,9 +40,9 @@ export function EventRow({
         'data-[selected]:bg-accent/10 data-[selected]:hover:bg-accent/10',
       )}
     >
-      {/* 最左竖色条 = 严重等级(纯颜色,不写字) */}
-      <Tooltip content={`${LEVEL_LABEL[e.level]}风险`} side="right">
-        <span className={cn('absolute inset-y-0 left-0 w-1', LEVEL_BAR[e.level])} />
+      {/* 最左竖色条 = 严重等级(纯颜色,不写字;折叠时取桶内最坏等级) */}
+      <Tooltip content={`${LEVEL_LABEL[lvl]}风险`} side="right">
+        <span className={cn('absolute inset-y-0 left-0 w-1', LEVEL_BAR[lvl])} />
       </Tooltip>
 
       <span
@@ -48,6 +55,14 @@ export function EventRow({
       </span>
 
       <span className="min-w-0 flex-1 truncate text-[15px] text-ink">{e.risk}</span>
+
+      {count > 1 && (
+        <Tooltip content={`本会话该类判定共 ${count} 条,已折叠为一行`}>
+          <span className="font-data shrink-0 rounded-full bg-surface-2 px-1.5 py-0.5 text-[11.5px] font-medium tabular-nums text-ink-mute">
+            ×{count}
+          </span>
+        </Tooltip>
+      )}
 
       <Tooltip content={`来源:${e.srcType} · ${e.trust}`}>
         <span className="flex shrink-0 items-center gap-1.5 text-[14px] text-ink-3">

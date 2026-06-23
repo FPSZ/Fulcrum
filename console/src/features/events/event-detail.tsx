@@ -1,7 +1,18 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowLeft, Bot, ChevronDown, ChevronUp, Check, FileSearch, ShieldCheck, User } from 'lucide-react'
+import {
+  ArrowLeft,
+  Bot,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  FileSearch,
+  Loader2,
+  ShieldCheck,
+  User,
+} from 'lucide-react'
 import { Badge, Button, IconButton, KeyValue, StatusDot } from '@/components/ui'
+import { Markdown } from '@/components/markdown'
 import { cn } from '@/lib/utils'
 import { useConversationDisplay } from '@/lib/conversation-pref'
 import { detailSwap } from '@/lib/motion'
@@ -78,14 +89,14 @@ function ConversationPanel({ event, sessionEvents }: { event: SecurityEvent; ses
               </div>
               <div
                 className={cn(
-                  'max-w-[85%] whitespace-pre-wrap break-words px-3.5 py-2.5 text-[13.5px] leading-relaxed text-ink',
+                  'max-w-[85%] break-words px-3.5 py-2.5 text-[13.5px] leading-relaxed text-ink',
                   isUser
-                    ? 'rounded-[16px] rounded-tr-[4px] bg-accent/10'
+                    ? 'whitespace-pre-wrap rounded-[16px] rounded-tr-[4px] bg-accent/10'
                     : 'rounded-[16px] rounded-tl-[4px] bg-surface-2',
                   m.current && 'ring-1 ring-accent/30',
                 )}
               >
-                {m.text}
+                {isUser ? m.text : <Markdown>{m.text}</Markdown>}
               </div>
             </div>
           )
@@ -113,6 +124,9 @@ export function EventDetail({
   onBack,
   onPrev,
   onNext,
+  onResolve,
+  resolving,
+  canHandle = true,
 }: {
   event: SecurityEvent
   index: number
@@ -121,7 +135,14 @@ export function EventDetail({
   onBack?: () => void
   onPrev?: () => void
   onNext?: () => void
+  /** 处置待审批:批准放行 / 维持阻断 */
+  onResolve?: (decision: 'allow' | 'block') => void
+  /** 正在处置中的方向(禁用按钮 + 转圈);null=空闲 */
+  resolving?: 'allow' | 'block' | null
+  /** 是否有 events.handle 处置权;无则按钮禁用 */
+  canHandle?: boolean
 }) {
+  const busy = !!resolving
   return (
     <aside
       className={cn(
@@ -140,10 +161,30 @@ export function EventDetail({
         )}
         {e.disp === 'approve' ? (
           <>
-            <Button variant="primary" size="sm" className="flex-1">
-              <Check className="h-3.5 w-3.5" /> 批准放行
+            <Button
+              variant="primary"
+              size="sm"
+              className="flex-1"
+              disabled={!canHandle || busy}
+              title={canHandle ? undefined : '需要「处置会话事件」权限'}
+              onClick={() => onResolve?.('allow')}
+            >
+              {resolving === 'allow' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Check className="h-3.5 w-3.5" />
+              )}{' '}
+              批准放行
             </Button>
-            <Button size="sm" className="flex-1">维持阻断</Button>
+            <Button
+              size="sm"
+              className="flex-1"
+              disabled={!canHandle || busy}
+              title={canHandle ? undefined : '需要「处置会话事件」权限'}
+              onClick={() => onResolve?.('block')}
+            >
+              {resolving === 'block' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} 维持阻断
+            </Button>
           </>
         ) : (
           <>

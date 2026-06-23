@@ -6,6 +6,10 @@ import { AppFooter } from './app-footer'
 const LERP = 0.14
 /** 收束到目标的阈值 */
 const SNAP = 0.4
+/** 刚贴到底的这段"宽限期"内,下滑不揭示页脚(防到底瞬间惯性顺势带出) */
+const GRACE_MS = 500
+/** 两次滚轮间隔超过此值 = 一次"新滑动"(中间断开过);连续滚轮/惯性间隔小,算同一次,不揭示 */
+const BREAK_MS = 180
 
 /**
  * 页脚揭示容器(仅桌面 / 系统页)
@@ -34,6 +38,8 @@ export function FooterReveal({
   const offset = useRef(0) // 当前揭示量(px,逐帧逼近 target)
   const maxRef = useRef(0) // 页脚高度 = 最大揭示量
   const raf = useRef(0)
+  const bottomAt = useRef(0) // 首次贴到底的时刻(0 = 当前不在底部);宽限期据此计算
+  const lastWheelAt = useRef(0) // 上一次滚轮时刻;与本次的间隔用于判定是否"新一次滑动"
   const [revealed, setRevealed] = useState(false) // 仅用于切换页脚可点击态
 
   /** 找事件目标到容器之间最近的、真正可滚动的祖先 */
@@ -116,6 +122,7 @@ export function FooterReveal({
   useEffect(() => {
     target.current = 0
     offset.current = 0
+    bottomAt.current = 0
     if (raf.current) {
       cancelAnimationFrame(raf.current)
       raf.current = 0
@@ -132,27 +139,38 @@ export function FooterReveal({
     const onWheel = (e: WheelEvent) => {
       maxRef.current = footerRef.current?.offsetHeight ?? 0
       if (maxRef.current <= 0) return // 页脚未渲染(移动端)→ 全程原生滚动
+      const now = performance.now()
+      const newGesture = now - lastWheelAt.current > BREAK_MS // 距上次滚轮够久 = 新一次滑动
+      lastWheelAt.current = now
       const dy = e.deltaY
       const t = target.current
 
-      // 页脚已展开:任何方向都先驱动页脚(它有最高优先级)
+      // 页脚已展开:任何方向都先驱动页脚(它有最高优先级);向上收回时清掉贴底时刻
       if (t > 0) {
+        if (dy <= 0) bottomAt.current = 0
         e.preventDefault()
         setTarget(t + dy)
         return
       }
-      // 免揭示区(生产力工作面)→ 全程交给原生滚动,绝不揭示页脚
-      if (inNoRevealZone(e.target)) return
-      // 未展开:仅当落到内部滚动底部、且继续下滑时开始揭示
-      if (dy > 0) {
-        const sc = scrollerAt(e.target)
-        const atBottom = !sc || sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1
-        if (atBottom) {
-          e.preventDefault()
-          setTarget(t + dy)
-        }
+      // 向上/无方向 或 免揭示区 → 原生滚动,顺手清掉贴底时刻
+      if (dy <= 0 || inNoRevealZone(e.target)) {
+        bottomAt.current = 0
+        return
       }
-      // 其余情况:不拦截,交给浏览器原生滚动(此时手感照常)
+      // 向下:仅当落到内部滚动底部才考虑揭示
+      const sc = scrollerAt(e.target)
+      const atBottom = !sc || sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1
+      if (!atBottom) {
+        bottomAt.current = 0
+        return
+      }
+      // 贴底:记下首次到底时刻,吞掉本次下滑(默认不揭示)。
+      // 叠加两个条件,**都满足**才揭示:
+      //  ① 是"新一次滑动"——到底后断开再滑;连续滚到底的惯性算同一次,不揭示;
+      //  ② 距首次到底已过宽限期(再快的断点重滑,半秒内也不揭示)。
+      if (bottomAt.current === 0) bottomAt.current = now
+      e.preventDefault()
+      if (newGesture && now - bottomAt.current >= GRACE_MS) setTarget(t + dy)
     }
 
     wrap.addEventListener('wheel', onWheel, { passive: false })

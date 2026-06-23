@@ -27,6 +27,7 @@ from ..auth import Principal
 from .deps import AuthDeps
 from .schemas import (
     AssistantActionDTO,
+    AssistantApprovalRequestDTO,
     AssistantChatRequest,
     AssistantChatResponse,
     AssistantConfirmRequest,
@@ -38,6 +39,8 @@ from .schemas import (
     AssistantPlanRequest,
     AssistantPlanResponse,
     AssistantProposedActionDTO,
+    AssistantRequestApprovalRequest,
+    AssistantRequestApprovalResponse,
     AssistantResetRequest,
     AssistantResetResponse,
     AssistantStepDTO,
@@ -179,6 +182,17 @@ def register_assistant_routes(
                 )
                 for p in run.proposed_actions
             ],
+            approval_requests=[
+                AssistantApprovalRequestDTO(
+                    stage=a.stage,
+                    title=a.title,
+                    reason=a.reason,
+                    risk_level=a.risk_level,
+                    excerpt=a.excerpt,
+                    score=a.score,
+                )
+                for a in run.approval_requests
+            ],
             steps=[
                 AssistantStepDTO(tool=s.tool, kind=s.kind, label=s.label, ok=s.ok, detail=s.detail)
                 for s in run.steps
@@ -200,9 +214,7 @@ def register_assistant_routes(
 
         async def gen() -> AsyncIterator[bytes]:
             if agent is None or not_ready:
-                reply = (
-                    "助手 Agent 未装配(当前实例未启用)。" if agent is None else _NOT_READY_REPLY
-                )
+                reply = "助手 Agent 未装配(当前实例未启用)。" if agent is None else _NOT_READY_REPLY
                 payload = {
                     "type": "done",
                     "session_id": session_id,
@@ -229,6 +241,40 @@ def register_assistant_routes(
         if conversation is not None:
             conversation.reset(body.session_id)
         return AssistantResetResponse(ok=True)
+
+    @app.post("/assistant/request-approval", response_model=AssistantRequestApprovalResponse)
+    async def assistant_request_approval(
+        body: AssistantRequestApprovalRequest,
+        principal: Principal = Depends(can_operate),
+    ) -> AssistantRequestApprovalResponse:
+        """操作员在对话里「发起审批申请」→ 落一条真·待审批工单(进实时事件·待审批)。
+
+        与自动筛查的区别:闸门判 APPROVE 时**不**自动塞待审批(否则无效信息泛滥);助手当面
+        提示,只有操作员**显式发起**才在此落 evidence.approval_requested=True 的判定点——
+        事件墙据此放行展示(见 events_routes.is_feed_noise)。落同会话审计链,可溯源到发起人。
+        """
+        session_id = body.session_id or f"assistant:{principal.username}"
+        is_output = body.stage == "output"
+        await pipeline.audit.append(
+            AuditEvent(
+                session_id=session_id,
+                event_type=AuditEventType.POLICY_DECIDED,
+                subject_id=principal.username,
+                decision=Disposition.APPROVE,
+                evidence={
+                    "approval_requested": True,
+                    "stage": "output_gateway" if is_output else "input_gateway",
+                    "reason": body.reason,
+                    "risk_level": body.risk_level,
+                    "max_score": body.score,
+                    "excerpt": body.excerpt,
+                    "source_type": "assistant" if is_output else "user",
+                    "trust_level": "untrusted",
+                    "actor": principal.username,
+                },
+            )
+        )
+        return AssistantRequestApprovalResponse(ok=True)
 
     # ── 模型接入配置:协议/端点/密钥/模型名(本地私有化优先;密钥掩码不回显)──────
     def _config_dto() -> AssistantModelConfigDTO:

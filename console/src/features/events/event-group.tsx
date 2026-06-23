@@ -5,7 +5,7 @@ import { ease } from '@/lib/motion'
 import { DispositionIcon } from './disposition-icon'
 import { EventRow } from './event-row'
 import { DISPOSITION_LABEL } from './meta'
-import type { Disposition, SecurityEvent } from './types'
+import type { Disposition, FoldedRow } from './types'
 
 export function EventGroup({
   disp,
@@ -16,7 +16,7 @@ export function EventGroup({
   onSelect,
 }: {
   disp: Disposition
-  rows: SecurityEvent[]
+  rows: FoldedRow[]
   collapsed: boolean
   selectedId: string
   onToggle: () => void
@@ -53,13 +53,15 @@ export function EventGroup({
             transition={{ duration: 0.22, ease: ease.out }}
             className="overflow-hidden border-t border-line"
           >
-            {rows.map((e, i) => (
+            {rows.map((r, i) => (
               <EventRow
-                key={e.id}
-                event={e}
-                selected={e.id === selectedId}
+                key={r.rep.id}
+                event={r.rep}
+                count={r.count}
+                level={r.level}
+                selected={r.rep.id === selectedId}
                 last={i === rows.length - 1}
-                onSelect={() => onSelect(e.id)}
+                onSelect={() => onSelect(r.rep.id)}
               />
             ))}
           </motion.div>

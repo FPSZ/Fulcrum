@@ -120,12 +120,23 @@ export interface ProposedAction {
   before: Record<string, unknown> // 改动字段的当前值(before→after 差异)
 }
 
+/** 需管理员审批的「待发起申请」(闸判 APPROVE 时产出;不自动落工单)。 */
+export interface ApprovalRequest {
+  stage: 'input' | 'output'
+  title: string
+  reason: string
+  risk_level: string
+  excerpt: string
+  score: number
+}
+
 /** 流式事件(SSE,镜像后端 agent.run_stream)。 */
 export type StreamEvent =
   | { type: 'delta'; text: string }
   | ({ type: 'step' } & AssistantStep)
   | ({ type: 'ui' } & UiDirective)
   | ({ type: 'proposal' } & ProposedAction)
+  | ({ type: 'approval' } & ApprovalRequest)
   | { type: 'done'; session_id: string; blocked: boolean; reply: string; compressed?: boolean }
 
 /** 一次 chat 的应答(镜像 AssistantChatResponse,POST /assistant/chat)。 */
@@ -136,6 +147,7 @@ export interface ChatResponse {
   compressed?: boolean
   ui_directives: UiDirective[]
   proposed_actions: ProposedAction[]
+  approval_requests: ApprovalRequest[]
   steps: AssistantStep[]
 }
 
@@ -222,7 +234,15 @@ export type ChatMessage =
       blocked: boolean
       steps: AssistantStep[]
       proposals: ProposalState[]
+      approvals: ApprovalState[]
     }
+
+/** 审批申请在前端的发起态(包住后端申请 + 本地发起/落单结果)。 */
+export interface ApprovalState {
+  id: string
+  request: ApprovalRequest
+  status: 'idle' | 'filing' | 'filed' | 'failed'
+}
 
 /** 提案在前端的可编辑/执行态(包住后端提案 + 本地编辑参数 + 确认/撤销结果)。 */
 export interface ProposalState {

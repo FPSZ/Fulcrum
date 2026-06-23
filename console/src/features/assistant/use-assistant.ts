@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api, j } from '@/lib/api/client'
 import type {
+  ApprovalRequest,
   AssistantAction,
   AssistantTool,
   ChatResponse,
@@ -70,6 +71,24 @@ export function confirmAction(
 /** 一键撤销某已执行写操作。越权 → 后端 403。 */
 export function undoAction(actionId: string, sessionId: string): Promise<UndoResponse> {
   return api<UndoResponse>('/assistant/undo', j({ action_id: actionId, session_id: sessionId }))
+}
+
+/**
+ * 发起审批申请:把某条 APPROVE 判定落成真·待审批工单(进实时事件·待审批)。
+ * 只有操作员显式点「发起申请」才调用 —— 闸门判待审不自动落单,避免无效审批堆积。
+ */
+export function requestApproval(req: ApprovalRequest, sessionId: string): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>(
+    '/assistant/request-approval',
+    j({
+      session_id: sessionId,
+      stage: req.stage,
+      reason: req.reason,
+      risk_level: req.risk_level,
+      excerpt: req.excerpt,
+      score: req.score,
+    }),
+  )
 }
 
 // ─────────────────────────── 模型接入配置(三协议 + 本地私有化)───────────────────────────

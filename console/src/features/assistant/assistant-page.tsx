@@ -11,7 +11,9 @@ import {
   PanelLeftOpen,
   Plus,
   RotateCcw,
+  Send,
   Settings2,
+  ShieldAlert,
   Sparkles,
   Trash2,
   X,
@@ -22,6 +24,8 @@ import { useAuth } from '@/lib/auth'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { useNavigateFeature } from '@/lib/nav'
 import {
+  type ApprovalRequest,
+  type ApprovalState,
   type AssistantStep,
   type ChatMessage,
   type ModelConfig,
@@ -37,6 +41,7 @@ import {
 import { Markdown } from './markdown'
 import {
   confirmAction,
+  requestApproval,
   resetAssistant,
   saveModelConfig,
   sendChatStream,
@@ -75,6 +80,10 @@ function toProposalState(a: ProposedAction): ProposalState {
     reversible: a.reversible,
     undoPreview: '',
   }
+}
+
+function toApprovalState(r: ApprovalRequest): ApprovalState {
+  return { id: newId(), request: r, status: 'idle' }
 }
 
 export function AssistantPage() {
@@ -128,6 +137,42 @@ export function AssistantPage() {
     [activeId, setMessagesOf],
   )
 
+  const patchApproval = useCallback(
+    (apprId: string, patch: Partial<ApprovalState>) => {
+      setMessagesOf(activeId, (ms) =>
+        ms.map((m) =>
+          m.role === 'assistant'
+            ? {
+                ...m,
+                approvals: (m.approvals ?? []).map((a) =>
+                  a.id === apprId ? { ...a, ...patch } : a,
+                ),
+              }
+            : m,
+        ),
+      )
+    },
+    [activeId, setMessagesOf],
+  )
+
+  // 发起审批申请:带上操作员自己填的审批理由,落一条真·待审批工单(进实时事件·待审批)。
+  const fileApproval = useCallback(
+    async (a: ApprovalState, reason: string) => {
+      patchApproval(a.id, { status: 'filing' })
+      try {
+        await requestApproval({ ...a.request, reason }, activeId)
+        patchApproval(a.id, { status: 'filed' })
+        toast.success('已发起审批申请', {
+          description: '已进入「实时事件 · 待审批」,管理员将在那里处理。',
+        })
+      } catch (e) {
+        patchApproval(a.id, { status: 'failed' })
+        toast.error('发起失败', { description: (e as Error).message })
+      }
+    },
+    [patchApproval, activeId],
+  )
+
   const runDirective = useCallback(
     (d: UiDirective) => {
       if (d.tool === 'filter_events') {
@@ -168,6 +213,12 @@ export function AssistantPage() {
           if (ev.type === 'step') return { ...x, pending: false, steps: [...x.steps, ev] }
           if (ev.type === 'proposal')
             return { ...x, pending: false, proposals: [...x.proposals, toProposalState(ev)] }
+          if (ev.type === 'approval')
+            return {
+              ...x,
+              pending: false,
+              approvals: [...(x.approvals ?? []), toApprovalState(ev)],
+            }
           if (ev.type === 'done')
             return {
               ...x,
@@ -211,6 +262,7 @@ export function AssistantPage() {
           blocked: false,
           steps: [],
           proposals: [],
+          approvals: [],
         },
       ])
       try {
@@ -411,6 +463,7 @@ export function AssistantPage() {
                           onEdit={(p, k, v) =>
                             patchProposal(p.id, { editedArgs: { ...p.editedArgs, [k]: v } })
                           }
+                          onFileApproval={fileApproval}
                         />
                       )}
                     </motion.div>
@@ -1069,9 +1122,10 @@ interface AssistantTurnProps {
   onCancel: (p: ProposalState) => void
   onUndo: (p: ProposalState) => void
   onEdit: (p: ProposalState, key: string, value: unknown) => void
+  onFileApproval: (a: ApprovalState, reason: string) => void
 }
 
-function AssistantTurn({ msg, onConfirm, onCancel, onUndo, onEdit }: AssistantTurnProps) {
+function AssistantTurn({ msg, onConfirm, onCancel, onUndo, onEdit, onFileApproval }: AssistantTurnProps) {
   return (
     <div className="flex gap-3.5">
       <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent/10 text-accent">
@@ -1105,6 +1159,9 @@ function AssistantTurn({ msg, onConfirm, onCancel, onUndo, onEdit }: AssistantTu
                 onUndo={() => onUndo(p)}
                 onEdit={(k, v) => onEdit(p, k, v)}
               />
+            ))}
+            {(msg.approvals ?? []).map((a) => (
+              <ApprovalCard key={a.id} a={a} onFile={(reason) => onFileApproval(a, reason)} />
             ))}
           </>
         )}
@@ -1273,6 +1330,83 @@ function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardPr
         {p.status === 'undone' && (
           <span className="inline-flex items-center gap-1 text-[13.5px] text-ink-mute">
             <RotateCcw className="h-3.5 w-3.5" /> 已撤销
+          </span>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
+// ─────────────────────────── 待审批:发起申请卡片(复用提案卡外壳 + 审批理由框)──────────
+
+/** 闸判「待审批」→ 当面卡片(与写提案卡同一套外壳):操作员填审批理由,点「发起」才落真工单。 */
+function ApprovalCard({ a, onFile }: { a: ApprovalState; onFile: (reason: string) => void }) {
+  const { request: r, status } = a
+  const [reason, setReason] = useState('')
+  const editing = status === 'idle' || status === 'failed'
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.985, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.26, ease: EASE }}
+      className="space-y-3 rounded-2xl border border-line bg-surface p-4 shadow-sm"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent/12 text-accent">
+            <ShieldAlert className="h-4 w-4" />
+          </span>
+          <span className="truncate text-[15px] font-medium text-ink">{r.title}</span>
+        </div>
+        <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[12px] font-medium text-accent-ink">
+          需管理员审批
+        </span>
+      </div>
+
+      {/* 触发依据:凭什么判待审(脱敏摘要,供操作员核对) */}
+      {r.excerpt && (
+        <div className="rounded-lg bg-surface-2 px-3 py-2 text-[13px] leading-snug text-ink-2">
+          {r.excerpt}
+        </div>
+      )}
+
+      {/* 审批理由:操作员自己填,随工单一并提交给管理员 */}
+      <div>
+        <div className="mb-1.5 text-[13px] font-medium text-ink-2">审批理由</div>
+        <textarea
+          value={reason}
+          disabled={!editing}
+          onChange={(e) => setReason(e.target.value)}
+          rows={2}
+          placeholder="说明为什么需要执行这一步,管理员据此审批…"
+          className="focus-ring min-h-[60px] w-full resize-y rounded-lg border border-line-2 bg-surface px-3 py-2 text-[14px] leading-6 text-ink outline-none placeholder:text-ink-mute disabled:opacity-60"
+        />
+      </div>
+
+      <div className="flex items-center gap-2">
+        {editing && (
+          <>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => onFile(reason.trim())}
+              disabled={!reason.trim()}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-[14px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+            >
+              <Send className="h-3.5 w-3.5" />
+              {status === 'failed' ? '重试发起' : '发起审批申请'}
+            </motion.button>
+            <span className="text-[13px] text-ink-mute">不发起则不留工单</span>
+          </>
+        )}
+        {status === 'filing' && (
+          <span className="flex items-center gap-1.5 text-[13.5px] text-ink-3">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> 发起中…
+          </span>
+        )}
+        {status === 'filed' && (
+          <span className="inline-flex items-center gap-1.5 text-[13.5px] text-accent-ink">
+            <Check className="h-3.5 w-3.5" /> 已进入待审批,管理员处理中
           </span>
         )}
       </div>

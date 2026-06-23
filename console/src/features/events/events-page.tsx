@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Activity, Clock, Download, Inbox, Plus, SlidersHorizontal } from 'lucide-react'
 import { Button, EmptyState, Segmented, toast } from '@/components/ui'
+import { resolveEvent } from '@/lib/api/events'
+import { useAuth } from '@/lib/auth'
 import { useResource } from '@/lib/backup'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { cn } from '@/lib/utils'
@@ -8,7 +11,7 @@ import { ImportBackupButtons } from '../backup/import-controls'
 import { EventDetail } from './event-detail'
 import { EventGroup } from './event-group'
 import { DISPOSITION_ORDER, LEVEL_LABEL } from './meta'
-import type { Disposition, RiskLevel, SecurityEvent } from './types'
+import type { Disposition, FoldedRow, RiskLevel, SecurityEvent } from './types'
 import { useEventsFeed } from './use-events'
 
 type Filter = 'all' | RiskLevel
@@ -19,11 +22,39 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'medium', label: LEVEL_LABEL.medium },
 ]
 
+const LEVEL_RANK: Record<RiskLevel, number> = { critical: 3, high: 2, medium: 1, low: 0 }
+
+/**
+ * 按「会话 + 判定标题」折叠成行 —— 一段多轮对话(我们的助手或接入的任意外部 agent)
+ * 不再在墙上铺一长串长得一样的「正常输入放行 / 回复放行」。代表取桶内最新一条;
+ * 输入已是最新在前,故每个 key 首次出现即最新,Map 保序即按代表时间倒序。
+ */
+function foldBySession(rows: SecurityEvent[]): FoldedRow[] {
+  const buckets = new Map<string, SecurityEvent[]>()
+  for (const e of rows) {
+    const key = `${e.sess}|${e.risk}`
+    const arr = buckets.get(key)
+    if (arr) arr.push(e)
+    else buckets.set(key, [e])
+  }
+  return Array.from(buckets.values(), (arr) => ({
+    rep: arr[0],
+    count: arr.length,
+    level: arr.reduce<RiskLevel>((w, e) => (LEVEL_RANK[e.level] > LEVEL_RANK[w] ? e.level : w), 'low'),
+  }))
+}
+
 export function EventsPage() {
   // 接真后端:有真实事件则用真;无权限/不可达/空 → 回退导入备份的演示事件(纯前端预览不受影响)。
   const backup = useResource<SecurityEvent>('events')
   const { data: live } = useEventsFeed()
-  const events = live && live.length > 0 ? live : backup
+  const isLive = !!(live && live.length > 0)
+  const events = isLive ? live : backup
+  const qc = useQueryClient()
+  const { has } = useAuth()
+  // 处置(批准放行/维持阻断)= 写操作:需 events.handle,且仅对真实后端事件生效(演示备份无后端)
+  const canHandle = has('events.handle') && isLive
+  const [resolving, setResolving] = useState<'allow' | 'block' | null>(null)
   // 列表+详情并排放不下时(≤1080)切换为栈式:列表 ↔ 全屏详情
   const compact = useMediaQuery('(max-width: 1080px)')
   const [filter, setFilter] = useState<Filter>('all')
@@ -38,13 +69,13 @@ export function EventsPage() {
     () =>
       DISPOSITION_ORDER.map((disp) => ({
         disp,
-        rows: items.filter((e) => e.disp === disp),
+        rows: foldBySession(items.filter((e) => e.disp === disp)),
       })).filter((g) => g.rows.length > 0),
     [items],
   )
-  /** 当前可见(未折叠)的事件顺序,用于上下条导航 */
+  /** 当前可见(未折叠)的代表事件顺序,用于上下条导航 */
   const ordered = useMemo(
-    () => groups.flatMap((g) => (collapsed.has(g.disp) ? [] : g.rows.map((r) => r.id))),
+    () => groups.flatMap((g) => (collapsed.has(g.disp) ? [] : g.rows.map((r) => r.rep.id))),
     [groups, collapsed],
   )
 
@@ -107,6 +138,26 @@ export function EventsPage() {
       next.has(disp) ? next.delete(disp) : next.add(disp)
       return next
     })
+
+  // 处置待审批:批准放行 / 维持阻断 → 后端落处置判定点;成功后刷新事件流(原工单隐去,代以结果行)。
+  const resolve = useCallback(
+    async (decision: 'allow' | 'block') => {
+      if (!selected) return
+      setResolving(decision)
+      try {
+        await resolveEvent(selected.id, decision)
+        toast.success(decision === 'allow' ? '已批准放行' : '已维持阻断', {
+          description: '处置已记入审计链,该待审批项已结案。',
+        })
+        await qc.invalidateQueries({ queryKey: ['events', 'feed'] })
+      } catch (err) {
+        toast.error('处置失败', { description: (err as Error).message })
+      } finally {
+        setResolving(null)
+      }
+    },
+    [selected, qc],
+  )
 
   return (
     // 事件页是实时处置工作面:其内部滚动(清单/详情各自独立)不牵动底部页脚
@@ -176,6 +227,9 @@ export function EventsPage() {
             index={idx}
             total={ordered.length}
             conversation={sessionEvents}
+            onResolve={resolve}
+            resolving={resolving}
+            canHandle={canHandle}
             onBack={compact ? () => setSelectedId('') : undefined}
             onPrev={idx > 0 ? () => setSelectedId(ordered[idx - 1]) : undefined}
             onNext={

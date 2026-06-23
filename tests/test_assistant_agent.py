@@ -155,6 +155,32 @@ def test_run_stream_emits_delta_step_and_done(tmp_path: Path) -> None:
     assert events[-1]["reply"] == "总览完成" and not events[-1]["blocked"]
 
 
+def test_output_approve_offers_request_not_auto_ticket(tmp_path: Path) -> None:
+    """出口判「待审批」→ 助手当面问是否发起申请,不直接回传原文、不自动落待审工单。"""
+    from types import SimpleNamespace
+
+    pipeline = _pipeline(tmp_path)
+
+    async def fake_out(_sid: str, _text: str):
+        return SimpleNamespace(
+            decision=Disposition.APPROVE, reason="回复需人工复核", risk_level="high", max_score=0.6
+        )
+
+    pipeline.screen_output = fake_out  # type: ignore[method-assign]
+    agent = AssistantAgent(
+        pipeline, _services(tmp_path, pipeline), _scripted(ModelReply(content="这是原始答复"))
+    )
+    res = asyncio.run(agent.run("问个问题", _principal(ALL_PERMISSION_KEYS), "assistant:web:appr"))
+
+    assert len(res.approval_requests) == 1
+    ar = res.approval_requests[0]
+    assert ar.stage == "output" and ar.title == "回复待人工复核"
+    assert "审批" in res.reply and res.reply != "这是原始答复"  # 当面提示而非直接回传原文
+    # 未显式发起前,本会话不存在「可见待审工单」(approval_requested=True 的判定点)。
+    events = asyncio.run(pipeline.audit.events("assistant:web:appr"))
+    assert not any(e.evidence.get("approval_requested") for e in events)
+
+
 def test_registry_visible_for_filters_by_permission() -> None:
     low = _principal(frozenset({"ai.operate", "overview.view"}))
     names = {t.name for t in operation_registry.visible_for(low)}

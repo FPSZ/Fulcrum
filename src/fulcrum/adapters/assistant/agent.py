@@ -118,6 +118,23 @@ class AssistantProposedAction:
 
 
 @dataclass(slots=True)
+class AssistantApprovalRequest:
+    """需管理员审批的待发起申请(input/output 闸判 APPROVE 时产出)。
+
+    不自动落「待审批」工单:助手当面提示操作员「需管理员审批,是否发起?」,
+    由人点「发起申请」(/assistant/request-approval)才真正进实时事件·待审批——
+    避免每条可疑判定都自动塞满待审批,徒增无效信息。
+    """
+
+    stage: str  # "input"(可疑输入待审)| "output"(回复待人工复核)
+    title: str
+    reason: str
+    risk_level: str
+    excerpt: str  # 脱敏摘要(凭什么判待审,供操作员核对)
+    score: float
+
+
+@dataclass(slots=True)
 class AssistantRunResult:
     session_id: str
     reply: str
@@ -125,6 +142,7 @@ class AssistantRunResult:
     compressed: bool = False  # 本轮是否触发了上下文自动压缩(供 UI 提示「上下文已压缩」)
     ui_directives: list[AssistantUiDirective] = field(default_factory=list)
     proposed_actions: list[AssistantProposedAction] = field(default_factory=list)
+    approval_requests: list[AssistantApprovalRequest] = field(default_factory=list)
     steps: list[AssistantStep] = field(default_factory=list)
 
 
@@ -170,6 +188,26 @@ def _step_event(s: AssistantStep) -> dict:
         "label": s.label,
         "ok": s.ok,
         "detail": s.detail,
+    }
+
+
+# 闸判「待审批」时给操作员的当面话术(替换原内容,不直接执行/外泄;附「发起申请」卡片)。
+_APPROVAL_REPLY = (
+    "这一步涉及需要**管理员审批**的内容,我没有自动放行或执行。"
+    "如果确有必要,请点下方「发起审批申请」——提交后才会进入「实时事件 · 待审批」交管理员处理;"
+    "不提交则不留工单,避免无效审批堆积。"
+)
+
+
+def _approval_event(a: AssistantApprovalRequest) -> dict:
+    return {
+        "type": "approval",
+        "stage": a.stage,
+        "title": a.title,
+        "reason": a.reason,
+        "risk_level": a.risk_level,
+        "excerpt": a.excerpt,
+        "score": a.score,
     }
 
 
@@ -295,14 +333,32 @@ class AssistantAgent:
             self._conversation.save(session_id, transcript)
         return compressed
 
+    @staticmethod
+    def _approval_request(stage: str, verdict: Any, text: str) -> AssistantApprovalRequest:
+        """把闸门的 APPROVE 判定打包成「待发起审批申请」(脱敏摘要,供操作员核对后决定是否发起)。"""
+        title = "可疑输入待审" if stage == "input" else "回复待人工复核"
+        return AssistantApprovalRequest(
+            stage=stage,
+            title=title,
+            reason=str(getattr(verdict, "reason", "") or "命中需人工复核的策略"),
+            risk_level=str(getattr(verdict, "risk_level", "") or "medium"),
+            excerpt=redact(text[:200]),
+            score=float(getattr(verdict, "max_score", 0.0) or 0.0),
+        )
+
     async def run(self, intent: str, principal: Any, session_id: str) -> AssistantRunResult:
         result = AssistantRunResult(session_id=session_id, reply="")
 
-        # ① 入口网关(吃狗粮):恶意意图根本不提交模型。
+        # ① 入口网关(吃狗粮):恶意意图根本不提交模型;判「待审批」则当面问操作员是否发起申请。
         gate = await self._pipeline.screen_input(session_id, intent)
         if gate.decision == Disposition.BLOCK:
             result.blocked = True
             result.reply = f"你的意图被安全网关判为高危并拦截({gate.reason}),未提交模型。"
+            await self._audit(session_id, principal, intent, result, gate)
+            return result
+        if gate.decision == Disposition.APPROVE:
+            result.approval_requests.append(self._approval_request("input", gate, intent))
+            result.reply = _APPROVAL_REPLY
             await self._audit(session_id, principal, intent, result, gate)
             return result
 
@@ -349,7 +405,12 @@ class AssistantAgent:
         final = final or "(已完成上述操作。)"
 
         out = await self._pipeline.screen_output(session_id, final)
-        result.reply = self._gate_output(final, out)
+        if out.decision == Disposition.APPROVE:
+            # 回复需人工复核:不直接回传内容,当面问操作员是否发起审批申请。
+            result.approval_requests.append(self._approval_request("output", out, final))
+            result.reply = _APPROVAL_REPLY
+        else:
+            result.reply = self._gate_output(final, out)
         result.compressed = await self._persist(session_id, messages, result.reply)
         await self._audit(session_id, principal, intent, result, gate, out)
         return result
@@ -370,6 +431,8 @@ class AssistantAgent:
                 yield _step_event(s)
             for p in result.proposed_actions:
                 yield _proposal_event(p)
+            for a in result.approval_requests:
+                yield _approval_event(a)
             yield {
                 "type": "done",
                 "session_id": session_id,
@@ -389,6 +452,20 @@ class AssistantAgent:
                 "type": "done",
                 "session_id": session_id,
                 "blocked": True,
+                "reply": result.reply,
+                "compressed": False,
+            }
+            return
+        if gate.decision == Disposition.APPROVE:
+            req = self._approval_request("input", gate, intent)
+            result.approval_requests.append(req)
+            result.reply = _APPROVAL_REPLY
+            await self._audit(session_id, principal, intent, result, gate)
+            yield _approval_event(req)
+            yield {
+                "type": "done",
+                "session_id": session_id,
+                "blocked": False,
                 "reply": result.reply,
                 "compressed": False,
             }
@@ -442,7 +519,13 @@ class AssistantAgent:
             final = "我已尽力检索(达到单轮步数上限)。请缩小范围或分步再问。"
         final = final or "(已完成上述操作。)"
         out = await self._pipeline.screen_output(session_id, final)
-        result.reply = self._gate_output(final, out)
+        if out.decision == Disposition.APPROVE:
+            req = self._approval_request("output", out, final)
+            result.approval_requests.append(req)
+            result.reply = _APPROVAL_REPLY
+            yield _approval_event(req)
+        else:
+            result.reply = self._gate_output(final, out)
         result.compressed = await self._persist(session_id, messages, result.reply)
         await self._audit(session_id, principal, intent, result, gate, out)
         yield {
