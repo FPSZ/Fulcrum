@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 from fastapi import Depends, FastAPI
 
 from ...core.domain import AuditEvent, AuditEventType
-from ..audit.memory_sink import InMemoryAuditSink
 from ..auth import Principal
 from .deps import AuthDeps
 from .schemas import AuditChainEventDTO, AuditResponse, AuditSessionDTO
@@ -58,10 +57,7 @@ def register_audit_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthDe
 
     @app.get("/audit", response_model=list[AuditSessionDTO])
     async def audit_sessions(_: Principal = Depends(can_view)) -> list[AuditSessionDTO]:
-        sink = pipeline.audit
-        # 列全部会话是内存实现的具体能力(端口只暴露 per-session 读);非内存实现暂返回空。
-        if not isinstance(sink, InMemoryAuditSink):
-            return []
+        sink = pipeline.audit  # 列全部会话走端口聚合方法(内存遍历 / SQLite 聚合查询)
         out: list[AuditSessionDTO] = []
         for sid in sink.session_ids():
             events = await sink.events(sid)

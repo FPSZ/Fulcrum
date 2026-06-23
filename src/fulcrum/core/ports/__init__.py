@@ -140,6 +140,11 @@ class AuditSink(Protocol):
     async:append 是安全关键写入,落库(SQLite/PG)是 IO;且架构 §7 要求"审计写入失败 →
     高危动作默认阻断",故必须 await 到「写成功与否」才放行,不能 fire-and-forget。
     events/verify 同为存储读取,统一 async,免得 P1 落库时回头改全链。
+
+    跨会话聚合读(`session_ids`/`all_events`)是端口契约的一部分:总览统计 / 事件流 /
+    工具流水 / 审计会话列表都要跨会话汇总,各 sink 须提供等价能力(内存遍历 dict、SQLite
+    一条聚合查询),调用方据端口直接调用、不再按具体实现类窄化。读取量小、同步即可,
+    刻意非 async(与 append 的"安全关键写入"区别对待)。
     """
 
     async def append(self, event: AuditEvent) -> AuditEvent: ...
@@ -147,6 +152,10 @@ class AuditSink(Protocol):
     async def events(self, session_id: str) -> list[AuditEvent]: ...
 
     async def verify_chain(self, session_id: str) -> bool: ...
+
+    def session_ids(self) -> list[str]: ...
+
+    def all_events(self) -> list[AuditEvent]: ...
 
 
 __all__ = [
