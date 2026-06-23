@@ -20,7 +20,15 @@ from .agent import (
     AssistantUiDirective,
 )
 from .catalog import DEFAULT_CATALOG, RISK_LEVELS, Action
-from .model_client import ModelReply, ModelTurn, make_dynamic_model_backend, to_function_spec
+from .model_client import (
+    ModelReply,
+    ModelTurn,
+    StreamChunk,
+    StreamTurn,
+    make_dynamic_model_backend,
+    make_dynamic_stream_backend,
+    to_function_spec,
+)
 from .planner import AssistantPlan, make_model_backend, plan
 from .services import AssistantServices
 
@@ -40,9 +48,12 @@ __all__ = [
     "ConfirmResult",
     "ModelReply",
     "ModelTurn",
+    "StreamChunk",
+    "StreamTurn",
     "UndoResult",
     "UndoStore",
     "make_dynamic_model_backend",
+    "make_dynamic_stream_backend",
     "make_model_backend",
     "plan",
     "to_function_spec",

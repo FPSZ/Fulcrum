@@ -13,9 +13,12 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from ...core.domain import AuditEvent, AuditEventType, Disposition
 from ...core.operations import operation_registry
@@ -143,6 +146,7 @@ def register_assistant_routes(
                     note=p.note,
                     action_token=p.action_token,
                     reversible=p.reversible,
+                    before=p.before,
                 )
                 for p in run.proposed_actions
             ],
@@ -150,6 +154,32 @@ def register_assistant_routes(
                 AssistantStepDTO(tool=s.tool, kind=s.kind, label=s.label, ok=s.ok, detail=s.detail)
                 for s in run.steps
             ],
+        )
+
+    @app.post("/assistant/chat/stream")
+    async def assistant_chat_stream(
+        body: AssistantChatRequest,
+        principal: Principal = Depends(can_operate),
+    ) -> StreamingResponse:
+        """流式真 Agent(SSE):逐字吐最终答复 + 实时下发 step/ui/proposal 事件。
+
+        与 /assistant/chat 同语义、同三道闸门;事件 `data: {json}\\n\\n`,类型见 agent.run_stream。
+        """
+        session_id = body.session_id or f"assistant:{principal.username}"
+
+        async def gen() -> AsyncIterator[bytes]:
+            if agent is None:
+                payload = {"type": "done", "session_id": session_id, "blocked": True,
+                           "reply": "助手 Agent 未装配(当前实例未启用)。"}
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
+                return
+            async for ev in agent.run_stream(body.message, principal, session_id):
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n".encode()
+
+        return StreamingResponse(
+            gen(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     # ── 写操作:确认执行 + 一键撤销(plan/11 §6;人闸在 chat 循环之外)──────

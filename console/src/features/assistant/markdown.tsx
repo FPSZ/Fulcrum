@@ -55,15 +55,15 @@ const components: ComponentProps<typeof ReactMarkdown>['components'] = {
   ),
   table: ({ children }) => (
     <div className="overflow-x-auto rounded-lg border border-line">
-      <table className="w-full border-collapse text-[14px]">{children}</table>
+      <table className="w-full border-collapse text-[15px]">{children}</table>
     </div>
   ),
   thead: ({ children }) => <thead className="bg-subtle">{children}</thead>,
   th: ({ children }) => (
-    <th className="border-b border-line px-4 py-2 text-left font-medium text-ink-2">{children}</th>
+    <th className="border-b border-line px-4 py-2.5 text-left font-medium text-ink-2">{children}</th>
   ),
   td: ({ children }) => (
-    <td className="border-b border-line px-4 py-2 align-top text-ink-2">{children}</td>
+    <td className="border-b border-line px-4 py-2.5 align-top text-ink-2">{children}</td>
   ),
   tr: ({ children }) => <tr className="last:[&>td]:border-0">{children}</tr>,
   hr: () => <hr className="border-line" />,

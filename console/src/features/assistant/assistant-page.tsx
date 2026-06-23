@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { ArrowUp, Check, ChevronDown, Loader2, RotateCcw, Sparkles, X } from 'lucide-react'
 import { toast } from '@/components/ui'
 import { useNavigateFeature } from '@/lib/nav'
@@ -8,10 +9,11 @@ import {
   PAGE_TO_FEATURE,
   type ProposalState,
   type ProposedAction,
+  type StreamEvent,
   type UiDirective,
 } from './data'
 import { Markdown } from './markdown'
-import { confirmAction, sendChat, undoAction } from './use-assistant'
+import { confirmAction, sendChatStream, undoAction } from './use-assistant'
 
 // 起步意图(空态建议)—— 覆盖查/办/跳,克制不堆砌。
 const SUGGESTIONS = [
@@ -20,6 +22,11 @@ const SUGGESTIONS = [
   '列出待审批的账号',
   '把上游网关名称改一下',
 ]
+
+// 能力速记(空态副标题,克制不啰嗦)。
+const CAPS = ['数据查询', '业务办理', '页面跳转', '更改设置']
+
+const EASE = [0.25, 1, 0.5, 1] as const
 
 const newId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -83,6 +90,35 @@ export function AssistantPage() {
     [navigate],
   )
 
+  // 流式更新:把某条 SSE 事件并入 id=aid 的助手消息。
+  const applyEvent = useCallback(
+    (aid: string, ev: StreamEvent) => {
+      if (ev.type === 'ui') {
+        runDirective(ev)
+        return
+      }
+      setMessages((ms) =>
+        ms.map((x) => {
+          if (x.id !== aid || x.role !== 'assistant') return x
+          if (ev.type === 'delta') return { ...x, pending: false, text: x.text + ev.text }
+          if (ev.type === 'step') return { ...x, pending: false, steps: [...x.steps, ev] }
+          if (ev.type === 'proposal')
+            return { ...x, pending: false, proposals: [...x.proposals, toProposalState(ev)] }
+          if (ev.type === 'done')
+            return {
+              ...x,
+              pending: false,
+              streaming: false,
+              blocked: ev.blocked,
+              text: ev.reply || x.text,
+            }
+          return x
+        }),
+      )
+    },
+    [runDirective],
+  )
+
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim()
@@ -96,6 +132,7 @@ export function AssistantPage() {
           role: 'assistant',
           text: '',
           pending: true,
+          streaming: true,
           blocked: false,
           steps: [],
           proposals: [],
@@ -103,36 +140,25 @@ export function AssistantPage() {
       ])
       setBusy(true)
       try {
-        const res = await sendChat(text, sessionId)
-        res.ui_directives.forEach(runDirective)
-        const proposals = res.proposed_actions.map(toProposalState)
-        setMessages((m) =>
-          m.map((x) =>
-            x.id === aid && x.role === 'assistant'
-              ? {
-                  ...x,
-                  pending: false,
-                  text: res.reply,
-                  blocked: res.blocked,
-                  steps: res.steps,
-                  proposals,
-                }
-              : x,
-          ),
-        )
+        await sendChatStream(text, sessionId, (ev) => applyEvent(aid, ev))
       } catch (e) {
         setMessages((m) =>
           m.map((x) =>
             x.id === aid && x.role === 'assistant'
-              ? { ...x, pending: false, text: `出错:${(e as Error).message}` }
+              ? { ...x, pending: false, streaming: false, text: `出错:${(e as Error).message}` }
               : x,
           ),
         )
       } finally {
         setBusy(false)
+        setMessages((m) =>
+          m.map((x) =>
+            x.id === aid && x.role === 'assistant' ? { ...x, pending: false, streaming: false } : x,
+          ),
+        )
       }
     },
-    [busy, runDirective, sessionId],
+    [busy, sessionId, applyEvent],
   )
 
   const confirm = useCallback(
@@ -186,69 +212,111 @@ export function AssistantPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-canvas">
-      {empty ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-16">
-          <div className="w-full max-w-[840px]">
-            <div className="mb-7 flex flex-col items-center gap-3 text-center">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-accent/10 text-accent">
-                <Sparkles className="h-6 w-6" />
+      <AnimatePresence mode="wait" initial={false}>
+        {empty ? (
+          <motion.div
+            key="hero"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: EASE }}
+            className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-16"
+          >
+            <div className="w-full max-w-[840px]">
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: EASE }}
+                className="mb-7 flex flex-col items-center gap-3 text-center"
+              >
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-accent/10 text-accent">
+                  <Sparkles className="h-6 w-6" />
+                </div>
+                <h1 className="text-[28px] font-semibold tracking-tight text-ink">
+                  需要我帮你做点什么?
+                </h1>
+                <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[15px] text-ink-3">
+                  {CAPS.map((c, i) => (
+                    <span key={c} className="flex items-center gap-2.5">
+                      {i > 0 && <span className="text-line-3">·</span>}
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: EASE, delay: 0.05 }}
+              >
+                <Composer onSend={send} busy={busy} autoFocus />
+              </motion.div>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {SUGGESTIONS.map((s, i) => (
+                  <motion.button
+                    key={s}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: EASE, delay: 0.12 + i * 0.05 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => send(s)}
+                    className="focus-ring rounded-full border border-line-2 bg-surface px-4 py-2 text-[14px] text-ink-2 transition-colors hover:border-line-3 hover:bg-surface-2"
+                  >
+                    {s}
+                  </motion.button>
+                ))}
               </div>
-              <h1 className="text-[28px] font-semibold tracking-tight text-ink">
-                需要我帮你做点什么?
-              </h1>
-              <p className="text-[15px] text-ink-3">
-                用自然语言下达意图,我在你的权限内查询、办理、跳转。写操作先给可编辑提案,确认后执行、可一键撤销。
-              </p>
             </div>
-            <Composer onSend={send} busy={busy} autoFocus />
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => send(s)}
-                  className="focus-ring rounded-full border border-line-2 bg-surface px-4 py-2 text-[14px] text-ink-2 transition-colors hover:border-line-3 hover:bg-surface-2"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-[880px] px-4 py-8">
-              <div className="space-y-7">
-                {messages.map((m) =>
-                  m.role === 'user' ? (
-                    <UserTurn key={m.id} text={m.text} />
-                  ) : (
-                    <AssistantTurn
+          </motion.div>
+        ) : (
+          <motion.div
+            key="chat"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.25, ease: EASE }}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+              <div className="mx-auto max-w-[1040px] px-6 py-8">
+                <div className="space-y-7">
+                  {messages.map((m) => (
+                    <motion.div
                       key={m.id}
-                      msg={m}
-                      onConfirm={confirm}
-                      onCancel={(p) => patchProposal(p.id, { status: 'cancelled' })}
-                      onUndo={undo}
-                      onEdit={(p, k, v) =>
-                        patchProposal(p.id, { editedArgs: { ...p.editedArgs, [k]: v } })
-                      }
-                    />
-                  ),
-                )}
+                      layout="position"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.28, ease: EASE }}
+                    >
+                      {m.role === 'user' ? (
+                        <UserTurn text={m.text} />
+                      ) : (
+                        <AssistantTurn
+                          msg={m}
+                          onConfirm={confirm}
+                          onCancel={(p) => patchProposal(p.id, { status: 'cancelled' })}
+                          onUndo={undo}
+                          onEdit={(p, k, v) =>
+                            patchProposal(p.id, { editedArgs: { ...p.editedArgs, [k]: v } })
+                          }
+                        />
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+                <div ref={endRef} />
               </div>
-              <div ref={endRef} />
             </div>
-          </div>
-          <div className="px-4 pb-5">
-            <div className="mx-auto max-w-[880px]">
-              <Composer onSend={send} busy={busy} />
-              <p className="mt-2 text-center text-[13.5px] text-ink-mute">
-                助手在权限闸门内操作,工具调用与写操作均经审计、可一键撤销 · AI 可能出错,请核对
-              </p>
+            <div className="px-4 pb-5">
+              <div className="mx-auto max-w-[1040px]">
+                <Composer onSend={send} busy={busy} />
+                <p className="mt-2 text-center text-[13.5px] text-ink-mute">
+                  助手在权限闸门内操作,工具调用与写操作均经审计、可一键撤销 · AI 可能出错,请核对
+                </p>
+              </div>
             </div>
-          </div>
-        </>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -284,7 +352,7 @@ function Composer({
   }
 
   return (
-    <div className="rounded-[26px] border border-line-2 bg-surface px-3.5 pt-3 pb-2.5 shadow-sm transition-colors focus-within:border-line-3 focus-within:shadow-md">
+    <div className="rounded-[26px] border border-line-2 bg-surface px-3.5 pb-2.5 pt-3 shadow-sm transition-all focus-within:border-line-3 focus-within:shadow-md">
       <textarea
         ref={ref}
         value={value}
@@ -302,14 +370,20 @@ function Composer({
       />
       <div className="mt-1.5 flex items-center justify-between pl-1.5">
         <span className="text-[13.5px] text-ink-mute">Enter 发送 · Shift+Enter 换行</span>
-        <button
+        <motion.button
           onClick={submit}
           disabled={busy || !value.trim()}
           aria-label="发送"
+          whileTap={{ scale: 0.88 }}
+          transition={{ duration: 0.12 }}
           className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-ink text-white transition-colors hover:bg-ink-2 disabled:bg-line-3 disabled:text-white"
         >
-          {busy ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <ArrowUp className="h-[18px] w-[18px]" />}
-        </button>
+          {busy ? (
+            <Loader2 className="h-[18px] w-[18px] animate-spin" />
+          ) : (
+            <ArrowUp className="h-[18px] w-[18px]" />
+          )}
+        </motion.button>
       </div>
     </div>
   )
@@ -351,7 +425,14 @@ function AssistantTurn({ msg, onConfirm, onCancel, onUndo, onEdit }: AssistantTu
                 <X className="h-3 w-3" /> 已被安全网关拦截
               </div>
             )}
-            {msg.text && <Markdown>{msg.text}</Markdown>}
+            {msg.text && (
+              <div className="relative">
+                <Markdown>{msg.text}</Markdown>
+                {msg.streaming && (
+                  <span className="ml-0.5 inline-block h-[15px] w-[2px] translate-y-[2px] animate-pulse bg-ink-2 align-middle" />
+                )}
+              </div>
+            )}
             {msg.steps.length > 0 && <Trace steps={msg.steps} />}
             {msg.proposals.map((p) => (
               <ProposalCard
@@ -391,26 +472,36 @@ function Trace({ steps }: { steps: AssistantStep[] }) {
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />
         执行过程 · {steps.length} 步
       </button>
-      {open && (
-        <div className="mt-1.5 space-y-1 border-l border-line pl-3">
-          {steps.map((s, i) => (
-            <div key={i} className="flex items-start gap-2 text-[13.5px]">
-              {s.ok ? (
-                <Check className="mt-0.5 h-3 w-3 shrink-0 text-ok" />
-              ) : (
-                <X className="mt-0.5 h-3 w-3 shrink-0 text-crit" />
-              )}
-              <span className="shrink-0 text-ink-2">{s.label}</span>
-              <span className="min-w-0 truncate text-ink-mute">{s.detail}</span>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: EASE }}
+            className="overflow-hidden"
+          >
+            <div className="mt-1.5 space-y-1 border-l border-line pl-3">
+              {steps.map((s, i) => (
+                <div key={i} className="flex items-start gap-2 text-[13.5px]">
+                  {s.ok ? (
+                    <Check className="mt-0.5 h-3 w-3 shrink-0 text-ok" />
+                  ) : (
+                    <X className="mt-0.5 h-3 w-3 shrink-0 text-crit" />
+                  )}
+                  <span className="shrink-0 text-ink-2">{s.label}</span>
+                  <span className="min-w-0 truncate text-ink-mute">{s.detail}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
-// ─────────────────────────── 写操作:可编辑提案卡片 ───────────────────────────
+// ─────────────────────────── 写操作:可编辑提案卡片(VSCode 式差异)───────────────────────────
 
 const RISK_DOT: Record<string, string> = {
   high: 'bg-crit',
@@ -429,10 +520,16 @@ interface ProposalCardProps {
 function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardProps) {
   const editing = p.status === 'editing'
   const entries = Object.entries(p.editedArgs)
+  const before = p.action.before ?? {}
   const done = p.status === 'done' || p.status === 'undoing' || p.status === 'undone'
 
   return (
-    <div className="space-y-3 rounded-2xl border border-line bg-surface p-4 shadow-sm">
+    <motion.div
+      initial={{ opacity: 0, scale: 0.985, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.26, ease: EASE }}
+      className="space-y-3 rounded-2xl border border-line bg-surface p-4 shadow-sm"
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className={`h-2 w-2 shrink-0 rounded-full ${RISK_DOT[p.action.risk] ?? 'bg-med'}`} />
@@ -452,6 +549,8 @@ function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardPr
               key={k}
               name={k}
               value={v}
+              hasBefore={k in before}
+              before={before[k]}
               disabled={!editing}
               onChange={(nv) => onEdit(k, nv)}
             />
@@ -468,12 +567,13 @@ function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardPr
       <div className="flex items-center gap-2">
         {editing && (
           <>
-            <button
+            <motion.button
+              whileTap={{ scale: 0.95 }}
               onClick={onConfirm}
               className="focus-ring rounded-lg bg-ink px-3.5 py-2 text-[14px] font-medium text-white transition-colors hover:bg-ink-2"
             >
               确认执行
-            </button>
+            </motion.button>
             <button
               onClick={onCancel}
               className="focus-ring rounded-lg px-3.5 py-2 text-[14px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink-2"
@@ -489,13 +589,14 @@ function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardPr
         )}
         {p.status === 'cancelled' && <span className="text-[13.5px] text-ink-mute">已取消</span>}
         {p.status === 'done' && p.reversible && p.actionId && (
-          <button
+          <motion.button
+            whileTap={{ scale: 0.95 }}
             onClick={onUndo}
             className="focus-ring inline-flex items-center gap-1 rounded-lg border border-line-2 px-3.5 py-2 text-[14px] text-ink-2 transition-colors hover:border-line-3 hover:bg-surface-2"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             撤销{p.undoPreview ? `(${p.undoPreview})` : ''}
-          </button>
+          </motion.button>
         )}
         {p.status === 'done' && !(p.reversible && p.actionId) && (
           <span className="inline-flex items-center gap-1 text-[13.5px] text-ok">
@@ -513,21 +614,69 @@ function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardPr
           </span>
         )}
       </div>
-    </div>
+    </motion.div>
   )
+}
+
+function asText(v: unknown): string {
+  if (typeof v === 'boolean') return v ? '是' : '否'
+  return String(v ?? '')
 }
 
 function FieldRow({
   name,
   value,
+  before,
+  hasBefore,
   disabled,
   onChange,
 }: {
   name: string
   value: unknown
+  before: unknown
+  hasBefore: boolean
   disabled: boolean
   onChange: (v: unknown) => void
 }) {
+  const changed = hasBefore && asText(before) !== asText(value)
+
+  // 改动字段:VSCode 式 before→after(红删/绿增),新值可编辑。
+  if (changed) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-line font-mono text-[13.5px]">
+        <div className="flex gap-2 bg-crit/8 px-3 py-1.5 text-crit">
+          <span className="select-none opacity-60">−</span>
+          <span className="shrink-0 opacity-80">{name}:</span>
+          <span className="min-w-0 break-all line-through opacity-90">{asText(before)}</span>
+        </div>
+        <div className="flex items-center gap-2 bg-ok/12 px-3 py-1.5">
+          <span className="select-none text-ok opacity-70">+</span>
+          <span className="shrink-0 text-ink-3">{name}:</span>
+          {typeof value === 'boolean' ? (
+            <input
+              type="checkbox"
+              checked={value}
+              disabled={disabled}
+              onChange={(e) => onChange(e.target.checked)}
+              className="h-[16px] w-[16px] accent-accent disabled:opacity-60"
+            />
+          ) : (
+            <input
+              type={typeof value === 'number' ? 'number' : 'text'}
+              value={typeof value === 'number' ? value : String(value ?? '')}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange(typeof value === 'number' ? e.target.valueAsNumber : e.target.value)
+              }
+              className="focus-ring min-w-0 flex-1 rounded border border-ok/30 bg-surface px-2 py-0.5 text-ink disabled:opacity-60"
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // 普通字段:紧凑可编辑行。
   return (
     <div className="flex items-center gap-3">
       <label className="w-32 shrink-0 truncate text-[14px] text-ink-3">{name}</label>

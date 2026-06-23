@@ -18,7 +18,12 @@ from fastapi.testclient import TestClient
 
 from fulcrum.adapters.api import build_api
 from fulcrum.adapters.assistant import AssistantAgent, AssistantServices
-from fulcrum.adapters.assistant.model_client import ModelReply, ModelTurn, ToolCallReq
+from fulcrum.adapters.assistant.model_client import (
+    ModelReply,
+    ModelTurn,
+    StreamChunk,
+    ToolCallReq,
+)
 from fulcrum.adapters.auth import build_auth_bundle
 from fulcrum.adapters.auth.models import Principal
 from fulcrum.adapters.auth.permissions import ALL_PERMISSION_KEYS
@@ -114,6 +119,40 @@ def test_over_privileged_tool_denied_at_depth(tmp_path: Path) -> None:
     )
     res = asyncio.run(agent.run("列出所有成员", low, "s-rbac"))
     assert any(s.tool == "list_users" and not s.ok for s in res.steps)
+
+
+def test_run_stream_emits_delta_step_and_done(tmp_path: Path) -> None:
+    """流式:read 工具产 step 事件,最终答复逐字 delta,收尾 done。"""
+    pipeline = _pipeline(tmp_path)
+    turns = [
+        [StreamChunk(final=ModelReply(tool_calls=[ToolCallReq("1", "get_overview_stats", {})]))],
+        [
+            StreamChunk(delta="总览"),
+            StreamChunk(delta="完成"),
+            StreamChunk(final=ModelReply(content="总览完成")),
+        ],
+    ]
+    state = {"n": 0}
+
+    async def stream(_messages: list[dict], _tools: list[dict]):
+        frames = turns[state["n"]] if state["n"] < len(turns) else [StreamChunk(final=ModelReply())]
+        state["n"] += 1
+        for f in frames:
+            yield f
+
+    agent = AssistantAgent(pipeline, _services(tmp_path, pipeline), _scripted(), stream_turn=stream)
+
+    async def collect() -> list[dict]:
+        out = []
+        async for ev in agent.run_stream("看下总览", _principal(ALL_PERMISSION_KEYS), "s-stream"):
+            out.append(ev)
+        return out
+
+    events = asyncio.run(collect())
+    types = [e["type"] for e in events]
+    assert "step" in types and "delta" in types and types[-1] == "done"
+    assert "".join(e["text"] for e in events if e["type"] == "delta") == "总览完成"
+    assert events[-1]["reply"] == "总览完成" and not events[-1]["blocked"]
 
 
 def test_registry_visible_for_filters_by_permission() -> None:

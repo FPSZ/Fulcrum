@@ -10,8 +10,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 
 from ...core.operations import AssistantTool
@@ -41,6 +42,18 @@ class ModelReply:
 ModelTurn = Callable[[list[dict], list[dict]], Awaitable[ModelReply]]
 
 
+@dataclass(slots=True)
+class StreamChunk:
+    """流式一帧:要么是一段文本增量(delta),要么是本轮装配完成的最终回复(final)。"""
+
+    delta: str | None = None
+    final: ModelReply | None = None
+
+
+# 流式后端契约:(messages, tools) -> 逐帧异步迭代;最后一帧带 final=ModelReply。
+StreamTurn = Callable[[list[dict], list[dict]], AsyncIterator[StreamChunk]]
+
+
 def to_function_spec(tool: AssistantTool) -> dict:
     """把 operation 描述符转成 OpenAI function-calling 工具规格(模型线格式,属适配层)。"""
     return {
@@ -67,6 +80,70 @@ def _parse_reply(data: dict) -> ModelReply:
             )
         )
     return ModelReply(content=str(message.get("content") or ""), tool_calls=calls)
+
+
+def make_dynamic_stream_backend(
+    endpoint: str, api_key: str, model: str, timeout: float = 90.0
+) -> StreamTurn:
+    """流式后端:OpenAI 兼容 /chat/completions(stream=true),逐帧吐文本增量 + 装配 tool_calls。
+
+    模型一轮要么吐 content(最终答复,逐字流给前端),要么吐 tool_calls(增量分片,按 index
+    拼回完整名/参数)。失败软降级:把已收到的内容装配成 final 返回,绝不抛断流。
+    """
+
+    async def stream_turn(messages: list[dict], tools: list[dict]) -> AsyncIterator[StreamChunk]:
+        import httpx
+
+        url = endpoint.rstrip("/") + "/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        payload: dict = {"model": model, "messages": messages, "temperature": 0.2, "stream": True}
+        if tools:
+            payload["tools"] = tools
+
+        content = ""
+        tool_acc: dict[int, dict] = {}
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            obj = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = (obj.get("choices") or [{}])[0].get("delta") or {}
+                        piece = delta.get("content")
+                        if piece:
+                            content += piece
+                            yield StreamChunk(delta=piece)
+                        for tc in delta.get("tool_calls") or []:
+                            idx = tc.get("index", 0)
+                            slot = tool_acc.setdefault(idx, {"id": "", "name": "", "args": ""})
+                            if tc.get("id"):
+                                slot["id"] = tc["id"]
+                            fn = tc.get("function") or {}
+                            if fn.get("name"):
+                                slot["name"] = fn["name"]
+                            if fn.get("arguments"):
+                                slot["args"] += fn["arguments"]
+        except Exception as exc:  # noqa: BLE001 —— 断流软降级,用已收内容收尾
+            _LOG.warning("assistant 流式调用失败:%s", exc)
+
+        calls = [
+            ToolCallReq(id=s["id"] or s["name"], name=s["name"], arguments=_parse_args(s["args"]))
+            for s in tool_acc.values()
+            if s["name"]
+        ]
+        yield StreamChunk(final=ModelReply(content=content, tool_calls=calls))
+
+    return stream_turn
 
 
 def make_dynamic_model_backend(

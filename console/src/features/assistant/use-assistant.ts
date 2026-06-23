@@ -6,6 +6,7 @@ import type {
   ChatResponse,
   ConfirmResponse,
   PlanResult,
+  StreamEvent,
   UndoResponse,
 } from './data'
 
@@ -66,4 +67,50 @@ export function confirmAction(
 /** 一键撤销某已执行写操作。越权 → 后端 403。 */
 export function undoAction(actionId: string, sessionId: string): Promise<UndoResponse> {
   return api<UndoResponse>('/assistant/undo', j({ action_id: actionId, session_id: sessionId }))
+}
+
+/**
+ * 流式真 Agent(SSE,POST /assistant/chat/stream)。逐帧回调:delta(逐字)/ step / ui /
+ * proposal / done。fetch + ReadableStream 解析 `data: {json}\n\n`,边到边更新对话。
+ */
+export async function sendChatStream(
+  message: string,
+  sessionId: string,
+  onEvent: (ev: StreamEvent) => void,
+): Promise<void> {
+  const res = await fetch('/assistant/chat/stream', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, session_id: sessionId }),
+  })
+  if (!res.ok || !res.body) {
+    let detail = '助手请求失败'
+    try {
+      detail = ((await res.json()) as { detail?: string })?.detail ?? detail
+    } catch {
+      /* 非 JSON 错误体,沿用默认 */
+    }
+    throw new Error(detail)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let idx: number
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, idx)
+      buf = buf.slice(idx + 2)
+      const line = frame.split('\n').find((l) => l.startsWith('data:'))
+      if (!line) continue
+      try {
+        onEvent(JSON.parse(line.slice(5).trim()) as StreamEvent)
+      } catch {
+        /* 半截/坏帧,跳过 */
+      }
+    }
+  }
 }

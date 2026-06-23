@@ -421,6 +421,12 @@ async def _set_user_status_undo(args: dict, principal: Any, services: Any) -> Op
     return OperationResult(summary=f"已回滚成员 {args['user_id']} 状态为 {args['status']}。")
 
 
+async def _set_user_status_before(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    user = d.get_user(int(args["user_id"])) if d and args.get("user_id") is not None else None
+    return OperationResult(summary="", data={"status": user.status if user else None})
+
+
 operation_registry.register(
     AssistantTool(
         name="set_user_status",
@@ -441,6 +447,7 @@ operation_registry.register(
         reversible=True,
         inverse="恢复为原状态",
         undo_handler=_set_user_status_undo,
+        before_handler=_set_user_status_before,
     )
 )
 
@@ -527,19 +534,46 @@ async def _update_gateway_config_undo(args: dict, principal: Any, services: Any)
     return OperationResult(summary="已回滚上游网关配置为原值。")
 
 
+async def _update_gateway_config_before(
+    args: dict, principal: Any, services: Any
+) -> OperationResult:
+    store = services.gateway_store
+    old = store.load().model_dump() if store else {}
+    return OperationResult(summary="", data={k: old.get(k) for k in (args or {})})
+
+
+# 只把"操作员常改"的字段开放给模型/卡片(密钥 auth_value 不在卡片明文回显之列由前端按需)。
+_GATEWAY_PARAMS = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "上游名称"},
+        "enabled": {"type": "boolean", "description": "是否启用接入"},
+        "protocol": {"type": "string", "enum": ["openai", "rest", "native"]},
+        "endpoint": {"type": "string", "description": "上游地址,如 http://10.0.0.5:8000/v1"},
+        "path": {"type": "string", "description": "请求路径,留空按协议默认"},
+        "model": {"type": "string", "description": "模型名(openai 协议用)"},
+        "timeout_seconds": {"type": "number", "description": "超时秒数"},
+        "verify_tls": {"type": "boolean", "description": "是否校验 TLS 证书"},
+    },
+}
+
 operation_registry.register(
     AssistantTool(
         name="update_gateway_config",
         kind="write",
         label="改上游网关配置",
-        description="按字段补丁更新上游接入配置(协议/端点/模型/认证等)。高危:影响所有转发请求。",
-        parameters={"type": "object", "properties": {}},
+        description=(
+            "按字段补丁更新上游接入配置;**只把要改的字段放进参数**(如只改名就只传 name)。"
+            "高危:影响所有转发请求。"
+        ),
+        parameters=_GATEWAY_PARAMS,
         requires=("settings.manage",),
         risk="high",
         handler=_update_gateway_config,
         reversible=True,
         inverse="恢复为原配置",
         undo_handler=_update_gateway_config_undo,
+        before_handler=_update_gateway_config_before,
     )
 )
 
@@ -566,18 +600,46 @@ async def _update_console_settings_undo(
     return OperationResult(summary="已回滚控制台设置为原值。")
 
 
+async def _update_console_settings_before(
+    args: dict, principal: Any, services: Any
+) -> OperationResult:
+    store = services.console_store
+    old = store.load().model_dump() if store else {}
+    return OperationResult(summary="", data={k: old.get(k) for k in (args or {})})
+
+
+_CONSOLE_PARAMS = {
+    "type": "object",
+    "properties": {
+        "instance_name": {"type": "string", "description": "实例名称"},
+        "environment": {"type": "string", "enum": ["prod", "staging", "demo"]},
+        "language": {"type": "string", "enum": ["zh", "en"]},
+        "timezone": {"type": "string", "enum": ["sh", "utc"]},
+        "chain_verify_freq": {"type": "string", "enum": ["event", "5m", "1h"]},
+        "audit_retention": {"type": "string", "enum": ["90d", "180d", "1y", "forever"]},
+        "export_format": {"type": "string", "enum": ["jsonl", "csv"]},
+        "notify_severe": {"type": "boolean"},
+        "notify_approval": {"type": "boolean"},
+        "notify_channel": {"type": "string", "enum": ["inapp", "webhook", "email"]},
+    },
+}
+
 operation_registry.register(
     AssistantTool(
         name="update_console_settings",
         kind="write",
         label="改控制台设置",
-        description="按字段补丁更新控制台通用设置(实例名/语言/留存/通知等,非安全红线项)。",
-        parameters={"type": "object", "properties": {}},
+        description=(
+            "按字段补丁更新控制台通用设置(实例名/语言/留存/通知等,非安全红线项);"
+            "**只把要改的字段放进参数**。"
+        ),
+        parameters=_CONSOLE_PARAMS,
         requires=("settings.manage",),
         risk="normal",
         handler=_update_console_settings,
         reversible=True,
         inverse="恢复为原设置",
         undo_handler=_update_console_settings_undo,
+        before_handler=_update_console_settings_before,
     )
 )

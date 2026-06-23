@@ -133,6 +133,7 @@ def build_api(
             AssistantServices,
             UndoStore,
             make_dynamic_model_backend,
+            make_dynamic_stream_backend,
         )
 
         assistant_services = AssistantServices(
@@ -149,8 +150,15 @@ def build_api(
         )
         token_signer = ActionTokenSigner()
         undo_store = UndoStore()
+        stream_turn = make_dynamic_stream_backend(
+            settings.model_endpoint, settings.model_api_key, settings.model_name
+        )
         assistant_agent = AssistantAgent(
-            pipeline, assistant_services, model_turn, token_signer=token_signer
+            pipeline,
+            assistant_services,
+            model_turn,
+            token_signer=token_signer,
+            stream_turn=stream_turn,
         )
         assistant_actuator = AssistantActuator(
             operation_registry, assistant_services, token_signer, undo_store

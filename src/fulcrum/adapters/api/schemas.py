@@ -494,6 +494,7 @@ class AssistantProposedActionDTO(BaseModel):
     note: str = ""
     action_token: str = ""  # 防篡改令牌,确认时回传
     reversible: bool = False  # 执行后能否一键撤销
+    before: dict = Field(default_factory=dict)  # 改动字段的当前值(before→after 差异)
 
 
 class AssistantStepDTO(BaseModel):

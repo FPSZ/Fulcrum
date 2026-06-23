@@ -71,6 +71,9 @@ class AssistantTool:
     # write 撤销执行器:吃 handler 执行时返回的 `OperationResult.undo`(前态快照)→ 回滚。
     # reversible=True 必须提供;reversible=False(如幂等无副作用的扫描)可缺。
     undo_handler: OperationHandler | None = None
+    # write 提案预览器(只读):据待改参数返回**当前值** dict(改动键→现值),供卡片做
+    # before→after 差异展示(VSCode 式红/绿)。可选;缺省则卡片只显示新值。
+    before_handler: OperationHandler | None = None
 
     def visible_to(self, principal: Any) -> bool:
         """该角色是否被授权调用本操作(requires ⊆ 角色权限)。"""
