@@ -1,7 +1,7 @@
 {
   "name": "fulcrum-console",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "枢衡 Fulcrum 安全控制台 · 私有化部署 Web 控制台",
   "scripts": {

@@ -463,6 +463,16 @@ class AssistantChatRequest(BaseModel):
     session_id: str | None = Field(default=None, max_length=128)
 
 
+class AssistantResetRequest(BaseModel):
+    """清空某会话的多轮记忆(新建会话 / 显式清除上下文)。"""
+
+    session_id: str = Field(min_length=1, max_length=128)
+
+
+class AssistantResetResponse(BaseModel):
+    ok: bool = True
+
+
 class AssistantToolDTO(BaseModel):
     """当前角色可调的一个工具(供助手面板侧栏 + /assistant/tools 列出)。"""
 
@@ -511,6 +521,7 @@ class AssistantChatResponse(BaseModel):
     session_id: str
     reply: str
     blocked: bool = False
+    compressed: bool = False  # 本轮是否触发上下文自动压缩
     ui_directives: list[AssistantUiDirectiveDTO] = Field(default_factory=list)
     proposed_actions: list[AssistantProposedActionDTO] = Field(default_factory=list)
     steps: list[AssistantStepDTO] = Field(default_factory=list)

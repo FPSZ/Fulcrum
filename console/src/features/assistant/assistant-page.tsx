@@ -1,7 +1,21 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowUp, Check, ChevronDown, Loader2, RotateCcw, Sparkles, X } from 'lucide-react'
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { toast } from '@/components/ui'
+import { cn } from '@/lib/utils'
+import { useMediaQuery } from '@/lib/use-media-query'
 import { useNavigateFeature } from '@/lib/nav'
 import {
   type AssistantStep,
@@ -13,7 +27,8 @@ import {
   type UiDirective,
 } from './data'
 import { Markdown } from './markdown'
-import { confirmAction, sendChatStream, undoAction } from './use-assistant'
+import { confirmAction, resetAssistant, sendChatStream, undoAction } from './use-assistant'
+import { type Conversation, useConversations } from './use-conversations'
 
 // 起步意图(空态建议)—— 覆盖查/办/跳,克制不堆砌。
 const SUGGESTIONS = [
@@ -48,9 +63,17 @@ function toProposalState(a: ProposedAction): ProposalState {
 
 export function AssistantPage() {
   const navigate = useNavigateFeature()
-  const sessionId = useMemo(() => `assistant:web:${newId().slice(0, 8)}`, [])
+  // 多会话:每条会话 = 独立 session_id(后端记忆按它分桶)。切换会话即切上下文,各自延续。
+  const {
+    activeId,
+    messages,
+    history,
+    setMessagesOf,
+    newConversation,
+    selectConversation,
+    removeConversation,
+  } = useConversations()
 
-  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [busy, setBusy] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
@@ -59,15 +82,18 @@ export function AssistantPage() {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages])
 
-  const patchProposal = useCallback((propId: string, patch: Partial<ProposalState>) => {
-    setMessages((ms) =>
-      ms.map((m) =>
-        m.role === 'assistant'
-          ? { ...m, proposals: m.proposals.map((p) => (p.id === propId ? { ...p, ...patch } : p)) }
-          : m,
-      ),
-    )
-  }, [])
+  const patchProposal = useCallback(
+    (propId: string, patch: Partial<ProposalState>) => {
+      setMessagesOf(activeId, (ms) =>
+        ms.map((m) =>
+          m.role === 'assistant'
+            ? { ...m, proposals: m.proposals.map((p) => (p.id === propId ? { ...p, ...patch } : p)) }
+            : m,
+        ),
+      )
+    },
+    [activeId, setMessagesOf],
+  )
 
   const runDirective = useCallback(
     (d: UiDirective) => {
@@ -90,14 +116,19 @@ export function AssistantPage() {
     [navigate],
   )
 
-  // 流式更新:把某条 SSE 事件并入 id=aid 的助手消息。
+  // 流式更新:把某条 SSE 事件并入会话 cid 里 id=aid 的助手消息(按捕获的 cid 定向,切换会话不串)。
   const applyEvent = useCallback(
-    (aid: string, ev: StreamEvent) => {
+    (cid: string, aid: string, ev: StreamEvent) => {
       if (ev.type === 'ui') {
         runDirective(ev)
         return
       }
-      setMessages((ms) =>
+      if (ev.type === 'done' && ev.compressed) {
+        toast('已自动压缩较早的上下文', {
+          description: '对话较长,枢衡已把更早的内容压成摘要以延续上下文。',
+        })
+      }
+      setMessagesOf(cid, (ms) =>
         ms.map((x) => {
           if (x.id !== aid || x.role !== 'assistant') return x
           if (ev.type === 'delta') return { ...x, pending: false, text: x.text + ev.text }
@@ -116,15 +147,16 @@ export function AssistantPage() {
         }),
       )
     },
-    [runDirective],
+    [runDirective, setMessagesOf],
   )
 
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim()
       if (!text || busy) return
+      const cid = activeId // 捕获当轮会话,流式回调按它写,期间切会话也不串
       const aid = newId()
-      setMessages((m) => [
+      setMessagesOf(cid, (m) => [
         ...m,
         { id: newId(), role: 'user', text },
         {
@@ -140,9 +172,9 @@ export function AssistantPage() {
       ])
       setBusy(true)
       try {
-        await sendChatStream(text, sessionId, (ev) => applyEvent(aid, ev))
+        await sendChatStream(text, cid, (ev) => applyEvent(cid, aid, ev))
       } catch (e) {
-        setMessages((m) =>
+        setMessagesOf(cid, (m) =>
           m.map((x) =>
             x.id === aid && x.role === 'assistant'
               ? { ...x, pending: false, streaming: false, text: `出错:${(e as Error).message}` }
@@ -151,21 +183,36 @@ export function AssistantPage() {
         )
       } finally {
         setBusy(false)
-        setMessages((m) =>
+        setMessagesOf(cid, (m) =>
           m.map((x) =>
             x.id === aid && x.role === 'assistant' ? { ...x, pending: false, streaming: false } : x,
           ),
         )
       }
     },
-    [busy, sessionId, applyEvent],
+    [busy, activeId, applyEvent, setMessagesOf],
+  )
+
+  // 新建会话:开一条新草稿(空态)。旧会话记忆保留,侧栏点回去上下文还在。
+  const startNew = useCallback(() => {
+    if (busy) return
+    newConversation()
+  }, [busy, newConversation])
+
+  // 删除会话:移出侧栏 + 清后端该会话的多轮记忆(释放磁盘)。
+  const deleteConversation = useCallback(
+    (id: string) => {
+      removeConversation(id)
+      void resetAssistant(id)
+    },
+    [removeConversation],
   )
 
   const confirm = useCallback(
     async (p: ProposalState) => {
       patchProposal(p.id, { status: 'confirming' })
       try {
-        const r = await confirmAction(p.action.action_token, p.editedArgs, sessionId)
+        const r = await confirmAction(p.action.action_token, p.editedArgs, activeId)
         if (r.ok) {
           patchProposal(p.id, {
             status: 'done',
@@ -184,7 +231,7 @@ export function AssistantPage() {
         toast.error((e as Error).message)
       }
     },
-    [patchProposal, sessionId],
+    [patchProposal, activeId],
   )
 
   const undo = useCallback(
@@ -192,7 +239,7 @@ export function AssistantPage() {
       if (!p.actionId) return
       patchProposal(p.id, { status: 'undoing' })
       try {
-        const r = await undoAction(p.actionId, sessionId)
+        const r = await undoAction(p.actionId, activeId)
         if (r.ok) {
           patchProposal(p.id, { status: 'undone', resultSummary: r.summary })
           toast.success('已撤销', { description: r.summary })
@@ -205,14 +252,31 @@ export function AssistantPage() {
         toast.error((e as Error).message)
       }
     },
-    [patchProposal, sessionId],
+    [patchProposal, activeId],
   )
 
   const empty = messages.length === 0
 
+  // 会话侧栏折叠:窄屏(<1280)自动收起;用户手动切换后以手动为准。
+  const sideNarrow = useMediaQuery('(max-width: 1280px)')
+  const [sideManual, setSideManual] = useState<boolean | null>(null)
+  const sideCollapsed = sideManual ?? sideNarrow
+  const toggleSide = useCallback(() => setSideManual(() => !sideCollapsed), [sideCollapsed])
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-canvas">
-      <AnimatePresence mode="wait" initial={false}>
+    <div className="flex min-h-0 flex-1 bg-canvas">
+      <ConversationSidebar
+        history={history}
+        activeId={activeId}
+        busy={busy}
+        collapsed={sideCollapsed}
+        onToggle={toggleSide}
+        onNew={startNew}
+        onSelect={selectConversation}
+        onDelete={deleteConversation}
+      />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <AnimatePresence mode="wait" initial={false}>
         {empty ? (
           <motion.div
             key="hero"
@@ -222,7 +286,7 @@ export function AssistantPage() {
             transition={{ duration: 0.25, ease: EASE }}
             className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-16"
           >
-            <div className="w-full max-w-[840px]">
+            <div className="w-full max-w-[768px]">
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -277,7 +341,7 @@ export function AssistantPage() {
             className="flex min-h-0 flex-1 flex-col"
           >
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-              <div className="mx-auto max-w-[1040px] px-6 py-8">
+              <div className="mx-auto max-w-[768px] px-5 py-8">
                 <div className="space-y-7">
                   {messages.map((m) => (
                     <motion.div
@@ -307,7 +371,7 @@ export function AssistantPage() {
               </div>
             </div>
             <div className="px-4 pb-5">
-              <div className="mx-auto max-w-[1040px]">
+              <div className="mx-auto max-w-[768px]">
                 <Composer onSend={send} busy={busy} />
                 <p className="mt-2 text-center text-[13.5px] text-ink-mute">
                   助手在权限闸门内操作,工具调用与写操作均经审计、可一键撤销 · AI 可能出错,请核对
@@ -316,8 +380,134 @@ export function AssistantPage() {
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
+        </AnimatePresence>
+      </div>
     </div>
+  )
+}
+
+// ─────────────────────────── 会话侧栏(Kimi 式:新建会话 + 历史)───────────────────────────
+
+function ConversationSidebar({
+  history,
+  activeId,
+  busy,
+  collapsed,
+  onToggle,
+  onNew,
+  onSelect,
+  onDelete,
+}: {
+  history: Conversation[]
+  activeId: string
+  busy: boolean
+  collapsed: boolean
+  onToggle: () => void
+  onNew: () => void
+  onSelect: (id: string) => void
+  onDelete: (id: string) => void
+}) {
+  return (
+    <motion.aside
+      animate={{ width: collapsed ? 56 : 264 }}
+      transition={{ duration: 0.22, ease: EASE }}
+      className="shrink-0 overflow-hidden border-r border-line bg-surface/50"
+    >
+      {collapsed ? (
+        // 收起态:窄轨,只留「展开」+「新建会话」两个图标
+        <div className="flex w-14 flex-col items-center gap-1.5 py-3.5">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label="展开会话栏"
+            className="focus-ring grid h-9 w-9 place-items-center rounded-[11px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+          >
+            <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={1.8} />
+          </button>
+          <button
+            type="button"
+            onClick={onNew}
+            disabled={busy}
+            aria-label="新建会话"
+            className="focus-ring grid h-9 w-9 place-items-center rounded-[11px] border border-line-2 bg-surface text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+          >
+            <Plus className="h-[18px] w-[18px]" strokeWidth={2} />
+          </button>
+        </div>
+      ) : (
+        <div className="flex h-full w-[264px] flex-col">
+          <div className="flex items-center justify-between px-3.5 pb-1 pt-3">
+            <span className="text-[13px] font-semibold text-ink-mute">会话</span>
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label="收起会话栏"
+              className="focus-ring grid h-7 w-7 place-items-center rounded-md text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink-2"
+            >
+              <PanelLeftClose className="h-4 w-4" strokeWidth={1.8} />
+            </button>
+          </div>
+          <div className="px-3.5 pb-1 pt-1.5">
+            <button
+              type="button"
+              onClick={onNew}
+              disabled={busy}
+              className="focus-ring flex w-full items-center gap-2 rounded-xl border border-line-2 bg-surface px-3.5 py-3 text-[14.5px] font-medium text-ink transition-colors hover:border-line-3 hover:bg-surface-2 disabled:opacity-50"
+            >
+              <Plus className="h-[18px] w-[18px]" strokeWidth={2} /> 新建会话
+            </button>
+          </div>
+          <div className="px-4 pb-2 pt-2.5 text-[12.5px] font-semibold tracking-wide text-ink-mute">
+            历史会话
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-3">
+        {history.length === 0 ? (
+          <p className="px-2 py-8 text-center text-[13px] leading-relaxed text-ink-mute">
+            暂无历史会话
+            <br />
+            开始对话即在此留存
+          </p>
+        ) : (
+          history.map((c) => {
+            const active = c.id === activeId
+            return (
+              <div
+                key={c.id}
+                className={cn(
+                  'group flex items-center gap-1 rounded-lg px-3 py-2.5 transition-colors',
+                  active ? 'bg-accent/12' : 'hover:bg-surface-2',
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelect(c.id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span
+                    className={cn(
+                      'block truncate text-[14px]',
+                      active ? 'font-medium text-accent-ink' : 'text-ink-2',
+                    )}
+                  >
+                    {c.title || '新对话'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="删除会话"
+                  onClick={() => onDelete(c.id)}
+                  className="focus-ring grid h-6 w-6 shrink-0 place-items-center rounded-md text-ink-mute opacity-0 transition-opacity hover:bg-line/40 hover:text-ink-2 group-hover:opacity-100"
+                >
+                  <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </button>
+              </div>
+            )
+          })
+        )}
+          </div>
+        </div>
+      )}
+    </motion.aside>
   )
 }
 
@@ -352,7 +542,8 @@ function Composer({
   }
 
   return (
-    <div className="rounded-[26px] border border-line-2 bg-surface px-3.5 pb-2.5 pt-3 shadow-sm transition-all focus-within:border-line-3 focus-within:shadow-md">
+    // Kimi 比例:圆角 ~18px、内容区高、底部一条工具栏(发送贴右),整体约 140px 高。
+    <div className="rounded-[18px] border border-line-2 bg-surface px-4 pb-3 pt-3.5 shadow-sm transition-all focus-within:border-line-3 focus-within:shadow-md">
       <textarea
         ref={ref}
         value={value}
@@ -366,10 +557,10 @@ function Composer({
           }
         }}
         placeholder="给助手下达任务…"
-        className="block max-h-[200px] w-full resize-none bg-transparent px-1.5 text-[16.5px] leading-7 text-ink outline-none placeholder:text-ink-mute"
+        className="block min-h-[60px] max-h-[200px] w-full resize-none bg-transparent px-1 text-[16px] leading-7 text-ink outline-none placeholder:text-ink-mute"
       />
-      <div className="mt-1.5 flex items-center justify-between pl-1.5">
-        <span className="text-[13.5px] text-ink-mute">Enter 发送 · Shift+Enter 换行</span>
+      <div className="mt-1 flex items-center justify-between px-0.5">
+        <span className="text-[13px] text-ink-mute">Enter 发送 · Shift+Enter 换行</span>
         <motion.button
           onClick={submit}
           disabled={busy || !value.trim()}

@@ -1,6 +1,6 @@
 [project]
 name = "fulcrum"
-version = "0.0.0"
+version = "0.5.0"
 description = "枢衡 Fulcrum —— 面向政企智能体的安全管控与评测中台"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"

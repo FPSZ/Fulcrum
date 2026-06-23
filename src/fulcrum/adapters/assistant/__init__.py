@@ -20,6 +20,7 @@ from .agent import (
     AssistantUiDirective,
 )
 from .catalog import DEFAULT_CATALOG, RISK_LEVELS, Action
+from .conversation import ConversationStore, Summarizer
 from .model_client import (
     ModelReply,
     ModelTurn,
@@ -46,10 +47,12 @@ __all__ = [
     "AssistantStep",
     "AssistantUiDirective",
     "ConfirmResult",
+    "ConversationStore",
     "ModelReply",
     "ModelTurn",
     "StreamChunk",
     "StreamTurn",
+    "Summarizer",
     "UndoResult",
     "UndoStore",
     "make_dynamic_model_backend",

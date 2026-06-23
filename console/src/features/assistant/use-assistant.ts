@@ -69,6 +69,15 @@ export function undoAction(actionId: string, sessionId: string): Promise<UndoRes
   return api<UndoResponse>('/assistant/undo', j({ action_id: actionId, session_id: sessionId }))
 }
 
+/** 清空某会话的多轮记忆(新建会话)。失败静默——前端已新建,后端旧记忆随会话自然失效。 */
+export async function resetAssistant(sessionId: string): Promise<void> {
+  try {
+    await api('/assistant/reset', j({ session_id: sessionId }))
+  } catch {
+    /* 后端清理失败不影响前端新建会话 */
+  }
+}
+
 /**
  * 流式真 Agent(SSE,POST /assistant/chat/stream)。逐帧回调:delta(逐字)/ step / ui /
  * proposal / done。fetch + ReadableStream 解析 `data: {json}\n\n`,边到边更新对话。

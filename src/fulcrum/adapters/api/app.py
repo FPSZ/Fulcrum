@@ -131,6 +131,7 @@ def build_api(
             AssistantActuator,
             AssistantAgent,
             AssistantServices,
+            ConversationStore,
             UndoStore,
             make_dynamic_model_backend,
             make_dynamic_stream_backend,
@@ -144,6 +145,7 @@ def build_api(
             scanner=scanner,
             gateway_store=gateway_store,
             console_store=console_store,
+            forwarder=upstream,
         )
         model_turn = assistant_model_turn or make_dynamic_model_backend(
             settings.model_endpoint, settings.model_api_key, settings.model_name
@@ -153,18 +155,43 @@ def build_api(
         stream_turn = make_dynamic_stream_backend(
             settings.model_endpoint, settings.model_api_key, settings.model_name
         )
+        conversation_store = ConversationStore(settings.conversation_dir)
+
+        async def _summarize(text: str) -> str:
+            """上下文压缩用的摘要器:复用动态模型后端(无工具),把旧对话压成中文要点。"""
+            reply = await model_turn(
+                [
+                    {
+                        "role": "system",
+                        "content": "把以下控制台操作助手的多轮对话压成简洁中文要点,保留关键"
+                        "事实/数字/结论与未完成事项,去掉寒暄与冗余,200 字内。只输出要点。",
+                    },
+                    {"role": "user", "content": text},
+                ],
+                [],
+            )
+            return reply.content or ""
+
         assistant_agent = AssistantAgent(
             pipeline,
             assistant_services,
             model_turn,
             token_signer=token_signer,
             stream_turn=stream_turn,
+            conversation=conversation_store,
+            summarizer=_summarize,
         )
         assistant_actuator = AssistantActuator(
             operation_registry, assistant_services, token_signer, undo_store
         )
         register_assistant_routes(
-            app, pipeline, deps, complete, agent=assistant_agent, actuator=assistant_actuator
+            app,
+            pipeline,
+            deps,
+            complete,
+            agent=assistant_agent,
+            actuator=assistant_actuator,
+            conversation=conversation_store,
         )
         if upstream is not None and gateway_store is not None:
             from .gateway_routes import register_gateway_routes

@@ -19,12 +19,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ...core.domain import AuditEvent, AuditEventType, Disposition
-from ...core.operations import AssistantTool, operation_registry
+from ...core.operations import AssistantTool, OperationResult, operation_registry
 from ...core.redaction import redact
 
 # 导入即注册首批 ui/read/write 操作(对称:import capability 模块即注册其实现)。
 from . import operations as _operations  # noqa: F401
 from .actuator import ActionTokenSigner
+from .conversation import ConversationStore, Summarizer
 from .model_client import ModelReply, ModelTurn, StreamTurn, ToolCallReq, to_function_spec
 from .services import AssistantServices
 
@@ -77,6 +78,7 @@ class AssistantRunResult:
     session_id: str
     reply: str
     blocked: bool = False
+    compressed: bool = False  # 本轮是否触发了上下文自动压缩(供 UI 提示「上下文已压缩」)
     ui_directives: list[AssistantUiDirective] = field(default_factory=list)
     proposed_actions: list[AssistantProposedAction] = field(default_factory=list)
     steps: list[AssistantStep] = field(default_factory=list)
@@ -90,6 +92,30 @@ class _ToolOutcome:
     step: AssistantStep
     ui: AssistantUiDirective | None = None
     proposal: AssistantProposedAction | None = None
+
+
+_MAX_FEED = 6000  # 单个工具回填给模型的最大字符数(防长列表撑爆上下文)
+
+
+def _read_feed(res: OperationResult) -> str:
+    """把读类结果组装成回填模型的文本:摘要 + **结构化数据(JSON)**。
+
+    只喂 summary 会让模型「只知总数、不知明细」(如 list_users 回了名单却只看到「共 2 名」)。
+    这里把 res.data 一并序列化喂回,模型才能据实列出账号/姓名/状态等;过长则截断防上下文膨胀。
+    """
+    import json
+
+    summary = res.summary or ""
+    data = res.data
+    if data is None or data == [] or data == {}:
+        return summary
+    try:
+        body = json.dumps(data, ensure_ascii=False, default=str, separators=(",", ":"))
+    except Exception:  # noqa: BLE001 —— 不可序列化兜底为字符串,绝不因回填失败中断整轮
+        body = str(data)
+    if len(body) > _MAX_FEED:
+        body = body[:_MAX_FEED] + f"…(数据过长已截断,原 {len(body)} 字符;如需更多请缩小范围)"
+    return f"{summary}\n数据(JSON):{body}" if summary else f"数据(JSON):{body}"
 
 
 def _step_event(s: AssistantStep) -> dict:
@@ -149,6 +175,8 @@ class AssistantAgent:
         max_steps: int = 8,
         token_signer: ActionTokenSigner | None = None,
         stream_turn: StreamTurn | None = None,
+        conversation: ConversationStore | None = None,
+        summarizer: Summarizer | None = None,
     ) -> None:
         self._pipeline = pipeline
         self._services = services
@@ -156,6 +184,36 @@ class AssistantAgent:
         self._max_steps = max_steps
         self._signer = token_signer
         self._stream = stream_turn
+        self._conversation = conversation
+        self._summarizer = summarizer
+
+    def _initial_messages(self, intent: str, session_id: str) -> list[dict]:
+        """system + 落盘历史 + 当轮意图 —— 历史让模型延续上下文(无 store 则等价单轮)。"""
+        store = self._conversation
+        history = store.load(session_id) if store is not None else []
+        return [
+            {"role": "system", "content": _SYSTEM},
+            *history,
+            {"role": "user", "content": intent},
+        ]
+
+    async def _persist(self, session_id: str, messages: list[dict], reply: str) -> bool:
+        """把本轮(历史 + 工具往返 + 最终答复)落盘,超长则自动压缩。返回是否压缩过。
+
+        存「网关处置后」的答复(reply)而非模型原文:与操作员所见一致,且不把被出口闸
+        净化/拦截的敏感内容原样带进下一轮上下文。
+        """
+        if self._conversation is None:
+            return False
+        transcript = [*messages[1:], {"role": "assistant", "content": reply}]
+        compressed = False
+        if self._summarizer is not None:
+            transcript, compressed = await self._conversation.compress_if_needed(
+                transcript, self._summarizer
+            )
+        async with self._conversation.lock(session_id):
+            self._conversation.save(session_id, transcript)
+        return compressed
 
     async def run(self, intent: str, principal: Any, session_id: str) -> AssistantRunResult:
         result = AssistantRunResult(session_id=session_id, reply="")
@@ -173,10 +231,7 @@ class AssistantAgent:
         specs = [to_function_spec(t) for t in tools]
         by_name = {t.name: t for t in tools}
 
-        messages: list[dict] = [
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": intent},
-        ]
+        messages = self._initial_messages(intent, session_id)
 
         final: str | None = None
         for _step in range(self._max_steps):
@@ -207,6 +262,7 @@ class AssistantAgent:
 
         out = await self._pipeline.screen_output(session_id, final)
         result.reply = self._gate_output(final, out)
+        result.compressed = await self._persist(session_id, messages, result.reply)
         await self._audit(session_id, principal, intent, result, gate, out)
         return result
 
@@ -233,6 +289,7 @@ class AssistantAgent:
                 "session_id": session_id,
                 "blocked": result.blocked,
                 "reply": result.reply,
+                "compressed": result.compressed,
             }
             return
 
@@ -242,16 +299,19 @@ class AssistantAgent:
             result.blocked = True
             result.reply = f"你的意图被安全网关判为高危并拦截({gate.reason}),未提交模型。"
             await self._audit(session_id, principal, intent, result, gate)
-            yield {"type": "done", "session_id": session_id, "blocked": True, "reply": result.reply}
+            yield {
+                "type": "done",
+                "session_id": session_id,
+                "blocked": True,
+                "reply": result.reply,
+                "compressed": False,
+            }
             return
 
         tools = operation_registry.visible_for(principal)
         specs = [to_function_spec(t) for t in tools]
         by_name = {t.name: t for t in tools}
-        messages: list[dict] = [
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": intent},
-        ]
+        messages = self._initial_messages(intent, session_id)
 
         final: str | None = None
         for _step in range(self._max_steps):
@@ -291,8 +351,15 @@ class AssistantAgent:
         final = final or "(已完成上述操作。)"
         out = await self._pipeline.screen_output(session_id, final)
         result.reply = self._gate_output(final, out)
+        result.compressed = await self._persist(session_id, messages, result.reply)
         await self._audit(session_id, principal, intent, result, gate, out)
-        yield {"type": "done", "session_id": session_id, "blocked": False, "reply": result.reply}
+        yield {
+            "type": "done",
+            "session_id": session_id,
+            "blocked": False,
+            "reply": result.reply,
+            "compressed": result.compressed,
+        }
 
     @staticmethod
     def _gate_output(final: str, out: Any) -> str:
@@ -362,22 +429,24 @@ class AssistantAgent:
                 step=AssistantStep(tool.name, "read", tool.label, False, f"执行异常:{exc}"),
             )
 
-        # 吃狗粮②:回填前过工具返回闸(抓藏在数据里的间接注入/敏感量)。
-        verdict = await self._pipeline.screen_tool_return(session_id, res.summary)
+        feed = _read_feed(res)
+        # 吃狗粮②:回填前过工具返回闸,对**完整回填文本(含结构化数据)**做检测——
+        # 数据正是间接注入/敏感量的藏身处,只检 summary 会漏。
+        verdict = await self._pipeline.screen_tool_return(session_id, feed)
         if verdict.decision == Disposition.BLOCK:
             return _ToolOutcome(
-                feed="[工具返回疑似含间接注入/敏感数据,已净化]" + redact(res.summary[:160]),
+                feed="[工具返回疑似含间接注入/敏感数据,已净化]" + redact(feed[:200]),
                 step=AssistantStep(
                     tool.name, "read", tool.label, True, "工具返回命中高危,已净化回填"
                 ),
             )
         if verdict.decision != Disposition.ALLOW:
             return _ToolOutcome(
-                feed=redact(res.summary),
+                feed=redact(feed),
                 step=AssistantStep(tool.name, "read", tool.label, True, "工具返回可疑,已脱敏回填"),
             )
         return _ToolOutcome(
-            feed=res.summary,
+            feed=feed,
             step=AssistantStep(tool.name, "read", tool.label, res.ok, res.summary[:120]),
         )
 

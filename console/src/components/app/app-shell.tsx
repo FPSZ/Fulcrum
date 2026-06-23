@@ -46,7 +46,8 @@ export function AppShell({
               内容卡可上滑揭示底层页脚(仅桌面 / 系统页) */}
           <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <FooterReveal onNavigate={onNavigate} navKey={active}>
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-line bg-white/85 backdrop-blur-sm md:rounded-tl-[28px] md:border-l md:border-t">
+              {/* 内容面板:桌面端四边细灰线 + 小内缩,像显示器边框把内容"包"起来;移动端出血占满。 */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-line bg-white/85 backdrop-blur-sm md:m-1.5 md:rounded-[18px] md:border">
                 {children}
               </div>
             </FooterReveal>

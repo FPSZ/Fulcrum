@@ -383,7 +383,7 @@ function AboutPanel() {
         <span className="text-[15px] text-ink-2">枢衡 Fulcrum · 安全控制台</span>
       </SettingRow>
       <SettingRow label="版本">
-        <span className="font-data text-[14px] text-ink-2">0.1.0</span>
+        <span className="font-data text-[14px] text-ink-2">0.5.0</span>
       </SettingRow>
       <SettingRow label="部署形态">
         <Badge tone="accent">私有化 · 单租户 · 自托管</Badge>

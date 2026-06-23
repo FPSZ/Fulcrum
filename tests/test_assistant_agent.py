@@ -17,7 +17,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from fulcrum.adapters.api import build_api
-from fulcrum.adapters.assistant import AssistantAgent, AssistantServices
+from fulcrum.adapters.assistant import AssistantAgent, AssistantServices, ConversationStore
 from fulcrum.adapters.assistant.model_client import (
     ModelReply,
     ModelTurn,
@@ -245,6 +245,54 @@ def test_write_tool_not_executed_in_loop(tmp_path: Path) -> None:
         operation_registry._ops.pop("demo_write", None)
 
 
+# ───────────────────────── 多轮记忆 + 自动压缩 ─────────────────────────
+def test_conversation_store_roundtrip_and_reset(tmp_path: Path) -> None:
+    store = ConversationStore(str(tmp_path / "conv"))
+    assert store.load("s1") == []  # 未存 → 空
+    msgs = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}]
+    store.save("s1", msgs)
+    assert store.load("s1") == msgs  # 落盘可回读
+    store.reset("s1")
+    assert store.load("s1") == []  # 重置即清
+
+
+def test_conversation_compresses_over_budget(tmp_path: Path) -> None:
+    """超字数预算 → 旧轮压成摘要,保留最近一轮原文,角色交替合法。"""
+    store = ConversationStore(str(tmp_path / "c"), max_chars=80, keep_turns=1)
+    msgs: list[dict] = []
+    for i in range(5):
+        msgs.append({"role": "user", "content": f"问题{i} " * 12})
+        msgs.append({"role": "assistant", "content": f"回答{i} " * 12})
+
+    async def _summ(_text: str) -> str:
+        return "早前要点。"
+
+    new, compressed = asyncio.run(store.compress_if_needed(msgs, _summ))
+    assert compressed
+    assert any("早前对话摘要" in str(m.get("content", "")) for m in new)  # 摘要头注入
+    assert any("问题4" in str(m.get("content", "")) for m in new)  # 最近一轮原文保留
+    assert len(new) < len(msgs)
+    assert new[0]["role"] == "user" and new[1]["role"] == "assistant"  # 交替合法
+
+
+def test_conversation_memory_continuity(tmp_path: Path) -> None:
+    """第二轮模型应看到第一轮的问与答(后端不再失忆)。"""
+    pipeline = _pipeline(tmp_path)
+    seen: list[list[str]] = []
+
+    async def turn(messages: list[dict], _tools: list[dict]) -> ModelReply:
+        seen.append([str(m.get("content") or "") for m in messages])
+        return ModelReply(content="好的。")
+
+    store = ConversationStore(str(tmp_path / "conv"))
+    agent = AssistantAgent(pipeline, _services(tmp_path, pipeline), turn, conversation=store)
+    who = _principal(ALL_PERMISSION_KEYS)
+    asyncio.run(agent.run("第一问", who, "s-mem"))
+    asyncio.run(agent.run("第二问", who, "s-mem"))
+    second = " ".join(seen[-1])
+    assert "第一问" in second and "好的。" in second and "第二问" in second
+
+
 # ───────────────────────── HTTP 路由(集成)─────────────────────────
 _ADMIN_PW = "assist-agent-admin-pw-123"
 
@@ -292,6 +340,16 @@ def test_chat_endpoint_runs_and_audits(tmp_path: Path) -> None:
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert not body["blocked"] and body["reply"]
+    assert body["compressed"] is False  # 短对话不触发压缩
     chain = client.get("/audit/h-chat")
     types = [e["event_type"] for e in chain.json()["events"]]
     assert "assistant_chat" in types
+
+
+def test_reset_endpoint_clears_session(tmp_path: Path) -> None:
+    client = _client(tmp_path, _scripted(ModelReply(content="记住了。")))
+    _login_admin(client)
+    client.post("/assistant/chat", json={"message": "我叫小明", "session_id": "h-reset"})
+    resp = client.post("/assistant/reset", json={"session_id": "h-reset"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True

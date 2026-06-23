@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ...core.ports import SupplyChainScanner
     from ..auth import DirectoryService
     from ..console_settings import ConsoleSettingsStore
-    from ..gateway import GatewayConfigStore
+    from ..gateway import GatewayConfigStore, UpstreamForwarder
 
 
 @dataclass(slots=True)
@@ -28,3 +28,5 @@ class AssistantServices:
     scanner: SupplyChainScanner | None = None
     gateway_store: GatewayConfigStore | None = None
     console_store: ConsoleSettingsStore | None = None
+    # 上游转发器:供「测试上游连通性」操作发探测请求(与设置页"测试连接"同源)。
+    forwarder: UpstreamForwarder | None = None

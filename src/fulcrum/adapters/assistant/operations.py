@@ -22,6 +22,7 @@ from ..api.policies_routes import to_policy_set
 from ..api.supply_routes import scan_directory
 from ..api.tools_routes import build_tool_calls
 from ..audit.memory_sink import InMemoryAuditSink
+from ..auth.permissions import PERMISSIONS
 from ..console_settings import ConsoleSettings
 from ..gateway import GatewayConfig, GatewayConfigPublic
 
@@ -641,5 +642,675 @@ operation_registry.register(
         inverse="恢复为原设置",
         undo_handler=_update_console_settings_undo,
         before_handler=_update_console_settings_before,
+    )
+)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  全量覆盖:把"人在管理后台能干的"剩余操作补齐(组织/角色/成员 CRUD + 网关测试)。
+#  原则——助手可操作面 == 操作员可操作面;读类喂全量数据,写类一律提案-确认-(可)撤销。
+#  与 admin_routes 同源同护栏:调同一个 DirectoryService,一致性违例如实回报不 500。
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _role_brief(r: Any, member_count: int | None = None) -> dict:
+    d = {
+        "id": r.id,
+        "key": r.key,
+        "name": r.name,
+        "description": r.description,
+        "is_system": r.is_system,
+        "permissions": sorted(r.permissions),
+    }
+    if member_count is not None:
+        d["member_count"] = member_count
+    return d
+
+
+def _dept_brief(d: Any, member_count: int | None = None) -> dict:
+    out = {"id": d.id, "name": d.name, "parent_id": d.parent_id, "sort_order": d.sort_order}
+    if member_count is not None:
+        out["member_count"] = member_count
+    return out
+
+
+# ──────────────────────────── read:组织/权限/连通性 ────────────────────────────
+@operation(
+    name="list_departments",
+    kind="read",
+    label="列部门",
+    description="列出全部部门(组织架构)及各部门成员数。建成员/改归属前用它拿 department_id。",
+    requires=("users.view",),
+)
+async def list_departments(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", data=[])
+    rows = d.list_departments()
+    data = [_dept_brief(x, d.department_member_count(x.id)) for x in rows]
+    summary = f"共 {len(data)} 个部门:" + "、".join(x["name"] for x in data[:10]) + "。"
+    return OperationResult(summary=summary, data=data)
+
+
+@operation(
+    name="list_permissions",
+    kind="read",
+    label="列权限点",
+    description="列出系统全部权限点(key/名称/分组)。新建或改角色前用它确认合法的权限 key。",
+    requires=("users.view",),
+)
+async def list_permissions(args: dict, principal: Any, services: Any) -> OperationResult:
+    data = [{"key": p.key, "label": p.label, "group": p.group} for p in PERMISSIONS]
+    summary = f"共 {len(data)} 个权限点(按 key 传给角色 permissions)。"
+    return OperationResult(summary=summary, data=data)
+
+
+@operation(
+    name="test_gateway_connection",
+    kind="read",
+    label="测试上游连通性",
+    description="对当前已保存的上游接入配置发一次探测请求,返回是否连通/时延/状态码。用于「上游通不通」。",
+    requires=("settings.view",),
+)
+async def test_gateway_connection(args: dict, principal: Any, services: Any) -> OperationResult:
+    store = services.gateway_store
+    fwd = getattr(services, "forwarder", None)
+    if store is None or fwd is None:
+        return OperationResult(summary="未装配上游网关或转发器,无法测试。", data=None)
+    cfg = store.load()
+    r = await fwd.probe(cfg)
+    summary = (
+        f"上游「{cfg.name}」连通性:{'通' if r.ok else '不通'}、"
+        f"时延 {r.latency_ms}ms、状态 {r.status_code}。{r.detail}"
+    )
+    return OperationResult(
+        summary=summary,
+        data={"ok": r.ok, "latency_ms": r.latency_ms, "status_code": r.status_code,
+              "detail": r.detail},
+    )
+
+
+# ──────────────────────────── write:成员 CRUD ────────────────────────────
+_USER_PROFILE_KEYS = ("display_name", "title", "email", "phone", "role_id", "department_id")
+
+
+async def _create_user(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    username = str(args.get("username") or "").strip()
+    display_name = str(args.get("display_name") or "").strip()
+    if not username or not display_name:
+        return OperationResult(
+            summary="缺少 username 或 display_name。", ok=False, error="bad_args"
+        )
+    try:
+        user, temp = d.create_user(
+            username=username,
+            display_name=display_name,
+            role_id=args.get("role_id"),
+            department_id=args.get("department_id"),
+            employee_no=str(args.get("employee_no") or ""),
+            email=str(args.get("email") or ""),
+            phone=str(args.get("phone") or ""),
+            title=str(args.get("title") or ""),
+        )
+    except Exception as exc:  # noqa: BLE001 —— 重名/引用不存在等护栏违例如实回报
+        return OperationResult(summary=f"建成员失败:{exc}", ok=False, error="conflict")
+    pw_note = f" 初始口令(仅此一次):{temp}" if temp else ""
+    return OperationResult(
+        summary=f"已创建成员 {user.username}({user.display_name})。{pw_note}",
+        data=_user_brief(user),
+        undo={"user_id": user.id},
+    )
+
+
+async def _create_user_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    # 无硬删 API:撤销=把新账号置为离职(停止登录),与"驳回删除"区分。
+    services.directory.set_status(int(args["user_id"]), "left")
+    return OperationResult(summary=f"已撤销:新账号 {args['user_id']} 置为离职(停用)。")
+
+
+operation_registry.register(
+    AssistantTool(
+        name="create_user",
+        kind="write",
+        label="新建成员",
+        description=(
+            "创建一个成员账号(直接生效、可登录)。不传口令则系统生成一次性初始口令。"
+            "建前可先 list_roles / list_departments 拿 role_id、department_id。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "username": {"type": "string", "description": "登录账号(唯一)"},
+                "display_name": {"type": "string", "description": "姓名"},
+                "role_id": {"type": "integer", "description": "角色 id(见 list_roles)"},
+                "department_id": {"type": "integer", "description": "部门 id(见 list_departments)"},
+                "title": {"type": "string", "description": "职务"},
+                "email": {"type": "string"},
+                "phone": {"type": "string"},
+                "employee_no": {"type": "string", "description": "工号"},
+            },
+            "required": ["username", "display_name"],
+        },
+        requires=("users.manage",),
+        risk="high",
+        handler=_create_user,
+        reversible=True,
+        inverse="置为离职(停用新账号)",
+        undo_handler=_create_user_undo,
+    )
+)
+
+
+async def _update_user(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        uid = int(args["user_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(summary="参数非法(需 user_id)。", ok=False, error="bad_args")
+    user = d.get_user(uid)
+    if user is None:
+        return OperationResult(summary=f"成员 {uid} 不存在。", ok=False, error="not_found")
+    fields = {k: args[k] for k in _USER_PROFILE_KEYS if k in args}
+    if not fields:
+        return OperationResult(summary="没有要改的字段。", ok=False, error="no_fields")
+    old = {k: getattr(user, k) for k in fields}
+    try:
+        updated = d.update_user(uid, fields=fields)
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"更新成员失败:{exc}", ok=False, error="conflict")
+    return OperationResult(
+        summary=f"成员 {updated.username} 资料已更新(改了 {'、'.join(fields)})。",
+        data=_user_brief(updated),
+        undo={"user_id": uid, "fields": old},
+    )
+
+
+async def _update_user_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    services.directory.update_user(int(args["user_id"]), fields=dict(args["fields"]))
+    return OperationResult(summary=f"已回滚成员 {args['user_id']} 资料。")
+
+
+async def _update_user_before(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    user = d.get_user(int(args["user_id"])) if d and args.get("user_id") is not None else None
+    keys = [k for k in _USER_PROFILE_KEYS if k in (args or {})]
+    return OperationResult(summary="", data={k: getattr(user, k) for k in keys} if user else {})
+
+
+operation_registry.register(
+    AssistantTool(
+        name="update_user",
+        kind="write",
+        label="改成员资料",
+        description=(
+            "按字段补丁改成员资料(姓名/职务/邮箱/电话/角色/部门);**只把要改的字段放进参数**。"
+            "改角色会使该成员重新登录。改状态请用 set_user_status。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "user_id": {"type": "integer"},
+                "display_name": {"type": "string"},
+                "title": {"type": "string"},
+                "email": {"type": "string"},
+                "phone": {"type": "string"},
+                "role_id": {"type": "integer"},
+                "department_id": {"type": "integer"},
+            },
+            "required": ["user_id"],
+        },
+        requires=("users.manage",),
+        risk="high",
+        handler=_update_user,
+        reversible=True,
+        inverse="恢复为原资料",
+        undo_handler=_update_user_undo,
+        before_handler=_update_user_before,
+    )
+)
+
+
+async def _reset_password(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        uid = int(args["user_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(summary="参数非法(需 user_id)。", ok=False, error="bad_args")
+    user = d.get_user(uid)
+    if user is None:
+        return OperationResult(summary=f"成员 {uid} 不存在。", ok=False, error="not_found")
+    try:
+        temp = d.reset_password(uid)  # 不传新口令 → 生成一次性临时口令
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"重置口令失败:{exc}", ok=False, error="conflict")
+    return OperationResult(
+        summary=f"已重置 {user.username} 的口令,临时口令(仅此一次):{temp}。该成员旧会话已失效。",
+        data={"user_id": uid},
+    )
+
+
+operation_registry.register(
+    AssistantTool(
+        name="reset_user_password",
+        kind="write",
+        label="重置成员口令",
+        description="为某成员生成一次性临时口令并使其旧会话失效。不可撤销(口令已变更)。",
+        parameters={
+            "type": "object",
+            "properties": {"user_id": {"type": "integer"}},
+            "required": ["user_id"],
+        },
+        requires=("users.manage",),
+        risk="high",
+        handler=_reset_password,
+        reversible=False,
+        inverse=None,
+    )
+)
+
+
+async def _reject_account(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        uid = int(args["user_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(summary="参数非法(需 user_id)。", ok=False, error="bad_args")
+    user = d.get_user(uid)
+    if user is None:
+        return OperationResult(summary=f"账号 {uid} 不存在。", ok=False, error="not_found")
+    name = user.username
+    try:
+        d.reject(uid)  # 驳回即删除待审批记录
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"驳回失败:{exc}", ok=False, error="conflict")
+    return OperationResult(summary=f"已驳回并删除待审批账号 {name}。", data={"user_id": uid})
+
+
+operation_registry.register(
+    AssistantTool(
+        name="reject_account",
+        kind="write",
+        label="驳回账号申请",
+        description="驳回一个待审批注册申请(记录被删除)。不可撤销。",
+        parameters={
+            "type": "object",
+            "properties": {"user_id": {"type": "integer"}},
+            "required": ["user_id"],
+        },
+        requires=("account.approve",),
+        risk="high",
+        handler=_reject_account,
+        reversible=False,
+        inverse=None,
+    )
+)
+
+
+# ──────────────────────────── write:角色 CRUD ────────────────────────────
+async def _create_role(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    name = str(args.get("name") or "").strip()
+    if not name:
+        return OperationResult(summary="缺少角色名 name。", ok=False, error="bad_args")
+    perms = args.get("permissions") or []
+    if not isinstance(perms, list):
+        return OperationResult(summary="permissions 需为字符串数组。", ok=False, error="bad_args")
+    try:
+        role = d.create_role(name, str(args.get("description") or ""), [str(p) for p in perms])
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"建角色失败:{exc}", ok=False, error="conflict")
+    return OperationResult(
+        summary=f"已创建角色「{role.name}」(key={role.key}),含 {len(role.permissions)} 个权限。",
+        data=_role_brief(role),
+        undo={"role_id": role.id},
+    )
+
+
+async def _create_role_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    services.directory.delete_role(int(args["role_id"]))
+    return OperationResult(summary=f"已撤销:删除新建角色 {args['role_id']}。")
+
+
+operation_registry.register(
+    AssistantTool(
+        name="create_role",
+        kind="write",
+        label="新建角色",
+        description=(
+            "创建自定义角色并赋权限点(permissions 为权限 key 数组,见 list_permissions)。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "角色名"},
+                "description": {"type": "string"},
+                "permissions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "权限点 key 列表(见 list_permissions)",
+                },
+            },
+            "required": ["name"],
+        },
+        requires=("roles.manage",),
+        risk="high",
+        handler=_create_role,
+        reversible=True,
+        inverse="删除新建角色",
+        undo_handler=_create_role_undo,
+    )
+)
+
+
+async def _update_role(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        rid = int(args["role_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(summary="参数非法(需 role_id)。", ok=False, error="bad_args")
+    role = next((r for r in d.list_roles() if r.id == rid), None)
+    if role is None:
+        return OperationResult(summary=f"角色 {rid} 不存在。", ok=False, error="not_found")
+    old = {
+        "name": role.name,
+        "description": role.description,
+        "permissions": sorted(role.permissions),
+    }
+    perms = args.get("permissions")
+    try:
+        updated = d.update_role(
+            rid,
+            name=args.get("name"),
+            description=args.get("description"),
+            permissions=[str(p) for p in perms] if isinstance(perms, list) else None,
+        )
+    except Exception as exc:  # noqa: BLE001 —— 内置角色不可改等护栏
+        return OperationResult(summary=f"改角色失败:{exc}", ok=False, error="conflict")
+    return OperationResult(
+        summary=f"角色「{updated.name}」已更新,现含 {len(updated.permissions)} 个权限。",
+        data=_role_brief(updated),
+        undo={"role_id": rid, **old},
+    )
+
+
+async def _update_role_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    services.directory.update_role(
+        int(args["role_id"]),
+        name=args.get("name"),
+        description=args.get("description"),
+        permissions=list(args.get("permissions") or []),
+    )
+    return OperationResult(summary=f"已回滚角色 {args['role_id']}。")
+
+
+async def _update_role_before(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    role = (
+        next((r for r in d.list_roles() if r.id == int(args["role_id"])), None)
+        if d and args.get("role_id") is not None
+        else None
+    )
+    if role is None:
+        return OperationResult(summary="", data={})
+    full = {
+        "name": role.name,
+        "description": role.description,
+        "permissions": sorted(role.permissions),
+    }
+    return OperationResult(summary="", data={k: full[k] for k in full if k in (args or {})})
+
+
+operation_registry.register(
+    AssistantTool(
+        name="update_role",
+        kind="write",
+        label="改角色权限",
+        description=(
+            "按字段改自定义角色的名称/描述/权限点;**只把要改的字段放进参数**(传 permissions "
+            "则整体替换)。内置角色不可改。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "integer"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "permissions": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["role_id"],
+        },
+        requires=("roles.manage",),
+        risk="high",
+        handler=_update_role,
+        reversible=True,
+        inverse="恢复为原角色定义",
+        undo_handler=_update_role_undo,
+        before_handler=_update_role_before,
+    )
+)
+
+
+async def _delete_role(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        rid = int(args["role_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(summary="参数非法(需 role_id)。", ok=False, error="bad_args")
+    role = next((r for r in d.list_roles() if r.id == rid), None)
+    if role is None:
+        return OperationResult(summary=f"角色 {rid} 不存在。", ok=False, error="not_found")
+    name = role.name
+    try:
+        d.delete_role(rid)
+    except Exception as exc:  # noqa: BLE001 —— 内置/仍有成员使用 → 拒
+        return OperationResult(summary=f"删角色失败:{exc}", ok=False, error="conflict")
+    return OperationResult(summary=f"已删除角色「{name}」。", data={"role_id": rid})
+
+
+operation_registry.register(
+    AssistantTool(
+        name="delete_role",
+        kind="write",
+        label="删除角色",
+        description="删除一个自定义角色(仍有成员使用或内置角色会被拒)。不可撤销。",
+        parameters={
+            "type": "object",
+            "properties": {"role_id": {"type": "integer"}},
+            "required": ["role_id"],
+        },
+        requires=("roles.manage",),
+        risk="high",
+        handler=_delete_role,
+        reversible=False,
+        inverse=None,
+    )
+)
+
+
+# ──────────────────────────── write:部门 CRUD ────────────────────────────
+async def _create_department(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    name = str(args.get("name") or "").strip()
+    if not name:
+        return OperationResult(summary="缺少部门名 name。", ok=False, error="bad_args")
+    try:
+        dept = d.create_department(
+            name, args.get("parent_id"), int(args.get("sort_order") or 100)
+        )
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"建部门失败:{exc}", ok=False, error="conflict")
+    return OperationResult(
+        summary=f"已创建部门「{dept.name}」(id={dept.id})。",
+        data=_dept_brief(dept),
+        undo={"dept_id": dept.id},
+    )
+
+
+async def _create_department_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    services.directory.delete_department(int(args["dept_id"]))
+    return OperationResult(summary=f"已撤销:删除新建部门 {args['dept_id']}。")
+
+
+operation_registry.register(
+    AssistantTool(
+        name="create_department",
+        kind="write",
+        label="新建部门",
+        description="在组织架构里新建部门(可挂在某上级部门下,parent_id 见 list_departments)。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "部门名"},
+                "parent_id": {"type": "integer", "description": "上级部门 id,留空为顶级"},
+                "sort_order": {"type": "integer", "description": "同级排序,默认 100"},
+            },
+            "required": ["name"],
+        },
+        requires=("dept.manage",),
+        risk="normal",
+        handler=_create_department,
+        reversible=True,
+        inverse="删除新建部门",
+        undo_handler=_create_department_undo,
+    )
+)
+
+
+async def _update_department(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        did = int(args["dept_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(summary="参数非法(需 dept_id)。", ok=False, error="bad_args")
+    dept = next((x for x in d.list_departments() if x.id == did), None)
+    if dept is None:
+        return OperationResult(summary=f"部门 {did} 不存在。", ok=False, error="not_found")
+    old = {"name": dept.name, "parent_id": dept.parent_id, "sort_order": dept.sort_order}
+    change_parent = "parent_id" in args
+    try:
+        updated = d.update_department(
+            did,
+            name=args.get("name"),
+            parent_id=args.get("parent_id"),
+            sort_order=args.get("sort_order"),
+            change_parent=change_parent,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"改部门失败:{exc}", ok=False, error="conflict")
+    return OperationResult(
+        summary=f"部门「{updated.name}」已更新。",
+        data=_dept_brief(updated),
+        undo={"dept_id": did, **old},
+    )
+
+
+async def _update_department_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    services.directory.update_department(
+        int(args["dept_id"]),
+        name=args.get("name"),
+        parent_id=args.get("parent_id"),
+        sort_order=args.get("sort_order"),
+        change_parent=True,
+    )
+    return OperationResult(summary=f"已回滚部门 {args['dept_id']}。")
+
+
+async def _update_department_before(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    dept = (
+        next((x for x in d.list_departments() if x.id == int(args["dept_id"])), None)
+        if d and args.get("dept_id") is not None
+        else None
+    )
+    if dept is None:
+        return OperationResult(summary="", data={})
+    full = {"name": dept.name, "parent_id": dept.parent_id, "sort_order": dept.sort_order}
+    return OperationResult(summary="", data={k: full[k] for k in full if k in (args or {})})
+
+
+operation_registry.register(
+    AssistantTool(
+        name="update_department",
+        kind="write",
+        label="改部门",
+        description=(
+            "按字段改部门(改名/移动上级/排序);**只把要改的字段放进参数**。"
+            "不能把部门移到自己或其子部门下。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "dept_id": {"type": "integer"},
+                "name": {"type": "string"},
+                "parent_id": {"type": "integer", "description": "新上级部门 id"},
+                "sort_order": {"type": "integer"},
+            },
+            "required": ["dept_id"],
+        },
+        requires=("dept.manage",),
+        risk="normal",
+        handler=_update_department,
+        reversible=True,
+        inverse="恢复为原部门设置",
+        undo_handler=_update_department_undo,
+        before_handler=_update_department_before,
+    )
+)
+
+
+async def _delete_department(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        did = int(args["dept_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(summary="参数非法(需 dept_id)。", ok=False, error="bad_args")
+    dept = next((x for x in d.list_departments() if x.id == did), None)
+    if dept is None:
+        return OperationResult(summary=f"部门 {did} 不存在。", ok=False, error="not_found")
+    name = dept.name
+    try:
+        d.delete_department(did)  # 有子部门/成员 → 拒
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"删部门失败:{exc}", ok=False, error="conflict")
+    return OperationResult(summary=f"已删除部门「{name}」。", data={"dept_id": did})
+
+
+operation_registry.register(
+    AssistantTool(
+        name="delete_department",
+        kind="write",
+        label="删除部门",
+        description="删除一个部门(其下仍有子部门或成员会被拒)。不可撤销。",
+        parameters={
+            "type": "object",
+            "properties": {"dept_id": {"type": "integer"}},
+            "required": ["dept_id"],
+        },
+        requires=("dept.manage",),
+        risk="normal",
+        handler=_delete_department,
+        reversible=False,
+        inverse=None,
     )
 )

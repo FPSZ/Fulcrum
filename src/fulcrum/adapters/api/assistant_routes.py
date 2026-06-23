@@ -34,6 +34,8 @@ from .schemas import (
     AssistantPlanRequest,
     AssistantPlanResponse,
     AssistantProposedActionDTO,
+    AssistantResetRequest,
+    AssistantResetResponse,
     AssistantStepDTO,
     AssistantToolDTO,
     AssistantUiDirectiveDTO,
@@ -43,7 +45,7 @@ from .schemas import (
 
 if TYPE_CHECKING:
     from ...core.pipeline import SecurityPipeline
-    from ..assistant import AssistantActuator, AssistantAgent
+    from ..assistant import AssistantActuator, AssistantAgent, ConversationStore
     from ..assistant.planner import ModelComplete
 
 
@@ -82,6 +84,7 @@ def register_assistant_routes(
     catalog: tuple[Action, ...] = DEFAULT_CATALOG,
     agent: AssistantAgent | None = None,
     actuator: AssistantActuator | None = None,
+    conversation: ConversationStore | None = None,
 ) -> None:
     can_operate = deps.require("ai.operate")
 
@@ -132,6 +135,7 @@ def register_assistant_routes(
             session_id=run.session_id,
             reply=run.reply,
             blocked=run.blocked,
+            compressed=run.compressed,
             ui_directives=[
                 AssistantUiDirectiveDTO(tool=d.tool, label=d.label, args=d.args)
                 for d in run.ui_directives
@@ -181,6 +185,16 @@ def register_assistant_routes(
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @app.post("/assistant/reset", response_model=AssistantResetResponse)
+    async def assistant_reset(
+        body: AssistantResetRequest,
+        principal: Principal = Depends(can_operate),
+    ) -> AssistantResetResponse:
+        """清空某会话的多轮记忆(新建会话 / 显式清除上下文)。无记忆存储时静默成功。"""
+        if conversation is not None:
+            conversation.reset(body.session_id)
+        return AssistantResetResponse(ok=True)
 
     # ── 写操作:确认执行 + 一键撤销(plan/11 §6;人闸在 chat 循环之外)──────
     @app.post("/assistant/confirm", response_model=AssistantConfirmResponse)

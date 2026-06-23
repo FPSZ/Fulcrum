@@ -126,13 +126,14 @@ export type StreamEvent =
   | ({ type: 'step' } & AssistantStep)
   | ({ type: 'ui' } & UiDirective)
   | ({ type: 'proposal' } & ProposedAction)
-  | { type: 'done'; session_id: string; blocked: boolean; reply: string }
+  | { type: 'done'; session_id: string; blocked: boolean; reply: string; compressed?: boolean }
 
 /** 一次 chat 的应答(镜像 AssistantChatResponse,POST /assistant/chat)。 */
 export interface ChatResponse {
   session_id: string
   reply: string
   blocked: boolean
+  compressed?: boolean
   ui_directives: UiDirective[]
   proposed_actions: ProposedAction[]
   steps: AssistantStep[]
