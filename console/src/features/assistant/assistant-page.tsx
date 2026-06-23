@@ -188,15 +188,15 @@ export function AssistantPage() {
     <div className="flex min-h-0 flex-1 flex-col bg-canvas">
       {empty ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-16">
-          <div className="w-full max-w-[720px]">
+          <div className="w-full max-w-[840px]">
             <div className="mb-7 flex flex-col items-center gap-3 text-center">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-accent/10 text-accent">
-                <Sparkles className="h-5 w-5" />
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-accent/10 text-accent">
+                <Sparkles className="h-6 w-6" />
               </div>
-              <h1 className="text-[24px] font-semibold tracking-tight text-ink">
+              <h1 className="text-[28px] font-semibold tracking-tight text-ink">
                 需要我帮你做点什么?
               </h1>
-              <p className="text-[13.5px] text-ink-3">
+              <p className="text-[15px] text-ink-3">
                 用自然语言下达意图,我在你的权限内查询、办理、跳转。写操作先给可编辑提案,确认后执行、可一键撤销。
               </p>
             </div>
@@ -206,7 +206,7 @@ export function AssistantPage() {
                 <button
                   key={s}
                   onClick={() => send(s)}
-                  className="focus-ring rounded-full border border-line-2 bg-surface px-3.5 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-line-3 hover:bg-surface-2"
+                  className="focus-ring rounded-full border border-line-2 bg-surface px-4 py-2 text-[14px] text-ink-2 transition-colors hover:border-line-3 hover:bg-surface-2"
                 >
                   {s}
                 </button>
@@ -217,7 +217,7 @@ export function AssistantPage() {
       ) : (
         <>
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-[768px] px-4 py-8">
+            <div className="mx-auto max-w-[880px] px-4 py-8">
               <div className="space-y-7">
                 {messages.map((m) =>
                   m.role === 'user' ? (
@@ -240,9 +240,9 @@ export function AssistantPage() {
             </div>
           </div>
           <div className="px-4 pb-5">
-            <div className="mx-auto max-w-[768px]">
+            <div className="mx-auto max-w-[880px]">
               <Composer onSend={send} busy={busy} />
-              <p className="mt-2 text-center text-[11px] text-ink-mute">
+              <p className="mt-2 text-center text-[13.5px] text-ink-mute">
                 助手在权限闸门内操作,工具调用与写操作均经审计、可一键撤销 · AI 可能出错,请核对
               </p>
             </div>
@@ -298,17 +298,17 @@ function Composer({
           }
         }}
         placeholder="给助手下达任务…"
-        className="block max-h-[200px] w-full resize-none bg-transparent px-1.5 text-[15px] leading-6 text-ink outline-none placeholder:text-ink-mute"
+        className="block max-h-[200px] w-full resize-none bg-transparent px-1.5 text-[16.5px] leading-7 text-ink outline-none placeholder:text-ink-mute"
       />
       <div className="mt-1.5 flex items-center justify-between pl-1.5">
-        <span className="text-[11px] text-ink-mute">Enter 发送 · Shift+Enter 换行</span>
+        <span className="text-[13.5px] text-ink-mute">Enter 发送 · Shift+Enter 换行</span>
         <button
           onClick={submit}
           disabled={busy || !value.trim()}
           aria-label="发送"
-          className="focus-ring grid h-8 w-8 place-items-center rounded-full bg-ink text-white transition-colors hover:bg-ink-2 disabled:bg-line-3 disabled:text-white"
+          className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-ink text-white transition-colors hover:bg-ink-2 disabled:bg-line-3 disabled:text-white"
         >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+          {busy ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <ArrowUp className="h-[18px] w-[18px]" />}
         </button>
       </div>
     </div>
@@ -320,7 +320,7 @@ function Composer({
 function UserTurn({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[78%] whitespace-pre-wrap rounded-3xl bg-surface-2 px-4 py-2.5 text-[15px] leading-6 text-ink">
+      <div className="max-w-[78%] whitespace-pre-wrap rounded-3xl bg-surface-2 px-5 py-3 text-[16.5px] leading-7 text-ink">
         {text}
       </div>
     </div>
@@ -338,8 +338,8 @@ interface AssistantTurnProps {
 function AssistantTurn({ msg, onConfirm, onCancel, onUndo, onEdit }: AssistantTurnProps) {
   return (
     <div className="flex gap-3.5">
-      <div className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent/10 text-accent">
-        <Sparkles className="h-3.5 w-3.5" />
+      <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent/10 text-accent">
+        <Sparkles className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1 space-y-3">
         {msg.pending ? (
@@ -347,7 +347,7 @@ function AssistantTurn({ msg, onConfirm, onCancel, onUndo, onEdit }: AssistantTu
         ) : (
           <>
             {msg.blocked && (
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-crit/10 px-2.5 py-1 text-[12px] font-medium text-crit">
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-crit/10 px-2.5 py-1 text-[13px] font-medium text-crit">
                 <X className="h-3 w-3" /> 已被安全网关拦截
               </div>
             )}
@@ -386,7 +386,7 @@ function Trace({ steps }: { steps: AssistantStep[] }) {
     <div>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="focus-ring inline-flex items-center gap-1 rounded-md px-1 text-[12px] text-ink-mute transition-colors hover:text-ink-3"
+        className="focus-ring inline-flex items-center gap-1 rounded-md px-1 text-[13px] text-ink-mute transition-colors hover:text-ink-3"
       >
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />
         执行过程 · {steps.length} 步
@@ -394,7 +394,7 @@ function Trace({ steps }: { steps: AssistantStep[] }) {
       {open && (
         <div className="mt-1.5 space-y-1 border-l border-line pl-3">
           {steps.map((s, i) => (
-            <div key={i} className="flex items-start gap-2 text-[12.5px]">
+            <div key={i} className="flex items-start gap-2 text-[13.5px]">
               {s.ok ? (
                 <Check className="mt-0.5 h-3 w-3 shrink-0 text-ok" />
               ) : (
@@ -436,13 +436,13 @@ function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardPr
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className={`h-2 w-2 shrink-0 rounded-full ${RISK_DOT[p.action.risk] ?? 'bg-med'}`} />
-          <span className="truncate text-[14px] font-medium text-ink">{p.action.label}</span>
+          <span className="truncate text-[15px] font-medium text-ink">{p.action.label}</span>
         </div>
-        <code className="shrink-0 text-[11px] text-ink-mute">{p.action.tool}</code>
+        <code className="shrink-0 text-[12px] text-ink-mute">{p.action.tool}</code>
       </div>
 
       {p.action.note && editing && (
-        <p className="text-[12.5px] leading-snug text-ink-3">{p.action.note}</p>
+        <p className="text-[13.5px] leading-snug text-ink-3">{p.action.note}</p>
       )}
 
       {entries.length > 0 && (
@@ -460,7 +460,7 @@ function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardPr
       )}
 
       {done && p.resultSummary && (
-        <div className="rounded-lg bg-surface-2 px-3 py-2 text-[12.5px] leading-snug text-ink-2">
+        <div className="rounded-lg bg-surface-2 px-3 py-2 text-[13.5px] leading-snug text-ink-2">
           {p.resultSummary}
         </div>
       )}
@@ -470,45 +470,45 @@ function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardPr
           <>
             <button
               onClick={onConfirm}
-              className="focus-ring rounded-lg bg-ink px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-ink-2"
+              className="focus-ring rounded-lg bg-ink px-3.5 py-2 text-[14px] font-medium text-white transition-colors hover:bg-ink-2"
             >
               确认执行
             </button>
             <button
               onClick={onCancel}
-              className="focus-ring rounded-lg px-3 py-1.5 text-[13px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink-2"
+              className="focus-ring rounded-lg px-3.5 py-2 text-[14px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink-2"
             >
               取消
             </button>
           </>
         )}
         {p.status === 'confirming' && (
-          <span className="flex items-center gap-1.5 text-[12.5px] text-ink-3">
+          <span className="flex items-center gap-1.5 text-[13.5px] text-ink-3">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> 执行中…
           </span>
         )}
-        {p.status === 'cancelled' && <span className="text-[12.5px] text-ink-mute">已取消</span>}
+        {p.status === 'cancelled' && <span className="text-[13.5px] text-ink-mute">已取消</span>}
         {p.status === 'done' && p.reversible && p.actionId && (
           <button
             onClick={onUndo}
-            className="focus-ring inline-flex items-center gap-1 rounded-lg border border-line-2 px-3 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-line-3 hover:bg-surface-2"
+            className="focus-ring inline-flex items-center gap-1 rounded-lg border border-line-2 px-3.5 py-2 text-[14px] text-ink-2 transition-colors hover:border-line-3 hover:bg-surface-2"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             撤销{p.undoPreview ? `(${p.undoPreview})` : ''}
           </button>
         )}
         {p.status === 'done' && !(p.reversible && p.actionId) && (
-          <span className="inline-flex items-center gap-1 text-[12.5px] text-ok">
+          <span className="inline-flex items-center gap-1 text-[13.5px] text-ok">
             <Check className="h-3.5 w-3.5" /> 已执行
           </span>
         )}
         {p.status === 'undoing' && (
-          <span className="flex items-center gap-1.5 text-[12.5px] text-ink-3">
+          <span className="flex items-center gap-1.5 text-[13.5px] text-ink-3">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> 撤销中…
           </span>
         )}
         {p.status === 'undone' && (
-          <span className="inline-flex items-center gap-1 text-[12.5px] text-ink-mute">
+          <span className="inline-flex items-center gap-1 text-[13.5px] text-ink-mute">
             <RotateCcw className="h-3.5 w-3.5" /> 已撤销
           </span>
         )}
@@ -530,14 +530,14 @@ function FieldRow({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <label className="w-28 shrink-0 truncate text-[12.5px] text-ink-3">{name}</label>
+      <label className="w-32 shrink-0 truncate text-[14px] text-ink-3">{name}</label>
       {typeof value === 'boolean' ? (
         <input
           type="checkbox"
           checked={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
-          className="h-4 w-4 accent-accent disabled:opacity-60"
+          className="h-[18px] w-[18px] accent-accent disabled:opacity-60"
         />
       ) : typeof value === 'number' ? (
         <input
@@ -545,7 +545,7 @@ function FieldRow({
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.valueAsNumber)}
-          className="focus-ring h-8 w-full rounded-lg border border-line-2 bg-surface px-2.5 text-[13px] text-ink disabled:opacity-60"
+          className="focus-ring h-9 w-full rounded-lg border border-line-2 bg-surface px-3 text-[14px] text-ink disabled:opacity-60"
         />
       ) : (
         <input
@@ -553,7 +553,7 @@ function FieldRow({
           value={String(value ?? '')}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className="focus-ring h-8 w-full rounded-lg border border-line-2 bg-surface px-2.5 text-[13px] text-ink disabled:opacity-60"
+          className="focus-ring h-9 w-full rounded-lg border border-line-2 bg-surface px-3 text-[14px] text-ink disabled:opacity-60"
         />
       )}
     </div>

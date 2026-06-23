@@ -6,23 +6,23 @@ import remarkGfm from 'remark-gfm'
 // 让回复像 GPT/Claude 一样可读,而非一坨原始 `##`/`|...|`。
 
 const components: ComponentProps<typeof ReactMarkdown>['components'] = {
-  p: ({ children }) => <p className="text-[15px] leading-7 text-ink-2">{children}</p>,
+  p: ({ children }) => <p className="text-[16.5px] leading-[1.75] text-ink-2">{children}</p>,
   h1: ({ children }) => (
-    <h1 className="mt-1 text-[18px] font-semibold tracking-tight text-ink">{children}</h1>
+    <h1 className="mt-1 text-[20px] font-semibold tracking-tight text-ink">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mt-1 text-[16px] font-semibold tracking-tight text-ink">{children}</h2>
+    <h2 className="mt-1 text-[18px] font-semibold tracking-tight text-ink">{children}</h2>
   ),
-  h3: ({ children }) => <h3 className="text-[14.5px] font-semibold text-ink">{children}</h3>,
+  h3: ({ children }) => <h3 className="text-[16px] font-semibold text-ink">{children}</h3>,
   strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   ul: ({ children }) => (
-    <ul className="list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2 marker:text-ink-mute">
+    <ul className="list-disc space-y-1.5 pl-5 text-[16.5px] leading-[1.75] text-ink-2 marker:text-ink-mute">
       {children}
     </ul>
   ),
   ol: ({ children }) => (
-    <ol className="list-decimal space-y-1 pl-5 text-[15px] leading-7 text-ink-2 marker:text-ink-mute">
+    <ol className="list-decimal space-y-1.5 pl-5 text-[16.5px] leading-[1.75] text-ink-2 marker:text-ink-mute">
       {children}
     </ol>
   ),
@@ -33,7 +33,7 @@ const components: ComponentProps<typeof ReactMarkdown>['components'] = {
     </a>
   ),
   blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-line-2 pl-3 text-[14px] text-ink-3">
+    <blockquote className="border-l-2 border-line-2 pl-3 text-[15.5px] text-ink-3">
       {children}
     </blockquote>
   ),
@@ -41,11 +41,11 @@ const components: ComponentProps<typeof ReactMarkdown>['components'] = {
     const block = /language-/.test(className ?? '')
     if (block) {
       return (
-        <code className="font-mono text-[13px] leading-relaxed text-ink-2">{children}</code>
+        <code className="font-mono text-[14px] leading-relaxed text-ink-2">{children}</code>
       )
     }
     return (
-      <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[13px] text-ink-2">
+      <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[14px] text-ink-2">
         {children}
       </code>
     )
@@ -55,18 +55,17 @@ const components: ComponentProps<typeof ReactMarkdown>['components'] = {
   ),
   table: ({ children }) => (
     <div className="overflow-x-auto rounded-lg border border-line">
-      <table className="w-full border-collapse text-[13px]">{children}</table>
+      <table className="w-full border-collapse text-[14px]">{children}</table>
     </div>
   ),
   thead: ({ children }) => <thead className="bg-subtle">{children}</thead>,
   th: ({ children }) => (
-    <th className="border-b border-line px-3 py-1.5 text-left font-medium text-ink-2">
-      {children}
-    </th>
+    <th className="border-b border-line px-4 py-2 text-left font-medium text-ink-2">{children}</th>
   ),
   td: ({ children }) => (
-    <td className="border-b border-line px-3 py-1.5 text-ink-2 last:border-0">{children}</td>
+    <td className="border-b border-line px-4 py-2 align-top text-ink-2">{children}</td>
   ),
+  tr: ({ children }) => <tr className="last:[&>td]:border-0">{children}</tr>,
   hr: () => <hr className="border-line" />,
 }
 
