@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 from fastapi import Depends, FastAPI
 
 from ...core.domain import AuditEvent, AuditEventType
-from ..audit.memory_sink import InMemoryAuditSink
 from ..auth import Principal
 from .deps import AuthDeps
 from .schemas import OverviewStatsResponse
@@ -69,11 +68,7 @@ def register_overview_routes(app: FastAPI, pipeline: SecurityPipeline, deps: Aut
 
     @app.get("/overview/stats", response_model=OverviewStatsResponse)
     async def overview_stats(_: Principal = Depends(can_view)) -> OverviewStatsResponse:
-        sink = pipeline.audit
-        # 跨会话聚合是内存实现的具体能力(端口只暴露 per-session 读);非内存实现
-        # 暂返回空统计(各计数 0),待 SQLite 落库时以聚合查询提供等价能力。
-        if not isinstance(sink, InMemoryAuditSink):
-            return OverviewStatsResponse()
+        sink = pipeline.audit  # 跨会话聚合走端口方法(内存遍历 / SQLite 聚合查询,口径一致)
         verified = 0
         for sid in sink.session_ids():
             if await sink.verify_chain(sid):

@@ -16,7 +16,7 @@ executor: restricted     # 执行时强制边界(涉密/越界/高危/外联默�
 tools:
   - echo
 model: fake
-audit: memory
+audit: memory          # 内存桩(重启清零);改 `sqlite` 即持久化落库(见 options.sqlite)
 # 注:供应链扫描(scanner port)是组件登记/上线时的离线关切,不在每请求管线装配里。
 
 # ── 每能力可选参数(统一注入通道)──────────────────────────────
@@ -25,3 +25,7 @@ audit: memory
 options:
   yaml:
     path: data/policies/default.yml   # 策略文件路径(原为实现内硬编码,现经此通道注入)
+  # 审计落库:把上面的 `audit:` 改成 `sqlite` 即启用持久化(重启留存历史、跨进程可查)。
+  # 路径默认 data/runtime/fulcrum.sqlite(与 FULCRUM_AUDIT_DB_PATH 默认一致),按需覆盖:
+  # sqlite:
+  #   path: data/runtime/fulcrum.sqlite

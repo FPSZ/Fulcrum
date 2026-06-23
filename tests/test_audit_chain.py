@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fulcrum.adapters.audit.memory_sink import _HASHED_FIELDS, InMemoryAuditSink, _canonical
+from fulcrum.adapters.audit.hashchain import _HASHED_FIELDS, canonical
+from fulcrum.adapters.audit.memory_sink import InMemoryAuditSink
 from fulcrum.core.domain import AuditEvent, AuditEventType
 
 
@@ -45,7 +46,7 @@ def test_canonical_only_covers_whitelisted_fields() -> None:
     """冻结契约:canonical 只含白名单字段。日后给 AuditEvent 加字段不得改变哈希口径——
     若有人误把新字段纳入(或改用全量 model_dump),此断言立即失败。"""
     ev = AuditEvent(session_id="s", event_type=AuditEventType.REQUEST_RECEIVED)
-    keys = set(json.loads(_canonical(ev)).keys())
+    keys = set(json.loads(canonical(ev)).keys())
     assert keys == set(_HASHED_FIELDS[ev.schema_version])
     assert "event_hash" not in keys  # event_hash 永不参与自身哈希
 

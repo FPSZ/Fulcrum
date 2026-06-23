@@ -127,7 +127,7 @@ class AuditEvent(BaseModel):
     index: int = 0
     prev_hash: str = ""
     event_hash: str = ""
-    # 落库时刻(epoch 秒)。**刻意不入哈希白名单**(见 adapters/audit._HASHED_FIELDS):
+    # 落库时刻(epoch 秒)。**刻意不入哈希白名单**(见 adapters/audit/hashchain._HASHED_FIELDS):
     # 时间戳是观测元数据,纳入 canonical 会让"重放验证"依赖时钟而非证据本身。
     # 供查询端做时序/逐事件展示用,不影响 hash-chain 可验证性。
     created_at: float = Field(default_factory=time.time)

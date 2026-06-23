@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 from fastapi import Depends, FastAPI, Query
 
 from ...core.domain import AuditEvent, AuditEventType
-from ..audit.memory_sink import InMemoryAuditSink
 from ..auth import Principal
 from .deps import AuthDeps
 from .schemas import ToolCallDTO
@@ -70,8 +69,5 @@ def register_tools_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthDe
         limit: int = Query(default=200, ge=1, le=1000),
         _: Principal = Depends(can_view),
     ) -> list[ToolCallDTO]:
-        sink = pipeline.audit
-        # 跨会话聚合是内存实现的具体能力(端口只暴露 per-session 读);非内存实现暂返回空。
-        if not isinstance(sink, InMemoryAuditSink):
-            return []
-        return build_tool_calls(sink.all_events())[:limit]
+        # 跨会话聚合走端口方法(内存遍历 / SQLite 聚合查询,口径一致)。
+        return build_tool_calls(pipeline.audit.all_events())[:limit]
