@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...core.domain import Disposition
@@ -545,6 +547,48 @@ class AssistantUndoResponse(BaseModel):
     ok: bool
     summary: str
     error: str | None = None
+
+
+class AssistantModelConfigDTO(BaseModel):
+    """回前端的模型接入配置(密钥掩码,只暴露是否已设置 / 是否配置完成)。"""
+
+    protocol: str
+    endpoint: str
+    model: str
+    api_key_masked: str
+    api_key_set: bool
+    timeout_seconds: float
+    verify_tls: bool
+    configured: bool
+    ready: bool
+
+
+class AssistantModelConfigUpdate(BaseModel):
+    """保存模型接入配置。api_key 语义:None=保持原值;""=清空;非空=设新值(防掩码覆盖真值)。"""
+
+    protocol: Literal["openai", "ollama", "anthropic"]
+    endpoint: str = Field(max_length=512)
+    model: str = Field(max_length=128)
+    api_key: str | None = Field(default=None, max_length=2048)
+    timeout_seconds: float = Field(default=90.0, ge=1, le=600)
+    verify_tls: bool = True
+
+
+class AssistantModelTestRequest(BaseModel):
+    """测试连接:用「待保存的表单值」试调一次(api_key=None 时用已存密钥)。"""
+
+    protocol: Literal["openai", "ollama", "anthropic"]
+    endpoint: str = Field(max_length=512)
+    model: str = Field(max_length=128)
+    api_key: str | None = Field(default=None, max_length=2048)
+    timeout_seconds: float = Field(default=30.0, ge=1, le=600)
+    verify_tls: bool = True
+
+
+class AssistantModelTestResponse(BaseModel):
+    ok: bool
+    detail: str
+    latency_ms: int | None = None
 
 
 class StatusUpdate(BaseModel):

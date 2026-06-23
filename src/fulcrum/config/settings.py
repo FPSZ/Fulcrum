@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     console_settings_path: str = "data/runtime/console.json"
     # 操作助手多轮对话记忆目录(一会话一文件);落盘故重启不丢,挂卷即持久化。
     conversation_dir: str = "data/runtime/conversations"
+    # 操作助手模型接入配置落盘路径(JSON;协议/端点/密钥/模型名);设置页可改、热加载。
+    assistant_model_config_path: str = "data/runtime/model.json"
 
     # 装配清单路径(None 用包内默认 fulcrum.yml)
     capability_config: str | None = None

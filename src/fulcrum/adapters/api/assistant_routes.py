@@ -31,6 +31,10 @@ from .schemas import (
     AssistantChatResponse,
     AssistantConfirmRequest,
     AssistantConfirmResponse,
+    AssistantModelConfigDTO,
+    AssistantModelConfigUpdate,
+    AssistantModelTestRequest,
+    AssistantModelTestResponse,
     AssistantPlanRequest,
     AssistantPlanResponse,
     AssistantProposedActionDTO,
@@ -45,8 +49,17 @@ from .schemas import (
 
 if TYPE_CHECKING:
     from ...core.pipeline import SecurityPipeline
-    from ..assistant import AssistantActuator, AssistantAgent, ConversationStore
+    from ..assistant import (
+        AssistantActuator,
+        AssistantAgent,
+        AssistantModelConfigStore,
+        ConversationStore,
+    )
     from ..assistant.planner import ModelComplete
+
+
+# 模型未配置时给操作员的统一提示(前端有呼吸灯,这是后端纵深兜底)。
+_NOT_READY_REPLY = "模型尚未配置。请点击输入框左侧的设置按钮,配置模型协议、端点与密钥后再使用。"
 
 
 # 规划结果 → 审计处置:准许且需确认=待批,准许直执行=放行,越权=拦截,未对应=无判定。
@@ -85,8 +98,16 @@ def register_assistant_routes(
     agent: AssistantAgent | None = None,
     actuator: AssistantActuator | None = None,
     conversation: ConversationStore | None = None,
+    model_store: AssistantModelConfigStore | None = None,
+    model_fallback_key: str = "",
+    enforce_model_ready: bool = False,
 ) -> None:
     can_operate = deps.require("ai.operate")
+    can_configure = deps.require("ai.configure")  # 配置模型接入:高敏,默认仅超管+系统管理员
+
+    def _model_not_ready() -> bool:
+        """是否应因「模型未配置」拦截对话:仅在真后端(非测试注入假后端)下启用。"""
+        return enforce_model_ready and model_store is not None and not model_store.load().is_ready
 
     @app.get("/assistant/actions", response_model=list[AssistantActionDTO])
     async def assistant_actions(
@@ -130,6 +151,10 @@ def register_assistant_routes(
                 reply="助手 Agent 未装配(当前实例未启用)。",
                 blocked=True,
             )
+        if _model_not_ready():
+            return AssistantChatResponse(
+                session_id=session_id, reply=_NOT_READY_REPLY, blocked=True
+            )
         run = await agent.run(body.message, principal, session_id)
         return AssistantChatResponse(
             session_id=run.session_id,
@@ -171,13 +196,18 @@ def register_assistant_routes(
         """
         session_id = body.session_id or f"assistant:{principal.username}"
 
+        not_ready = _model_not_ready()
+
         async def gen() -> AsyncIterator[bytes]:
-            if agent is None:
+            if agent is None or not_ready:
+                reply = (
+                    "助手 Agent 未装配(当前实例未启用)。" if agent is None else _NOT_READY_REPLY
+                )
                 payload = {
                     "type": "done",
                     "session_id": session_id,
                     "blocked": True,
-                    "reply": "助手 Agent 未装配(当前实例未启用)。",
+                    "reply": reply,
                 }
                 yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
                 return
@@ -199,6 +229,101 @@ def register_assistant_routes(
         if conversation is not None:
             conversation.reset(body.session_id)
         return AssistantResetResponse(ok=True)
+
+    # ── 模型接入配置:协议/端点/密钥/模型名(本地私有化优先;密钥掩码不回显)──────
+    def _config_dto() -> AssistantModelConfigDTO:
+        from ..assistant import AssistantModelConfigPublic
+
+        assert model_store is not None
+        pub = AssistantModelConfigPublic.of(model_store.load())
+        return AssistantModelConfigDTO(**pub.model_dump())
+
+    @app.get("/assistant/model-config", response_model=AssistantModelConfigDTO)
+    async def assistant_model_config_get(
+        _principal: Principal = Depends(can_operate),
+    ) -> AssistantModelConfigDTO:
+        """读当前模型接入配置(密钥掩码)。未装配存储 → 返回空未配置态(前端据此亮呼吸灯)。"""
+        if model_store is None:
+            return AssistantModelConfigDTO(
+                protocol="openai",
+                endpoint="",
+                model="",
+                api_key_masked="",
+                api_key_set=False,
+                timeout_seconds=90.0,
+                verify_tls=True,
+                configured=False,
+                ready=False,
+            )
+        return _config_dto()
+
+    @app.put("/assistant/model-config", response_model=AssistantModelConfigDTO)
+    async def assistant_model_config_put(
+        body: AssistantModelConfigUpdate,
+        _principal: Principal = Depends(can_configure),
+    ) -> AssistantModelConfigDTO:
+        """保存模型接入配置(需 settings.manage)。保存即标记 configured,热加载生效。
+
+        api_key=None 保持原密钥(防前端把掩码写回覆盖真值);""=清空;非空=设新值。
+        """
+        from ..assistant import AssistantModelConfig
+
+        if model_store is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="模型配置存储未装配"
+            )
+        cur = model_store.load()
+        new_key = cur.api_key if body.api_key is None else body.api_key
+        saved = model_store.save(
+            AssistantModelConfig(
+                protocol=body.protocol,
+                endpoint=body.endpoint.strip(),
+                api_key=new_key,
+                model=body.model.strip(),
+                timeout_seconds=body.timeout_seconds,
+                verify_tls=body.verify_tls,
+                configured=True,
+            )
+        )
+        from ..assistant import AssistantModelConfigPublic
+
+        return AssistantModelConfigDTO(**AssistantModelConfigPublic.of(saved).model_dump())
+
+    @app.post("/assistant/model-config/test", response_model=AssistantModelTestResponse)
+    async def assistant_model_config_test(
+        body: AssistantModelTestRequest,
+        _principal: Principal = Depends(can_configure),
+    ) -> AssistantModelTestResponse:
+        """用「待保存的表单值」试调一次(不落盘)。api_key=None 时复用已存密钥。"""
+        import time
+
+        from ..assistant import AssistantModelConfig, make_config_model_backend
+
+        stored_key = model_store.load().api_key if model_store is not None else ""
+        probe = AssistantModelConfig(
+            protocol=body.protocol,
+            endpoint=body.endpoint.strip(),
+            api_key=(stored_key if body.api_key is None else body.api_key),
+            model=body.model.strip(),
+            timeout_seconds=body.timeout_seconds,
+            verify_tls=body.verify_tls,
+            configured=True,
+        )
+        if not probe.endpoint or not probe.model:
+            return AssistantModelTestResponse(ok=False, detail="端点和模型名不能为空")
+        backend = make_config_model_backend(lambda: probe, model_fallback_key)
+        t0 = time.monotonic()
+        reply = await backend([{"role": "user", "content": "ping"}], [])
+        latency = int((time.monotonic() - t0) * 1000)
+        if reply.content or reply.tool_calls:
+            return AssistantModelTestResponse(
+                ok=True, detail="连接成功,模型已响应。", latency_ms=latency
+            )
+        return AssistantModelTestResponse(
+            ok=False,
+            detail="未收到模型回复:请检查端点/协议/密钥/模型名是否正确,以及服务是否可达。",
+            latency_ms=latency,
+        )
 
     # ── 写操作:确认执行 + 一键撤销(plan/11 §6;人闸在 chat 循环之外)──────
     @app.post("/assistant/confirm", response_model=AssistantConfirmResponse)

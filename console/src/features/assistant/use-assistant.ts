@@ -5,6 +5,9 @@ import type {
   AssistantTool,
   ChatResponse,
   ConfirmResponse,
+  ModelConfig,
+  ModelConfigUpdate,
+  ModelTestResult,
   PlanResult,
   StreamEvent,
   UndoResponse,
@@ -67,6 +70,31 @@ export function confirmAction(
 /** 一键撤销某已执行写操作。越权 → 后端 403。 */
 export function undoAction(actionId: string, sessionId: string): Promise<UndoResponse> {
   return api<UndoResponse>('/assistant/undo', j({ action_id: actionId, session_id: sessionId }))
+}
+
+// ─────────────────────────── 模型接入配置(三协议 + 本地私有化)───────────────────────────
+
+/**
+ * 当前模型接入配置(GET /assistant/model-config;密钥掩码)。前端据 `ready` 决定:
+ * 未就绪 → 设置按钮蓝色呼吸灯 + 发消息前置拦「请先配置」。每 30s 轮询(他人改了也同步)。
+ */
+export function useModelConfig() {
+  return useQuery<ModelConfig>({
+    queryKey: ['assistant', 'model-config'],
+    queryFn: () => api<ModelConfig>('/assistant/model-config'),
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  })
+}
+
+/** 保存模型接入配置(需 ai.configure;越权 → 后端 403)。保存即热加载生效。 */
+export function saveModelConfig(body: ModelConfigUpdate): Promise<ModelConfig> {
+  return api<ModelConfig>('/assistant/model-config', { method: 'PUT', body: JSON.stringify(body) })
+}
+
+/** 用「待保存的表单值」试调一次(不落盘),验证端点/协议/密钥/模型名是否可达可用。 */
+export function testModelConfig(body: ModelConfigUpdate): Promise<ModelTestResult> {
+  return api<ModelTestResult>('/assistant/model-config/test', j(body))
 }
 
 /** 清空某会话的多轮记忆(新建会话)。失败静默——前端已新建,后端旧记忆随会话自然失效。 */

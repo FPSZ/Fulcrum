@@ -46,6 +46,9 @@ PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("roles.manage", "管理角色权限", "系统"),
     PermissionDef("account.approve", "审批账号申请", "系统"),
     PermissionDef("ai.operate", "AI 操作助手", "系统"),  # 能否使用 AI 副驾代操作控制台
+    # 能否配置 AI 助手的模型接入(协议/端点/密钥/模型名)——高敏:默认仅超管+系统管理员。
+    # 其余内置角色显式列举权限、不含本点,故天然无权;新建角色需管理员显式勾选。
+    PermissionDef("ai.configure", "AI 模型配置", "系统"),
 )
 
 ALL_PERMISSION_KEYS: frozenset[str] = frozenset(p.key for p in PERMISSIONS)

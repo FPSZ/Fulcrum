@@ -1,25 +1,33 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowUp,
   Check,
   ChevronDown,
   Loader2,
+  Lock,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   RotateCcw,
+  Settings2,
   Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
 import { toast } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { useNavigateFeature } from '@/lib/nav'
 import {
   type AssistantStep,
   type ChatMessage,
+  type ModelConfig,
+  type ModelConfigUpdate,
+  type ModelProtocol,
+  type ModelTestResult,
   PAGE_TO_FEATURE,
   type ProposalState,
   type ProposedAction,
@@ -27,7 +35,15 @@ import {
   type UiDirective,
 } from './data'
 import { Markdown } from './markdown'
-import { confirmAction, resetAssistant, sendChatStream, undoAction } from './use-assistant'
+import {
+  confirmAction,
+  resetAssistant,
+  saveModelConfig,
+  sendChatStream,
+  testModelConfig,
+  undoAction,
+  useModelConfig,
+} from './use-assistant'
 import { type Conversation, useConversations } from './use-conversations'
 
 // 起步意图(空态建议)—— 覆盖查/办/跳,克制不堆砌。
@@ -63,6 +79,12 @@ function toProposalState(a: ProposedAction): ProposalState {
 
 export function AssistantPage() {
   const navigate = useNavigateFeature()
+  const { has } = useAuth()
+  const canConfigure = has('ai.configure') // 仅超管/系统管理员(或被显式授权角色)可改模型接入
+  // 模型接入配置:未就绪 → 设置按钮呼吸灯 + 发消息前置拦。
+  const { data: modelCfg } = useModelConfig()
+  const modelReady = modelCfg ? modelCfg.ready : true // 加载中先不拦(后端兜底)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // 多会话:每条会话 = 独立 session_id(后端记忆按它分桶)。切换会话即切上下文,各自延续。
   const {
     activeId,
@@ -74,9 +96,20 @@ export function AssistantPage() {
     removeConversation,
   } = useConversations()
 
-  const [busy, setBusy] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  // 组件挂载态:卸载后流式仍在后台写 store(回答不丢),但导航类指令不再触发(别把已离开的用户拽走)。
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  // busy 由「当前会话是否有正在流式的回答」派生。状态在模块级 store,切页/回来都准确,
+  // 后台仍在流的会话不会因组件重挂而误判为空闲。
+  const busy = messages.some((m) => m.role === 'assistant' && m.streaming)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -120,7 +153,7 @@ export function AssistantPage() {
   const applyEvent = useCallback(
     (cid: string, aid: string, ev: StreamEvent) => {
       if (ev.type === 'ui') {
-        runDirective(ev)
+        if (mounted.current) runDirective(ev)
         return
       }
       if (ev.type === 'done' && ev.compressed) {
@@ -154,6 +187,16 @@ export function AssistantPage() {
     async (raw: string) => {
       const text = raw.trim()
       if (!text || busy) return
+      // 模型未配置:不发,提示并打开设置(有权配则可立即填,无权配则提示找管理员)。
+      if (!modelReady) {
+        toast.error('模型尚未配置', {
+          description: canConfigure
+            ? '请先在设置里配置模型协议、端点与密钥。'
+            : '请联系管理员配置 AI 模型接入后再使用。',
+        })
+        if (canConfigure) setSettingsOpen(true)
+        return
+      }
       const cid = activeId // 捕获当轮会话,流式回调按它写,期间切会话也不串
       const aid = newId()
       setMessagesOf(cid, (m) => [
@@ -170,7 +213,6 @@ export function AssistantPage() {
           proposals: [],
         },
       ])
-      setBusy(true)
       try {
         await sendChatStream(text, cid, (ev) => applyEvent(cid, aid, ev))
       } catch (e) {
@@ -182,7 +224,7 @@ export function AssistantPage() {
           ),
         )
       } finally {
-        setBusy(false)
+        // 收尾:无论如何把流式态落定(busy 由它派生)。即便组件已卸载,写的是模块 store,回答不丢。
         setMessagesOf(cid, (m) =>
           m.map((x) =>
             x.id === aid && x.role === 'assistant' ? { ...x, pending: false, streaming: false } : x,
@@ -190,7 +232,7 @@ export function AssistantPage() {
         )
       }
     },
-    [busy, activeId, applyEvent, setMessagesOf],
+    [busy, activeId, applyEvent, setMessagesOf, modelReady, canConfigure],
   )
 
   // 新建会话:开一条新草稿(空态)。旧会话记忆保留,侧栏点回去上下文还在。
@@ -313,7 +355,13 @@ export function AssistantPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, ease: EASE, delay: 0.05 }}
               >
-                <Composer onSend={send} busy={busy} autoFocus />
+                <Composer
+                  onSend={send}
+                  busy={busy}
+                  autoFocus
+                  modelReady={modelReady}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                />
               </motion.div>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
                 {SUGGESTIONS.map((s, i) => (
@@ -372,7 +420,12 @@ export function AssistantPage() {
             </div>
             <div className="px-4 pb-5">
               <div className="mx-auto max-w-[768px]">
-                <Composer onSend={send} busy={busy} />
+                <Composer
+                  onSend={send}
+                  busy={busy}
+                  modelReady={modelReady}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                />
                 <p className="mt-2 text-center text-[13.5px] text-ink-mute">
                   助手在权限闸门内操作,工具调用与写操作均经审计、可一键撤销 · AI 可能出错,请核对
                 </p>
@@ -382,6 +435,15 @@ export function AssistantPage() {
         )}
         </AnimatePresence>
       </div>
+      <AnimatePresence>
+        {settingsOpen && (
+          <ModelSettingsModal
+            cfg={modelCfg}
+            canConfigure={canConfigure}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -517,10 +579,14 @@ function Composer({
   onSend,
   busy,
   autoFocus,
+  modelReady,
+  onOpenSettings,
 }: {
   onSend: (s: string) => void
   busy: boolean
   autoFocus?: boolean
+  modelReady: boolean
+  onOpenSettings: () => void
 }) {
   const [value, setValue] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -560,7 +626,12 @@ function Composer({
         className="block min-h-[60px] max-h-[200px] w-full resize-none bg-transparent px-1 text-[16px] leading-7 text-ink outline-none placeholder:text-ink-mute"
       />
       <div className="mt-1 flex items-center justify-between px-0.5">
-        <span className="text-[13px] text-ink-mute">Enter 发送 · Shift+Enter 换行</span>
+        <div className="flex items-center gap-2.5">
+          <SettingsButton ready={modelReady} onClick={onOpenSettings} />
+          <span className="text-[13px] text-ink-mute">
+            {modelReady ? 'Enter 发送 · Shift+Enter 换行' : '模型未配置 · 点左侧设置'}
+          </span>
+        </div>
         <motion.button
           onClick={submit}
           disabled={busy || !value.trim()}
@@ -578,6 +649,372 @@ function Composer({
       </div>
     </div>
   )
+}
+
+// ─────────────────────────── 模型设置:输入框左侧入口 + 配置弹窗 ───────────────────────────
+
+/** 设置齿轮:未配置时蓝色呼吸灯(扩散环 + 脉冲环)闪烁,提示去配置。 */
+function SettingsButton({ ready, onClick }: { ready: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="模型设置"
+      title={ready ? '模型设置' : '模型未配置 —— 点击配置'}
+      className={cn(
+        'focus-ring relative grid h-8 w-8 place-items-center rounded-full transition-colors',
+        ready ? 'text-ink-mute hover:bg-surface-2 hover:text-ink-2' : 'text-accent hover:bg-accent/10',
+      )}
+    >
+      {!ready && (
+        <>
+          <span className="pointer-events-none absolute inset-0 animate-ping rounded-full bg-accent/30" />
+          <span className="pointer-events-none absolute inset-0 animate-pulse rounded-full ring-2 ring-accent/50" />
+        </>
+      )}
+      <Settings2 className="relative h-[18px] w-[18px]" strokeWidth={1.9} />
+    </button>
+  )
+}
+
+// 协议元信息(表单提示)与一键预设(本地私有化优先)。
+const PROTO_META: Record<
+  ModelProtocol,
+  { name: string; hint: string; endpointPh: string; modelPh: string }
+> = {
+  openai: {
+    name: 'OpenAI 兼容',
+    hint: '覆盖 OpenAI / DeepSeek / Kimi / MiMo,以及本地 vLLM / LM Studio / llama.cpp / Ollama 的 /v1 端点',
+    endpointPh: 'https://api.openai.com/v1 或 http://127.0.0.1:1234/v1',
+    modelPh: 'gpt-4o-mini / deepseek-chat / qwen2.5',
+  },
+  ollama: {
+    name: 'Ollama 原生',
+    hint: '本地私有化最常见,通常免密钥',
+    endpointPh: 'http://127.0.0.1:11434',
+    modelPh: 'qwen2.5 / llama3.1 / deepseek-r1',
+  },
+  anthropic: {
+    name: 'Anthropic',
+    hint: 'Claude /v1/messages',
+    endpointPh: 'https://api.anthropic.com',
+    modelPh: 'claude-3-5-sonnet-latest',
+  },
+}
+
+const PRESETS: { label: string; protocol: ModelProtocol; endpoint: string; model: string }[] = [
+  { label: 'Ollama 本地', protocol: 'ollama', endpoint: 'http://127.0.0.1:11434', model: 'qwen2.5' },
+  {
+    label: 'LM Studio 本地',
+    protocol: 'openai',
+    endpoint: 'http://127.0.0.1:1234/v1',
+    model: 'local-model',
+  },
+  { label: 'vLLM 本地', protocol: 'openai', endpoint: 'http://127.0.0.1:8000/v1', model: '' },
+  { label: 'OpenAI', protocol: 'openai', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  {
+    label: 'DeepSeek',
+    protocol: 'openai',
+    endpoint: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+  },
+  {
+    label: 'Anthropic',
+    protocol: 'anthropic',
+    endpoint: 'https://api.anthropic.com',
+    model: 'claude-3-5-sonnet-latest',
+  },
+]
+
+function ModelSettingsModal({
+  cfg,
+  canConfigure,
+  onClose,
+}: {
+  cfg: ModelConfig | undefined
+  canConfigure: boolean
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const [protocol, setProtocol] = useState<ModelProtocol>(cfg?.protocol ?? 'openai')
+  const [endpoint, setEndpoint] = useState(cfg?.endpoint ?? '')
+  const [model, setModel] = useState(cfg?.model ?? '')
+  const [apiKey, setApiKey] = useState('') // 留空=保持原密钥;键入=设新值
+  const [timeoutS, setTimeoutS] = useState(cfg?.timeout_seconds ?? 90)
+  const [verifyTls, setVerifyTls] = useState(cfg?.verify_tls ?? true)
+  const [testing, setTesting] = useState(false)
+  const [result, setResult] = useState<ModelTestResult | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  // Esc 关闭。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const meta = PROTO_META[protocol]
+  const ro = !canConfigure
+  const valid = endpoint.trim() !== '' && model.trim() !== ''
+
+  const payload = (): ModelConfigUpdate => ({
+    protocol,
+    endpoint: endpoint.trim(),
+    model: model.trim(),
+    api_key: apiKey ? apiKey : undefined,
+    timeout_seconds: timeoutS,
+    verify_tls: verifyTls,
+  })
+
+  const applyPreset = (p: (typeof PRESETS)[number]) => {
+    setProtocol(p.protocol)
+    setEndpoint(p.endpoint)
+    setModel(p.model)
+    setResult(null)
+  }
+
+  const onTest = async () => {
+    setTesting(true)
+    setResult(null)
+    try {
+      setResult(await testModelConfig(payload()))
+    } catch (e) {
+      setResult({ ok: false, detail: (e as Error).message })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const onSave = async () => {
+    setSaving(true)
+    try {
+      await saveModelConfig(payload())
+      await qc.invalidateQueries({ queryKey: ['assistant', 'model-config'] })
+      toast.success('已保存模型配置', { description: '热加载生效,现在可以开始对话了。' })
+      onClose()
+    } catch (e) {
+      toast.error('保存失败', { description: (e as Error).message })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputCls =
+    'focus-ring h-10 w-full rounded-lg border border-line-2 bg-surface px-3 text-[14px] text-ink placeholder:text-ink-mute disabled:opacity-60'
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      onClick={onClose}
+      className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4 backdrop-blur-sm"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.98, y: 6 }}
+        transition={{ duration: 0.22, ease: EASE }}
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[88vh] w-full max-w-[560px] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-xl"
+      >
+        <div className="flex items-center justify-between border-b border-line px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent/10 text-accent">
+              <Settings2 className="h-[18px] w-[18px]" />
+            </div>
+            <div>
+              <h2 className="text-[16px] font-semibold text-ink">AI 模型接入</h2>
+              <p className="text-[12.5px] text-ink-mute">本地私有化优先 · 三协议 · 密钥仅存服务端</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭"
+            className="focus-ring grid h-8 w-8 place-items-center rounded-lg text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink-2"
+          >
+            <X className="h-[18px] w-[18px]" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          {ro && (
+            <div className="flex items-start gap-2 rounded-lg bg-med/10 px-3 py-2.5 text-[13px] text-med">
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>你没有「AI 模型配置」权限,以下为只读。请联系超级管理员或系统管理员配置。</span>
+            </div>
+          )}
+
+          <div>
+            <Label>协议</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.keys(PROTO_META) as ModelProtocol[]).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  disabled={ro}
+                  onClick={() => {
+                    setProtocol(p)
+                    setResult(null)
+                  }}
+                  className={cn(
+                    'focus-ring rounded-lg border px-2 py-2 text-[13.5px] font-medium transition-colors disabled:opacity-60',
+                    protocol === p
+                      ? 'border-accent bg-accent/10 text-accent-ink'
+                      : 'border-line-2 bg-surface text-ink-2 hover:border-line-3 hover:bg-surface-2',
+                  )}
+                >
+                  {PROTO_META[p].name}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[12.5px] leading-snug text-ink-mute">{meta.hint}</p>
+          </div>
+
+          {!ro && (
+            <div>
+              <Label>快速预设</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => applyPreset(p)}
+                    className="focus-ring rounded-full border border-line-2 bg-surface px-2.5 py-1 text-[12.5px] text-ink-2 transition-colors hover:border-accent/40 hover:bg-accent/5 hover:text-accent-ink"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <Label>端点 Endpoint</Label>
+            <input
+              value={endpoint}
+              disabled={ro}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder={meta.endpointPh}
+              className={cn(inputCls, 'font-mono text-[13px]')}
+            />
+          </div>
+
+          <div>
+            <Label>模型名 Model</Label>
+            <input
+              value={model}
+              disabled={ro}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder={meta.modelPh}
+              className={inputCls}
+            />
+          </div>
+
+          <div>
+            <Label>API Key（本地模型可留空）</Label>
+            <input
+              type="password"
+              value={apiKey}
+              disabled={ro}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={
+                cfg?.api_key_set ? `已配置 ${cfg.api_key_masked}(留空保持不变)` : '本地模型可留空'
+              }
+              autoComplete="off"
+              className={cn(inputCls, 'font-mono text-[13px]')}
+            />
+            <p className="mt-1.5 text-[12px] leading-snug text-ink-mute">
+              密钥仅保存在服务端(0600 文件),不写入前端、不回显;私有化部署数据不出域。
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <Label>超时(秒)</Label>
+              <input
+                type="number"
+                value={timeoutS}
+                disabled={ro}
+                min={1}
+                max={600}
+                onChange={(e) => setTimeoutS(e.target.valueAsNumber || 90)}
+                className={inputCls}
+              />
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 pt-5 text-[13.5px] text-ink-2">
+              <input
+                type="checkbox"
+                checked={verifyTls}
+                disabled={ro}
+                onChange={(e) => setVerifyTls(e.target.checked)}
+                className="h-[16px] w-[16px] accent-accent disabled:opacity-60"
+              />
+              校验 TLS 证书
+            </label>
+          </div>
+
+          {result && (
+            <div
+              className={cn(
+                'flex items-start gap-2 rounded-lg px-3 py-2.5 text-[13px]',
+                result.ok ? 'bg-ok/10 text-ok' : 'bg-crit/10 text-crit',
+              )}
+            >
+              {result.ok ? (
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <X className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              )}
+              <span>
+                {result.detail}
+                {result.ok && result.latency_ms != null ? `(${result.latency_ms} ms)` : ''}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {!ro && (
+          <div className="flex items-center justify-between gap-2 border-t border-line px-5 py-3.5">
+            <button
+              type="button"
+              onClick={onTest}
+              disabled={!valid || testing}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-line-2 px-3.5 py-2 text-[14px] text-ink-2 transition-colors hover:border-line-3 hover:bg-surface-2 disabled:opacity-50"
+            >
+              {testing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              测试连接
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="focus-ring rounded-lg px-3.5 py-2 text-[14px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink-2"
+              >
+                取消
+              </button>
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.96 }}
+                onClick={onSave}
+                disabled={!valid || saving}
+                className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+              >
+                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                保存
+              </motion.button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  )
+}
+
+function Label({ children }: { children: ReactNode }) {
+  return <div className="mb-1.5 text-[13px] font-medium text-ink-2">{children}</div>
 }
 
 // ─────────────────────────── 消息 ───────────────────────────
@@ -695,7 +1132,7 @@ function Trace({ steps }: { steps: AssistantStep[] }) {
 // ─────────────────────────── 写操作:可编辑提案卡片(VSCode 式差异)───────────────────────────
 
 const RISK_DOT: Record<string, string> = {
-  high: 'bg-crit',
+  high: 'bg-accent',
   normal: 'bg-med',
   read_only: 'bg-ok',
 }
@@ -761,7 +1198,7 @@ function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardPr
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={onConfirm}
-              className="focus-ring rounded-lg bg-ink px-3.5 py-2 text-[14px] font-medium text-white transition-colors hover:bg-ink-2"
+              className="focus-ring rounded-lg bg-accent px-3.5 py-2 text-[14px] font-medium text-white transition-colors hover:bg-accent-hover"
             >
               确认执行
             </motion.button>

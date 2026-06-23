@@ -30,6 +30,12 @@ from .model_client import (
     make_dynamic_stream_backend,
     to_function_spec,
 )
+from .model_config import (
+    AssistantModelConfig,
+    AssistantModelConfigPublic,
+    AssistantModelConfigStore,
+)
+from .model_transports import make_config_model_backend, make_config_stream_backend
 from .planner import AssistantPlan, make_model_backend, plan
 from .services import AssistantServices
 
@@ -40,6 +46,9 @@ __all__ = [
     "ActionTokenSigner",
     "AssistantActuator",
     "AssistantAgent",
+    "AssistantModelConfig",
+    "AssistantModelConfigPublic",
+    "AssistantModelConfigStore",
     "AssistantPlan",
     "AssistantProposedAction",
     "AssistantRunResult",
@@ -55,6 +64,8 @@ __all__ = [
     "Summarizer",
     "UndoResult",
     "UndoStore",
+    "make_config_model_backend",
+    "make_config_stream_backend",
     "make_dynamic_model_backend",
     "make_dynamic_stream_backend",
     "make_model_backend",

@@ -156,6 +156,41 @@ export interface UndoResponse {
   error: string | null
 }
 
+// ─────────────────────────── 模型接入配置(本地私有化优先,三协议)───────────────────────────
+
+/** 模型协议:OpenAI 兼容 / Ollama 原生 / Anthropic。 */
+export type ModelProtocol = 'openai' | 'ollama' | 'anthropic'
+
+/** 模型接入配置回显(镜像 AssistantModelConfigDTO;密钥掩码)。 */
+export interface ModelConfig {
+  protocol: ModelProtocol
+  endpoint: string
+  model: string
+  api_key_masked: string
+  api_key_set: boolean
+  timeout_seconds: number
+  verify_tls: boolean
+  configured: boolean // 是否已显式配置完成
+  ready: boolean // 是否可真正发起对话(configured + 端点/模型齐备)
+}
+
+/** 保存/测试模型配置的表单负载。api_key:undefined=保持原值,""=清空,非空=设新值。 */
+export interface ModelConfigUpdate {
+  protocol: ModelProtocol
+  endpoint: string
+  model: string
+  api_key?: string | null
+  timeout_seconds?: number
+  verify_tls?: boolean
+}
+
+/** 测试连接结果。 */
+export interface ModelTestResult {
+  ok: boolean
+  detail: string
+  latency_ms?: number | null
+}
+
 /** ui 工具 name → 前端功能页 id(导航直达)。后端 page 枚举与功能页 id 基本同名。 */
 export const PAGE_TO_FEATURE: Record<string, string> = {
   overview: 'overview',

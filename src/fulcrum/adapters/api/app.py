@@ -130,11 +130,13 @@ def build_api(
             ActionTokenSigner,
             AssistantActuator,
             AssistantAgent,
+            AssistantModelConfig,
+            AssistantModelConfigStore,
             AssistantServices,
             ConversationStore,
             UndoStore,
-            make_dynamic_model_backend,
-            make_dynamic_stream_backend,
+            make_config_model_backend,
+            make_config_stream_backend,
         )
 
         assistant_services = AssistantServices(
@@ -147,14 +149,24 @@ def build_api(
             console_store=console_store,
             forwarder=upstream,
         )
-        model_turn = assistant_model_turn or make_dynamic_model_backend(
-            settings.model_endpoint, settings.model_api_key, settings.model_name
+        # 模型接入配置:运行时可改、落盘热加载(设置页填表即生效;本地私有化优先)。
+        # 首启种子取 .env 的端点/模型名作默认表单;**密钥不落种子盘**(仍仅经 .env 注入,
+        # 作 fallback),避免把比赛/演示密钥写进 model.json。买家配自己的私有 key 时才落盘。
+        model_store = AssistantModelConfigStore(
+            settings.assistant_model_config_path,
+            seed=AssistantModelConfig(
+                protocol="openai",
+                endpoint=settings.model_endpoint,
+                model=settings.model_name,
+                configured=bool(settings.model_api_key),
+            ),
+        )
+        model_turn = assistant_model_turn or make_config_model_backend(
+            model_store.load, settings.model_api_key
         )
         token_signer = ActionTokenSigner()
         undo_store = UndoStore()
-        stream_turn = make_dynamic_stream_backend(
-            settings.model_endpoint, settings.model_api_key, settings.model_name
-        )
+        stream_turn = make_config_stream_backend(model_store.load, settings.model_api_key)
         conversation_store = ConversationStore(settings.conversation_dir)
 
         async def _summarize(text: str) -> str:
@@ -192,6 +204,10 @@ def build_api(
             agent=assistant_agent,
             actuator=assistant_actuator,
             conversation=conversation_store,
+            model_store=model_store,
+            model_fallback_key=settings.model_api_key,
+            # 仅真后端启用「未配置即拦对话」;测试注入假 turn 时不拦,保持既有用例语义。
+            enforce_model_ready=assistant_model_turn is None,
         )
         if upstream is not None and gateway_store is not None:
             from .gateway_routes import register_gateway_routes
