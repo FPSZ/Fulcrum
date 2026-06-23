@@ -360,6 +360,7 @@ export function AssistantPage() {
                   busy={busy}
                   autoFocus
                   modelReady={modelReady}
+                  canConfigure={canConfigure}
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
               </motion.div>
@@ -424,6 +425,7 @@ export function AssistantPage() {
                   onSend={send}
                   busy={busy}
                   modelReady={modelReady}
+                  canConfigure={canConfigure}
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
                 <p className="mt-2 text-center text-[13.5px] text-ink-mute">
@@ -580,12 +582,14 @@ function Composer({
   busy,
   autoFocus,
   modelReady,
+  canConfigure,
   onOpenSettings,
 }: {
   onSend: (s: string) => void
   busy: boolean
   autoFocus?: boolean
   modelReady: boolean
+  canConfigure: boolean
   onOpenSettings: () => void
 }) {
   const [value, setValue] = useState('')
@@ -627,9 +631,17 @@ function Composer({
       />
       <div className="mt-1 flex items-center justify-between px-0.5">
         <div className="flex items-center gap-2.5">
-          <SettingsButton ready={modelReady} onClick={onOpenSettings} />
+          <SettingsButton
+            ready={modelReady}
+            canConfigure={canConfigure}
+            onClick={onOpenSettings}
+          />
           <span className="text-[13px] text-ink-mute">
-            {modelReady ? 'Enter 发送 · Shift+Enter 换行' : '模型未配置 · 点左侧设置'}
+            {modelReady
+              ? 'Enter 发送 · Shift+Enter 换行'
+              : canConfigure
+                ? '模型未配置 · 点左侧设置'
+                : '模型未配置 · 请联系管理员'}
           </span>
         </div>
         <motion.button
@@ -653,8 +665,30 @@ function Composer({
 
 // ─────────────────────────── 模型设置:输入框左侧入口 + 配置弹窗 ───────────────────────────
 
-/** 设置齿轮:未配置时蓝色呼吸灯(扩散环 + 脉冲环)闪烁,提示去配置。 */
-function SettingsButton({ ready, onClick }: { ready: boolean; onClick: () => void }) {
+/** 设置齿轮:有「AI 模型配置」权限才可点;未配置时蓝色呼吸灯闪烁。无权限 → 灰、禁用、不可点。 */
+function SettingsButton({
+  ready,
+  canConfigure,
+  onClick,
+}: {
+  ready: boolean
+  canConfigure: boolean
+  onClick: () => void
+}) {
+  // 无权限:灰色禁用,不闪呼吸灯,点不动(提示找管理员)。
+  if (!canConfigure) {
+    return (
+      <button
+        type="button"
+        disabled
+        aria-label="模型设置(需权限)"
+        title="配置 AI 模型需「AI 模型配置」权限,请联系管理员"
+        className="grid h-8 w-8 cursor-not-allowed place-items-center rounded-full text-ink-mute/40"
+      >
+        <Settings2 className="h-[18px] w-[18px]" strokeWidth={1.9} />
+      </button>
+    )
+  }
   return (
     <button
       type="button"
