@@ -60,7 +60,7 @@ export function GatewayUpstreamPanel() {
 
   if (loadErr) {
     return (
-      <SettingSection title="上游接入" desc="配置网关前置保护的企业智能体。">
+      <SettingSection title="上游接入">
         <SettingRow label="加载失败" hint={loadErr}>
           <Badge tone="high">不可用</Badge>
         </SettingRow>
@@ -69,7 +69,7 @@ export function GatewayUpstreamPanel() {
   }
   if (!form) {
     return (
-      <SettingSection title="上游接入" desc="配置网关前置保护的企业智能体。">
+      <SettingSection title="上游接入">
         <SettingRow label="读取配置中…">
           <Loader2 className="h-4 w-4 animate-spin text-ink-3" />
         </SettingRow>
@@ -116,11 +116,8 @@ export function GatewayUpstreamPanel() {
   const pwdPlaceholder = meta.set ? `已设置 ${meta.masked}(留空不改)` : '未设置'
 
   return (
-    <SettingSection
-      title="上游接入"
-      desc="配置网关前置保护的企业智能体:填地址与认证 → 测试连接 → 保存即生效。密钥仅存后端,不回前端。"
-    >
-      <SettingRow label="启用接入" hint="关闭后网关将拒绝转发(只判定不放行)">
+    <SettingSection title="上游接入" desc="密钥仅存后端,不回前端。">
+      <SettingRow label="启用接入" hint="关闭后只判定不转发">
         <Switch
           checked={form.enabled}
           onCheckedChange={(v) => set('enabled', v)}
@@ -128,7 +125,7 @@ export function GatewayUpstreamPanel() {
         />
       </SettingRow>
 
-      <SettingRow label="名称" hint="便于识别的标签">
+      <SettingRow label="名称">
         <Input
           value={form.name}
           onChange={(e) => set('name', e.target.value)}
@@ -137,7 +134,7 @@ export function GatewayUpstreamPanel() {
         />
       </SettingRow>
 
-      <SettingRow label="接入协议" hint="OpenClaw 类及多数智能体/LLM 网关均为 OpenAI 兼容">
+      <SettingRow label="接入协议" hint="多数智能体 / LLM 网关为 OpenAI 兼容">
         <Select
           value={form.protocol}
           onValueChange={(v) => set('protocol', v as GatewayProtocol)}

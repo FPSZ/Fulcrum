@@ -149,7 +149,7 @@ export function SettingsPage() {
 function GeneralPanel() {
   const { form, set, dirty, saving, onSave, loading, ro } = useSettingsForm()
   return (
-    <SettingSection title="通用" desc="实例标识与界面偏好(落盘持久化,保存即存)。">
+    <SettingSection title="通用">
       {loading || !form ? (
         <LoadingRow />
       ) : (
@@ -174,7 +174,7 @@ function GeneralPanel() {
               ]}
             />
           </SettingRow>
-          <SettingRow label="界面语言" hint="界面文案以简体中文为主,英文为部分支持">
+          <SettingRow label="界面语言" hint="英文为部分支持">
             <Select
               value={form.language}
               onValueChange={(v) => set('language', v as typeof form.language)}
@@ -209,11 +209,8 @@ function GatewayPanel() {
       {/* 真实可配:上游接入(对接后端 /admin/gateway-config) */}
       <GatewayUpstreamPanel />
       {/* 网关边界与默认处置(规划项) */}
-      <SettingSection title="网关边界" desc="透明安全网关的边界与默认处置策略。">
-        <SettingRow
-          label="失败模式 fail-closed"
-          hint="安全关键路径出错即拦截(架构红线,强制开启)"
-        >
+      <SettingSection title="网关边界">
+        <SettingRow label="失败模式 fail-closed" hint="出错即拦截,强制开启">
           <Switch defaultChecked disabled />
         </SettingRow>
         <SettingRow label="默认处置" hint="未命中放行策略时的兜底动作">
@@ -240,10 +237,7 @@ function ModelsPanel() {
   const { form, loading } = useSettingsForm()
   const m = form?.backend_model
   return (
-    <SettingSection
-      title="模型接入"
-      desc="后端检测/编排模型的出站配置 —— 经 .env 注入,控制台只读如实回显(密钥不入前端、不入库)。"
-    >
+    <SettingSection title="模型接入" desc="经 .env 注入,控制台只读。">
       {loading || !m ? (
         <LoadingRow />
       ) : (
@@ -270,11 +264,11 @@ function AuditPanel() {
   const [convShow, setConvShow] = useConversationDisplay()
   const { form, set, dirty, saving, onSave, loading, ro } = useSettingsForm()
   return (
-    <SettingSection title="审计与留存" desc="hash-chain 审计、对话留存展示与数据留存策略(留存项落盘持久化)。">
-      <SettingRow label="hash-chain 审计" hint="事件以哈希链串联,可验证不可篡改(强制开启)">
+    <SettingSection title="审计与留存">
+      <SettingRow label="hash-chain 审计" hint="不可篡改,强制开启">
         <Switch defaultChecked disabled />
       </SettingRow>
-      <SettingRow label="事件对话展示" hint="详情页呈现用户↔AI对话。已脱敏(本机偏好)">
+      <SettingRow label="事件对话展示" hint="详情页呈现对话,已脱敏(本机偏好)">
         <Switch checked={convShow} onCheckedChange={setConvShow} />
       </SettingRow>
       {loading || !form ? (
@@ -327,7 +321,7 @@ function AuditPanel() {
 function NotificationsPanel() {
   const { form, set, dirty, saving, onSave, loading, ro } = useSettingsForm()
   return (
-    <SettingSection title="通知" desc="风险事件与待审批的提醒方式(落盘持久化,保存即存)。">
+    <SettingSection title="通知">
       {loading || !form ? (
         <LoadingRow />
       ) : (
@@ -368,20 +362,14 @@ function NotificationsPanel() {
 function DeveloperPanel() {
   const [devMode, setDevMode] = useDevMode()
   return (
-    <SettingSection
-      title="开发者"
-      desc="面向开发/答辩/联调的页面;真·政企管理员日常用不到,默认隐藏。"
-    >
-      <SettingRow
-        label="开发者模式"
-        hint="开启后侧栏显示「网关实测」「评测验证」等开发者专属页"
-      >
+    <SettingSection title="开发者" desc="开发与演示用页面,默认隐藏。">
+      <SettingRow label="开发者模式" hint="开启后侧栏显示「网关实测」「评测验证」">
         <Switch checked={devMode} onCheckedChange={setDevMode} />
       </SettingRow>
-      <SettingRow label="网关实测" hint="手动发请求看网关分级处置 + 端到端链路(开发/演示)">
+      <SettingRow label="网关实测" hint="手动发请求看网关处置与端到端链路">
         <Badge tone={devMode ? 'accent' : 'neutral'}>{devMode ? '显示' : '隐藏'}</Badge>
       </SettingRow>
-      <SettingRow label="评测验证" hint="测试集 ASR/FPR/召回记分卡(开发/答辩)">
+      <SettingRow label="评测验证" hint="测试集 ASR/FPR/召回记分卡">
         <Badge tone={devMode ? 'accent' : 'neutral'}>{devMode ? '显示' : '隐藏'}</Badge>
       </SettingRow>
     </SettingSection>
@@ -390,14 +378,14 @@ function DeveloperPanel() {
 
 function AboutPanel() {
   return (
-    <SettingSection title="关于" desc="部署形态与版本信息。">
+    <SettingSection title="关于">
       <SettingRow label="产品">
         <span className="text-[15px] text-ink-2">枢衡 Fulcrum · 安全控制台</span>
       </SettingRow>
       <SettingRow label="版本">
         <span className="font-data text-[14px] text-ink-2">0.1.0</span>
       </SettingRow>
-      <SettingRow label="部署形态" hint="政企数据不出域">
+      <SettingRow label="部署形态">
         <Badge tone="accent">私有化 · 单租户 · 自托管</Badge>
       </SettingRow>
       <SettingRow label="许可证">

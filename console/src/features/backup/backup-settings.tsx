@@ -14,19 +14,16 @@ export function BackupSettings() {
 
   return (
     <div>
-      <SettingSection
-        title="数据与备份"
-        desc="私有化部署:所有数据仅存于本地实例,不出域。通过备份文件导入 / 导出迁移数据。"
-      >
-        <SettingRow label="导入备份" hint="选择枢衡备份文件(.json),或载入内置演示备份">
+      <SettingSection title="数据与备份">
+        <SettingRow label="导入备份" hint="支持 .json 备份文件,或载入演示备份">
           <ImportBackupButtons size="sm" />
         </SettingRow>
-        <SettingRow label="导出当前数据" hint="把当前实例的数据打包为备份文件下载">
+        <SettingRow label="导出当前数据">
           <Button size="sm" onClick={exportBackup} disabled={!hasData}>
             <Download className="h-3.5 w-3.5" /> 导出备份
           </Button>
         </SettingRow>
-        <SettingRow label="清空本地数据" hint="移除本机已导入的数据(不影响备份文件本身)">
+        <SettingRow label="清空本地数据">
           <Button size="sm" variant="danger" disabled={!hasData} onClick={() => setConfirmOpen(true)}>
             <Trash2 className="h-3.5 w-3.5" /> 清空
           </Button>
@@ -69,7 +66,7 @@ export function BackupSettings() {
         </p>
       </Dialog>
 
-      <SettingSection title="当前备份" desc="本机已导入的资源概览。">
+      <SettingSection title="当前备份">
         {hasData ? (
           <>
             {meta?.instance && (
@@ -84,7 +81,7 @@ export function BackupSettings() {
                 </span>
               </SettingRow>
             )}
-            <SettingRow label="资源" hint="备份按资源类型分桶,后续可扩展更多类型">
+            <SettingRow label="资源">
               <div className="flex flex-wrap justify-end gap-1.5">
                 {specs.map((s) => {
                   const n = resources[s.kind]?.length ?? 0
@@ -102,17 +99,14 @@ export function BackupSettings() {
         )}
       </SettingSection>
 
-      <SettingSection
-        title="备份格式"
-        desc="版本化、按资源类型分桶的容器,支持向前兼容(未知资源类型会被安全忽略)。"
-      >
+      <SettingSection title="备份格式">
         <SettingRow label="文件类型">
           <Badge tone="neutral">fulcrum.backup</Badge>
         </SettingRow>
         <SettingRow label="Schema 版本">
           <span className="font-data text-[14px] text-ink-2">v{BACKUP_SCHEMA_VERSION}</span>
         </SettingRow>
-        <SettingRow label="当前支持资源" hint="路线图:策略 / 工具 / 供应链 / 审计链 / 评测 …(逐步开放导入)">
+        <SettingRow label="当前支持资源">
           <div className="flex flex-wrap justify-end gap-1.5">
             {specs.map((s) => (
               <Badge key={s.kind} tone="neutral">
