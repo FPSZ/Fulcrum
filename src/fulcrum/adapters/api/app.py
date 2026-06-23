@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from ...core.gateway import GateVerdict
     from ...core.pipeline import SecurityPipeline, ToolOutcome
     from ...core.ports import SupplyChainScanner
+    from ..assistant import ModelTurn
     from ..assistant.planner import ModelComplete
     from ..auth import AuthBundle
     from ..gateway import GatewayConfigStore, UpstreamForwarder
@@ -77,6 +78,7 @@ def build_api(
     gateway_store: GatewayConfigStore | None = None,
     scanner: SupplyChainScanner | None = None,
     assistant_complete: ModelComplete | None = None,
+    assistant_model_turn: ModelTurn | None = None,
 ) -> FastAPI:
     app = FastAPI(title="枢衡 Fulcrum API", version=__version__)
 
@@ -121,7 +123,23 @@ def build_api(
         complete = assistant_complete or make_model_backend(
             settings.model_endpoint, settings.model_api_key, settings.model_name
         )
-        register_assistant_routes(app, pipeline, deps, complete)
+        # 真 Agent(plan/11):操作服务包 + 动态工具模型客户端 + Agent 循环(三道吃狗粮闸门)。
+        from ..assistant import AssistantAgent, AssistantServices, make_dynamic_model_backend
+
+        assistant_services = AssistantServices(
+            pipeline=pipeline,
+            eval_report_path=settings.eval_report_path,
+            supply_manifest_dir=settings.supply_manifest_dir,
+            directory=auth.directory,
+            scanner=scanner,
+            gateway_store=gateway_store,
+            console_store=console_store,
+        )
+        model_turn = assistant_model_turn or make_dynamic_model_backend(
+            settings.model_endpoint, settings.model_api_key, settings.model_name
+        )
+        assistant_agent = AssistantAgent(pipeline, assistant_services, model_turn)
+        register_assistant_routes(app, pipeline, deps, complete, agent=assistant_agent)
         if upstream is not None and gateway_store is not None:
             from .gateway_routes import register_gateway_routes
 

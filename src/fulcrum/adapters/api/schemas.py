@@ -457,6 +457,62 @@ class AssistantPlanResponse(BaseModel):
     denied: bool = False
 
 
+# ---- AI 操作助手(真 Agent · plan/11)----
+class AssistantChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    session_id: str | None = Field(default=None, max_length=128)
+
+
+class AssistantToolDTO(BaseModel):
+    """当前角色可调的一个工具(供助手面板侧栏 + /assistant/tools 列出)。"""
+
+    name: str
+    kind: str
+    label: str
+    description: str
+    risk: str
+    requires: list[str] = Field(default_factory=list)
+    reversible: bool = False
+
+
+class AssistantUiDirectiveDTO(BaseModel):
+    """前端待执行的 ui 指令(导航/筛选/开面板)。"""
+
+    tool: str
+    label: str
+    args: dict = Field(default_factory=dict)
+
+
+class AssistantProposedActionDTO(BaseModel):
+    """写操作的待确认提案(P1 占位,不执行)。"""
+
+    tool: str
+    label: str
+    risk: str
+    args: dict = Field(default_factory=dict)
+    requires: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class AssistantStepDTO(BaseModel):
+    """一步执行轨迹(透明展示助手调了什么)。"""
+
+    tool: str
+    kind: str
+    label: str
+    ok: bool
+    detail: str = ""
+
+
+class AssistantChatResponse(BaseModel):
+    session_id: str
+    reply: str
+    blocked: bool = False
+    ui_directives: list[AssistantUiDirectiveDTO] = Field(default_factory=list)
+    proposed_actions: list[AssistantProposedActionDTO] = Field(default_factory=list)
+    steps: list[AssistantStepDTO] = Field(default_factory=list)
+
+
 class StatusUpdate(BaseModel):
     status: str = Field(pattern="^(active|disabled|left)$")
 

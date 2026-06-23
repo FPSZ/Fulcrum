@@ -5,14 +5,33 @@
 
 from __future__ import annotations
 
+from .agent import (
+    AssistantAgent,
+    AssistantProposedAction,
+    AssistantRunResult,
+    AssistantStep,
+    AssistantUiDirective,
+)
 from .catalog import DEFAULT_CATALOG, RISK_LEVELS, Action
+from .model_client import ModelReply, ModelTurn, make_dynamic_model_backend, to_function_spec
 from .planner import AssistantPlan, make_model_backend, plan
+from .services import AssistantServices
 
 __all__ = [
     "DEFAULT_CATALOG",
     "RISK_LEVELS",
     "Action",
+    "AssistantAgent",
     "AssistantPlan",
+    "AssistantProposedAction",
+    "AssistantRunResult",
+    "AssistantServices",
+    "AssistantStep",
+    "AssistantUiDirective",
+    "ModelReply",
+    "ModelTurn",
+    "make_dynamic_model_backend",
     "make_model_backend",
     "plan",
+    "to_function_spec",
 ]

@@ -52,4 +52,5 @@ class AuditEventType(StrEnum):
     SUPPLYCHAIN_SCANNED = "supplychain_scanned"
     AUDIT_WRITTEN = "audit_written"
     EVAL_JUDGED = "eval_judged"
-    ASSISTANT_PLANNED = "assistant_planned"  # AI 操作助手:自然语言意图 → 受治理的动作规划
+    ASSISTANT_PLANNED = "assistant_planned"  # AI 操作助手(旧·单轮规划器):意图 → 受治理动作规划
+    ASSISTANT_CHAT = "assistant_chat"  # AI 操作助手(真 Agent):一次会话(意图/入口判定/产出)

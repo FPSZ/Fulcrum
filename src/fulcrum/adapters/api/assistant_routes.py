@@ -18,13 +18,25 @@ from typing import TYPE_CHECKING
 from fastapi import Depends, FastAPI
 
 from ...core.domain import AuditEvent, AuditEventType, Disposition
+from ...core.operations import operation_registry
 from ..assistant import DEFAULT_CATALOG, Action, plan
 from ..auth import Principal
 from .deps import AuthDeps
-from .schemas import AssistantActionDTO, AssistantPlanRequest, AssistantPlanResponse
+from .schemas import (
+    AssistantActionDTO,
+    AssistantChatRequest,
+    AssistantChatResponse,
+    AssistantPlanRequest,
+    AssistantPlanResponse,
+    AssistantProposedActionDTO,
+    AssistantStepDTO,
+    AssistantToolDTO,
+    AssistantUiDirectiveDTO,
+)
 
 if TYPE_CHECKING:
     from ...core.pipeline import SecurityPipeline
+    from ..assistant import AssistantAgent
     from ..assistant.planner import ModelComplete
 
 
@@ -61,6 +73,7 @@ def register_assistant_routes(
     deps: AuthDeps,
     complete: ModelComplete,
     catalog: tuple[Action, ...] = DEFAULT_CATALOG,
+    agent: AssistantAgent | None = None,
 ) -> None:
     can_operate = deps.require("ai.operate")
 
@@ -69,6 +82,68 @@ def register_assistant_routes(
         principal: Principal = Depends(can_operate),
     ) -> list[AssistantActionDTO]:
         return _visible_actions(catalog, principal)
+
+    # ── 真 Agent(plan/11):工具目录 + 对话执行 ─────────────────────────
+    @app.get("/assistant/tools", response_model=list[AssistantToolDTO])
+    async def assistant_tools(
+        principal: Principal = Depends(can_operate),
+    ) -> list[AssistantToolDTO]:
+        """当前角色可调的工具 = 助手能用的工具(从操作注册表按权限派生,单一真源)。"""
+        return [
+            AssistantToolDTO(
+                name=t.name,
+                kind=t.kind,
+                label=t.label,
+                description=t.description,
+                risk=t.risk,
+                requires=list(t.requires),
+                reversible=t.reversible,
+            )
+            for t in operation_registry.visible_for(principal)
+        ]
+
+    @app.post("/assistant/chat", response_model=AssistantChatResponse)
+    async def assistant_chat(
+        body: AssistantChatRequest,
+        principal: Principal = Depends(can_operate),
+    ) -> AssistantChatResponse:
+        """真执行 Agent:意图→自动跑读类/ui、产出写类待确认提案 + 最终答复 + 执行轨迹。
+
+        三道吃狗粮闸门(入口/工具返回/出口)由 AssistantAgent 内部强制;一次会话落一条
+        ASSISTANT_CHAT 审计。agent 未装配(纯管线测试)时回 503 语义的诚实提示。
+        """
+        session_id = body.session_id or f"assistant:{principal.username}"
+        if agent is None:
+            return AssistantChatResponse(
+                session_id=session_id,
+                reply="助手 Agent 未装配(当前实例未启用)。",
+                blocked=True,
+            )
+        run = await agent.run(body.message, principal, session_id)
+        return AssistantChatResponse(
+            session_id=run.session_id,
+            reply=run.reply,
+            blocked=run.blocked,
+            ui_directives=[
+                AssistantUiDirectiveDTO(tool=d.tool, label=d.label, args=d.args)
+                for d in run.ui_directives
+            ],
+            proposed_actions=[
+                AssistantProposedActionDTO(
+                    tool=p.tool,
+                    label=p.label,
+                    risk=p.risk,
+                    args=p.args,
+                    requires=p.requires,
+                    note=p.note,
+                )
+                for p in run.proposed_actions
+            ],
+            steps=[
+                AssistantStepDTO(tool=s.tool, kind=s.kind, label=s.label, ok=s.ok, detail=s.detail)
+                for s in run.steps
+            ],
+        )
 
     async def _audit_plan(
         session_id: str,
