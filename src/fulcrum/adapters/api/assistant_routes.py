@@ -173,8 +173,12 @@ def register_assistant_routes(
 
         async def gen() -> AsyncIterator[bytes]:
             if agent is None:
-                payload = {"type": "done", "session_id": session_id, "blocked": True,
-                           "reply": "助手 Agent 未装配(当前实例未启用)。"}
+                payload = {
+                    "type": "done",
+                    "session_id": session_id,
+                    "blocked": True,
+                    "reply": "助手 Agent 未装配(当前实例未启用)。",
+                }
                 yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
                 return
             async for ev in agent.run_stream(body.message, principal, session_id):

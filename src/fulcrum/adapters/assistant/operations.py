@@ -726,8 +726,12 @@ async def test_gateway_connection(args: dict, principal: Any, services: Any) -> 
     )
     return OperationResult(
         summary=summary,
-        data={"ok": r.ok, "latency_ms": r.latency_ms, "status_code": r.status_code,
-              "detail": r.detail},
+        data={
+            "ok": r.ok,
+            "latency_ms": r.latency_ms,
+            "status_code": r.status_code,
+            "detail": r.detail,
+        },
     )
 
 
@@ -988,9 +992,7 @@ operation_registry.register(
         name="create_role",
         kind="write",
         label="新建角色",
-        description=(
-            "创建自定义角色并赋权限点(permissions 为权限 key 数组,见 list_permissions)。"
-        ),
+        description=("创建自定义角色并赋权限点(permissions 为权限 key 数组,见 list_permissions)。"),
         parameters={
             "type": "object",
             "properties": {
@@ -1152,9 +1154,7 @@ async def _create_department(args: dict, principal: Any, services: Any) -> Opera
     if not name:
         return OperationResult(summary="缺少部门名 name。", ok=False, error="bad_args")
     try:
-        dept = d.create_department(
-            name, args.get("parent_id"), int(args.get("sort_order") or 100)
-        )
+        dept = d.create_department(name, args.get("parent_id"), int(args.get("sort_order") or 100))
     except Exception as exc:  # noqa: BLE001
         return OperationResult(summary=f"建部门失败:{exc}", ok=False, error="conflict")
     return OperationResult(

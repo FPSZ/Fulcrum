@@ -267,9 +267,7 @@ class AssistantAgent:
         return result
 
     # ── 流式:逐字吐最终答复 + 工具步骤实时下发(SSE)──────────────────────
-    async def run_stream(
-        self, intent: str, principal: Any, session_id: str
-    ) -> AsyncIterator[dict]:
+    async def run_stream(self, intent: str, principal: Any, session_id: str) -> AsyncIterator[dict]:
         """与 run() 同语义但产出事件流:delta(文本增量)/ step / ui / proposal / done。
 
         三道吃狗粮闸门一致:入口先 screen_input;每个 read 工具返回过 screen_tool_return;
