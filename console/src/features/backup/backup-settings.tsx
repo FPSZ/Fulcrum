@@ -1,11 +1,16 @@
-import { Download, Trash2 } from 'lucide-react'
-import { Badge, Button, SettingRow, SettingSection, toast } from '@/components/ui'
+import { useState } from 'react'
+import { AlertTriangle, Download, Trash2 } from 'lucide-react'
+import { Badge, Button, Dialog, SettingRow, SettingSection, toast } from '@/components/ui'
 import { getResourceSpecs, useBackup, BACKUP_SCHEMA_VERSION } from '@/lib/backup'
 import { ImportBackupButtons } from './import-controls'
 
 export function BackupSettings() {
   const { resources, meta, hasData, exportBackup, clear } = useBackup()
   const specs = getResourceSpecs()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  // 已导入的资源条数总和(确认弹窗里如实告知将清空多少)
+  const total = Object.values(resources).reduce((n, a) => n + a.length, 0)
 
   return (
     <div>
@@ -22,19 +27,47 @@ export function BackupSettings() {
           </Button>
         </SettingRow>
         <SettingRow label="清空本地数据" hint="移除本机已导入的数据(不影响备份文件本身)">
-          <Button
-            size="sm"
-            variant="danger"
-            disabled={!hasData}
-            onClick={() => {
-              clear()
-              toast.success('已清空本地数据')
-            }}
-          >
+          <Button size="sm" variant="danger" disabled={!hasData} onClick={() => setConfirmOpen(true)}>
             <Trash2 className="h-3.5 w-3.5" /> 清空
           </Button>
         </SettingRow>
       </SettingSection>
+
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-[18px] w-[18px] text-crit" strokeWidth={2} />
+            清空本地数据?
+          </span>
+        }
+        description="此操作不可撤销。"
+        widthClassName="max-w-md"
+        footer={
+          <>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmOpen(false)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => {
+                clear()
+                setConfirmOpen(false)
+                toast.success('已清空本地数据')
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> 确认清空
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[14px] leading-relaxed text-ink-2">
+          将移除本机已导入的 <b className="font-semibold text-ink">{total}</b> 条数据,各页面随即回到空态。
+          备份文件本身不受影响,可重新导入或载入演示备份恢复。
+        </p>
+      </Dialog>
 
       <SettingSection title="当前备份" desc="本机已导入的资源概览。">
         {hasData ? (
