@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 
 from ...core.domain import AuditEvent, AuditEventType, Disposition
 from ...core.operations import operation_registry
@@ -26,17 +26,21 @@ from .schemas import (
     AssistantActionDTO,
     AssistantChatRequest,
     AssistantChatResponse,
+    AssistantConfirmRequest,
+    AssistantConfirmResponse,
     AssistantPlanRequest,
     AssistantPlanResponse,
     AssistantProposedActionDTO,
     AssistantStepDTO,
     AssistantToolDTO,
     AssistantUiDirectiveDTO,
+    AssistantUndoRequest,
+    AssistantUndoResponse,
 )
 
 if TYPE_CHECKING:
     from ...core.pipeline import SecurityPipeline
-    from ..assistant import AssistantAgent
+    from ..assistant import AssistantActuator, AssistantAgent
     from ..assistant.planner import ModelComplete
 
 
@@ -74,6 +78,7 @@ def register_assistant_routes(
     complete: ModelComplete,
     catalog: tuple[Action, ...] = DEFAULT_CATALOG,
     agent: AssistantAgent | None = None,
+    actuator: AssistantActuator | None = None,
 ) -> None:
     can_operate = deps.require("ai.operate")
 
@@ -136,6 +141,8 @@ def register_assistant_routes(
                     args=p.args,
                     requires=p.requires,
                     note=p.note,
+                    action_token=p.action_token,
+                    reversible=p.reversible,
                 )
                 for p in run.proposed_actions
             ],
@@ -144,6 +151,46 @@ def register_assistant_routes(
                 for s in run.steps
             ],
         )
+
+    # ── 写操作:确认执行 + 一键撤销(plan/11 §6;人闸在 chat 循环之外)──────
+    @app.post("/assistant/confirm", response_model=AssistantConfirmResponse)
+    async def assistant_confirm(
+        body: AssistantConfirmRequest,
+        principal: Principal = Depends(can_operate),
+    ) -> AssistantConfirmResponse:
+        """确认执行某写提案(带编辑后参数)。纵深 RBAC 在 actuator 内强制;越权 → 403。"""
+        if actuator is None:
+            return AssistantConfirmResponse(
+                ok=False, summary="助手执行器未装配。", error="no_actuator"
+            )
+        session_id = body.session_id or f"assistant:{principal.username}"
+        res = await actuator.confirm(body.action_token, body.edited_args, principal, session_id)
+        if res.denied:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res.summary)
+        return AssistantConfirmResponse(
+            ok=res.ok,
+            summary=res.summary,
+            action_id=res.action_id,
+            reversible=res.reversible,
+            undo_preview=res.undo_preview,
+            error=res.error,
+        )
+
+    @app.post("/assistant/undo", response_model=AssistantUndoResponse)
+    async def assistant_undo(
+        body: AssistantUndoRequest,
+        principal: Principal = Depends(can_operate),
+    ) -> AssistantUndoResponse:
+        """一键撤销某已执行写操作(逆操作回滚)。撤销与原写操作同权;越权 → 403。"""
+        if actuator is None:
+            return AssistantUndoResponse(
+                ok=False, summary="助手执行器未装配。", error="no_actuator"
+            )
+        session_id = body.session_id or f"assistant:{principal.username}"
+        res = await actuator.undo(body.action_id, principal, session_id)
+        if res.denied:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res.summary)
+        return AssistantUndoResponse(ok=res.ok, summary=res.summary, error=res.error)
 
     async def _audit_plan(
         session_id: str,

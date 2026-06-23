@@ -22,7 +22,8 @@ from ..api.policies_routes import to_policy_set
 from ..api.supply_routes import scan_directory
 from ..api.tools_routes import build_tool_calls
 from ..audit.memory_sink import InMemoryAuditSink
-from ..gateway import GatewayConfigPublic
+from ..console_settings import ConsoleSettings
+from ..gateway import GatewayConfig, GatewayConfigPublic
 
 _KNOWN_PAGES = (
     "overview",
@@ -383,3 +384,200 @@ async def get_gateway_config(args: dict, principal: Any, services: Any) -> Opera
         f"认证 {pub.auth_type}({'已设密钥' if pub.auth_value_set else '无'})。"
     )
     return OperationResult(summary=summary, data=pub.model_dump())
+
+
+# ──────────────────────────── write(后端,提案-确认-可撤销)────────────────────────────
+# 写操作不进 chat 循环执行;助手只产出待确认提案,确认走 /assistant/confirm(纵深 RBAC + 前态
+# 快照 + 审计),撤销走 /assistant/undo(逆操作 + 审计)。handler 执行时把**前态**塞进
+# OperationResult.undo,undo_handler 吃它回滚——一份快照即可一键还原。
+
+
+async def _set_user_status(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        uid = int(args["user_id"])
+        status = str(args["status"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(summary="参数非法(需 user_id、status)。", ok=False, error="bad_args")
+    user = d.get_user(uid)
+    if user is None:
+        return OperationResult(summary=f"成员 {uid} 不存在。", ok=False, error="not_found")
+    old = user.status
+    try:
+        d.set_status(uid, status)
+    except Exception as exc:  # noqa: BLE001 —— 护栏冲突(如停最后管理员)如实回报,不 500
+        return OperationResult(summary=f"改状态失败:{exc}", ok=False, error="conflict")
+    return OperationResult(
+        summary=f"成员 {user.username} 状态 {old}→{status}。",
+        data={"user_id": uid, "status": status},
+        undo={"user_id": uid, "status": old},
+    )
+
+
+async def _set_user_status_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    services.directory.set_status(int(args["user_id"]), str(args["status"]))
+    return OperationResult(summary=f"已回滚成员 {args['user_id']} 状态为 {args['status']}。")
+
+
+operation_registry.register(
+    AssistantTool(
+        name="set_user_status",
+        kind="write",
+        label="改成员状态",
+        description="把某成员置为 active/disabled/left。高危:会影响其能否登录。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "user_id": {"type": "integer"},
+                "status": {"type": "string", "enum": ["active", "disabled", "left"]},
+            },
+            "required": ["user_id", "status"],
+        },
+        requires=("users.manage",),
+        risk="high",
+        handler=_set_user_status,
+        reversible=True,
+        inverse="恢复为原状态",
+        undo_handler=_set_user_status_undo,
+    )
+)
+
+
+async def _approve_account(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        uid = int(args["user_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(summary="参数非法(需 user_id)。", ok=False, error="bad_args")
+    user = d.get_user(uid)
+    if user is None:
+        return OperationResult(summary=f"账号 {uid} 不存在。", ok=False, error="not_found")
+    if user.status != "pending":
+        return OperationResult(
+            summary=f"账号 {user.username} 不在待审批状态。", ok=False, error="state"
+        )
+    role_id = args.get("role_id")
+    dept_id = args.get("department_id")
+    try:
+        d.approve(
+            uid,
+            int(role_id) if role_id is not None else None,
+            int(dept_id) if dept_id is not None else None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"审批失败:{exc}", ok=False, error="conflict")
+    return OperationResult(
+        summary=f"已审批通过账号 {user.username}。",
+        data={"user_id": uid},
+        undo={"user_id": uid},
+    )
+
+
+async def _approve_account_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    services.directory.set_status(int(args["user_id"]), "pending")
+    return OperationResult(summary=f"已撤回审批,账号 {args['user_id']} 恢复为待审批。")
+
+
+operation_registry.register(
+    AssistantTool(
+        name="approve_account",
+        kind="write",
+        label="审批账号申请",
+        description="通过一个待审批的注册申请,使其可登录(可指定角色/部门)。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "user_id": {"type": "integer"},
+                "role_id": {"type": "integer"},
+                "department_id": {"type": "integer"},
+            },
+            "required": ["user_id"],
+        },
+        requires=("account.approve",),
+        risk="high",
+        handler=_approve_account,
+        reversible=True,
+        inverse="恢复为待审批",
+        undo_handler=_approve_account_undo,
+    )
+)
+
+
+async def _update_gateway_config(args: dict, principal: Any, services: Any) -> OperationResult:
+    store = services.gateway_store
+    if store is None:
+        return OperationResult(summary="未装配上游网关配置。", ok=False, error="no_store")
+    old = store.load().model_dump()
+    try:
+        new = GatewayConfig.model_validate({**old, **(args or {})})
+    except Exception as exc:  # noqa: BLE001 —— patch 非法 → 拒,不落坏配置
+        return OperationResult(summary=f"配置非法,未保存:{exc}", ok=False, error="invalid")
+    store.save(new)
+    return OperationResult(
+        summary="已更新上游网关配置(热加载生效)。", data={"name": new.name}, undo=old
+    )
+
+
+async def _update_gateway_config_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    services.gateway_store.save(GatewayConfig.model_validate(args))
+    return OperationResult(summary="已回滚上游网关配置为原值。")
+
+
+operation_registry.register(
+    AssistantTool(
+        name="update_gateway_config",
+        kind="write",
+        label="改上游网关配置",
+        description="按字段补丁更新上游接入配置(协议/端点/模型/认证等)。高危:影响所有转发请求。",
+        parameters={"type": "object", "properties": {}},
+        requires=("settings.manage",),
+        risk="high",
+        handler=_update_gateway_config,
+        reversible=True,
+        inverse="恢复为原配置",
+        undo_handler=_update_gateway_config_undo,
+    )
+)
+
+
+async def _update_console_settings(args: dict, principal: Any, services: Any) -> OperationResult:
+    store = services.console_store
+    if store is None:
+        return OperationResult(summary="未装配控制台设置。", ok=False, error="no_store")
+    old = store.load().model_dump()
+    try:
+        new = ConsoleSettings.model_validate({**old, **(args or {})})
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"设置非法,未保存:{exc}", ok=False, error="invalid")
+    store.save(new)
+    return OperationResult(
+        summary="已更新控制台设置。", data={"instance_name": new.instance_name}, undo=old
+    )
+
+
+async def _update_console_settings_undo(
+    args: dict, principal: Any, services: Any
+) -> OperationResult:
+    services.console_store.save(ConsoleSettings.model_validate(args))
+    return OperationResult(summary="已回滚控制台设置为原值。")
+
+
+operation_registry.register(
+    AssistantTool(
+        name="update_console_settings",
+        kind="write",
+        label="改控制台设置",
+        description="按字段补丁更新控制台通用设置(实例名/语言/留存/通知等,非安全红线项)。",
+        parameters={"type": "object", "properties": {}},
+        requires=("settings.manage",),
+        risk="normal",
+        handler=_update_console_settings,
+        reversible=True,
+        inverse="恢复为原设置",
+        undo_handler=_update_console_settings_undo,
+    )
+)

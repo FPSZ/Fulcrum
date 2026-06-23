@@ -5,6 +5,13 @@
 
 from __future__ import annotations
 
+from .actuator import (
+    ActionTokenSigner,
+    AssistantActuator,
+    ConfirmResult,
+    UndoResult,
+    UndoStore,
+)
 from .agent import (
     AssistantAgent,
     AssistantProposedAction,
@@ -21,6 +28,8 @@ __all__ = [
     "DEFAULT_CATALOG",
     "RISK_LEVELS",
     "Action",
+    "ActionTokenSigner",
+    "AssistantActuator",
     "AssistantAgent",
     "AssistantPlan",
     "AssistantProposedAction",
@@ -28,8 +37,11 @@ __all__ = [
     "AssistantServices",
     "AssistantStep",
     "AssistantUiDirective",
+    "ConfirmResult",
     "ModelReply",
     "ModelTurn",
+    "UndoResult",
+    "UndoStore",
     "make_dynamic_model_backend",
     "make_model_backend",
     "plan",

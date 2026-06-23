@@ -49,6 +49,9 @@ class OperationResult:
     data: Any = None
     ok: bool = True
     error: str | None = None
+    # 仅 write:执行时捕获的**前态快照**(撤销所需的参数),喂给 undo_handler 即回滚。
+    # 例如改状态前的旧 status、改配置前的整份旧配置。None=本次无可撤销快照。
+    undo: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +67,10 @@ class AssistantTool:
     risk: str = "read_only"  # read_only | normal | high
     handler: OperationHandler | None = None  # read/write:进程内执行;ui:None(前端执行)
     reversible: bool = False  # write 是否可一键撤销
-    inverse: str | None = None  # write 逆操作名(撤销);None=不可撤销(需显式标注)
+    inverse: str | None = None  # 逆操作的人读名(展示用,如 "恢复为待审批");None=不可撤销
+    # write 撤销执行器:吃 handler 执行时返回的 `OperationResult.undo`(前态快照)→ 回滚。
+    # reversible=True 必须提供;reversible=False(如幂等无副作用的扫描)可缺。
+    undo_handler: OperationHandler | None = None
 
     def visible_to(self, principal: Any) -> bool:
         """该角色是否被授权调用本操作(requires ⊆ 角色权限)。"""
@@ -91,9 +97,9 @@ class OperationRegistry:
             raise ConfigError(f"ui 操作由前端执行,不应带 handler:name={tool.name!r}")
         if tool.kind in ("read", "write") and tool.handler is None:
             raise ConfigError(f"{tool.kind} 操作必须提供 handler:name={tool.name!r}")
-        # write 若声明可撤销则必须给出逆操作名(plan/11 §6:写操作必经可撤销或显式标不可撤销)。
-        if tool.kind == "write" and tool.reversible and not tool.inverse:
-            raise ConfigError(f"可撤销的 write 操作必须声明 inverse:name={tool.name!r}")
+        # write 若声明可撤销则必须给出撤销执行器(plan/11 §6:可撤销或显式标不可撤销)。
+        if tool.kind == "write" and tool.reversible and tool.undo_handler is None:
+            raise ConfigError(f"可撤销的 write 操作必须提供 undo_handler:name={tool.name!r}")
         self._ops[tool.name] = tool
         return tool
 

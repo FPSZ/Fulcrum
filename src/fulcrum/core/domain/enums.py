@@ -54,3 +54,5 @@ class AuditEventType(StrEnum):
     EVAL_JUDGED = "eval_judged"
     ASSISTANT_PLANNED = "assistant_planned"  # AI 操作助手(旧·单轮规划器):意图 → 受治理动作规划
     ASSISTANT_CHAT = "assistant_chat"  # AI 操作助手(真 Agent):一次会话(意图/入口判定/产出)
+    ASSISTANT_ACTED = "assistant_acted"  # 助手写提案被确认执行(tool/参数摘要/结果/undo 句柄)
+    ASSISTANT_UNDONE = "assistant_undone"  # 已执行写操作被一键撤销(tool/回滚前后)

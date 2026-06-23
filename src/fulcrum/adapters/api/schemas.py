@@ -484,7 +484,7 @@ class AssistantUiDirectiveDTO(BaseModel):
 
 
 class AssistantProposedActionDTO(BaseModel):
-    """写操作的待确认提案(P1 占位,不执行)。"""
+    """写操作的待确认提案(可编辑卡片;确认走 /assistant/confirm,默认不执行)。"""
 
     tool: str
     label: str
@@ -492,6 +492,8 @@ class AssistantProposedActionDTO(BaseModel):
     args: dict = Field(default_factory=dict)
     requires: list[str] = Field(default_factory=list)
     note: str = ""
+    action_token: str = ""  # 防篡改令牌,确认时回传
+    reversible: bool = False  # 执行后能否一键撤销
 
 
 class AssistantStepDTO(BaseModel):
@@ -511,6 +513,32 @@ class AssistantChatResponse(BaseModel):
     ui_directives: list[AssistantUiDirectiveDTO] = Field(default_factory=list)
     proposed_actions: list[AssistantProposedActionDTO] = Field(default_factory=list)
     steps: list[AssistantStepDTO] = Field(default_factory=list)
+
+
+class AssistantConfirmRequest(BaseModel):
+    action_token: str = Field(min_length=1, max_length=4096)
+    edited_args: dict = Field(default_factory=dict)
+    session_id: str | None = Field(default=None, max_length=128)
+
+
+class AssistantConfirmResponse(BaseModel):
+    ok: bool
+    summary: str
+    action_id: str | None = None
+    reversible: bool = False
+    undo_preview: str = ""
+    error: str | None = None
+
+
+class AssistantUndoRequest(BaseModel):
+    action_id: str = Field(min_length=1, max_length=128)
+    session_id: str | None = Field(default=None, max_length=128)
+
+
+class AssistantUndoResponse(BaseModel):
+    ok: bool
+    summary: str
+    error: str | None = None
 
 
 class StatusUpdate(BaseModel):

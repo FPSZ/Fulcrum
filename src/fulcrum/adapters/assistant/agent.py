@@ -21,8 +21,9 @@ from ...core.domain import AuditEvent, AuditEventType, Disposition
 from ...core.operations import AssistantTool, operation_registry
 from ...core.redaction import redact
 
-# 导入即注册首批 ui/read 操作(对称:import capability 模块即注册其实现)。
+# 导入即注册首批 ui/read/write 操作(对称:import capability 模块即注册其实现)。
 from . import operations as _operations  # noqa: F401
+from .actuator import ActionTokenSigner
 from .model_client import ModelReply, ModelTurn, ToolCallReq, to_function_spec
 from .services import AssistantServices
 
@@ -65,6 +66,8 @@ class AssistantProposedAction:
     args: dict
     requires: list[str]
     note: str
+    action_token: str = ""  # 服务端签发的防篡改令牌(确认时校验);无 signer 时为空
+    reversible: bool = False  # 能否一键撤销(供前端给"↩撤销"按钮预留)
 
 
 @dataclass(slots=True)
@@ -106,11 +109,13 @@ class AssistantAgent:
         model_turn: ModelTurn,
         *,
         max_steps: int = 8,
+        token_signer: ActionTokenSigner | None = None,
     ) -> None:
         self._pipeline = pipeline
         self._services = services
         self._turn = model_turn
         self._max_steps = max_steps
+        self._signer = token_signer
 
     async def run(self, intent: str, principal: Any, session_id: str) -> AssistantRunResult:
         result = AssistantRunResult(session_id=session_id, reply="")
@@ -188,7 +193,11 @@ class AssistantAgent:
             return f"已安排前端执行「{tool.label}」。"
 
         if tool.kind == "write":
-            # P1:写操作不进循环执行,仅产出待确认占位提案(P2 接 confirm + 可撤销)。
+            # 写操作不进循环执行:产出可编辑待确认提案,确认走 /assistant/confirm(人闸 + 纵深
+            # RBAC + 前态快照 + 可撤销)。令牌绑定 tool+actor+过期,防篡改/转交。
+            token = ""
+            if self._signer is not None:
+                token = self._signer.issue(tool=tool.name, actor=getattr(principal, "username", ""))
             result.proposed_actions.append(
                 AssistantProposedAction(
                     tool=tool.name,
@@ -196,7 +205,9 @@ class AssistantAgent:
                     risk=tool.risk,
                     args=tc.arguments,
                     requires=list(tool.requires),
-                    note="写操作将在操作员确认卡片后执行(确认/撤销端点 P2 提供)。",
+                    note="写操作不会自动执行,请在卡片上核对(可编辑)后确认。",
+                    action_token=token,
+                    reversible=tool.reversible,
                 )
             )
             self._step(result, tool.name, "write", tool.label, True, "已生成待确认提案(未执行)")

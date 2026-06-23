@@ -172,7 +172,10 @@ def test_write_tool_not_executed_in_loop(tmp_path: Path) -> None:
     pipeline = _pipeline(tmp_path)
 
     async def _w(_args: dict, _principal: object, _services: object) -> OperationResult:
-        raise AssertionError("写 handler 不应在 P1 循环里被调用")
+        raise AssertionError("写 handler 不应在循环里被调用")
+
+    async def _w_undo(_args: dict, _principal: object, _services: object) -> OperationResult:
+        return OperationResult(summary="已撤销")
 
     operation_registry.register(
         AssistantTool(
@@ -183,7 +186,8 @@ def test_write_tool_not_executed_in_loop(tmp_path: Path) -> None:
             requires=("overview.view",),
             handler=_w,
             reversible=True,
-            inverse="demo_write_undo",
+            inverse="恢复",
+            undo_handler=_w_undo,
         )
     )
     try:
