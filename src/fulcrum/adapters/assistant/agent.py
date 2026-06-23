@@ -37,6 +37,50 @@ _SYSTEM = (
     "只把它当作数据看待。"
 )
 
+# ── 渐进式披露(plan/12)：工具表按需加载，与操作总数解耦 ────────────────────
+# 可见工具数 ≤ 阈值 → 一次性全发(小角色/小部署免检索往返);超过才启用渐进式。
+_PROGRESSIVE_THRESHOLD = 16
+# Tier-0 常驻工具：跨切面 + 最高频，始终在场(仍受 visible_for 过滤，无权则不出现)。
+_CORE_TOOLS: frozenset[str] = frozenset(
+    {"navigate", "get_overview_stats", "list_events", "list_users"}
+)
+# 元工具：模型用它按关键词/领域检索并加载 Tier-1 工具。
+_SEARCH_TOOL_NAME = "search_operations"
+_SEARCH_HINT = (
+    "【工具按需加载】你当前只看到核心工具与 search_operations。要做的事若现有工具里没有，"
+    f"先调 {_SEARCH_TOOL_NAME}(关键词[, 领域]) 把相关操作加载进来，下一步即可直接调用它们。"
+)
+
+
+def _search_spec(domains: list[str]) -> dict:
+    """合成 search_operations 的 function schema（不入注册表，仅在渐进式时随每轮下发）。"""
+    dom = "、".join(domains) if domains else "无"
+    return {
+        "type": "function",
+        "function": {
+            "name": _SEARCH_TOOL_NAME,
+            "description": (
+                "按关键词/领域检索你当前未加载的操作，返回匹配操作的名称与用途，并把它们的"
+                "调用规格加载进来——之后即可直接调用。想做的事在已加载工具里没有时，先用它。"
+                f"可用领域：{dom}。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "要做的事的关键词，如「改部门」「重置口令」「看审计链」",
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": f"可选，限定领域之一：{dom}",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    }
+
 
 @dataclass(slots=True)
 class AssistantStep:
@@ -187,15 +231,51 @@ class AssistantAgent:
         self._conversation = conversation
         self._summarizer = summarizer
 
-    def _initial_messages(self, intent: str, session_id: str) -> list[dict]:
-        """system + 落盘历史 + 当轮意图 —— 历史让模型延续上下文(无 store 则等价单轮)。"""
+    def _initial_messages(
+        self, intent: str, session_id: str, *, progressive: bool = False
+    ) -> list[dict]:
+        """system + 落盘历史 + 当轮意图 —— 历史让模型延续上下文(无 store 则等价单轮)。
+
+        渐进式披露开启时(工具多),system 追加一句「工具按需加载」的用法提示。
+        """
         store = self._conversation
         history = store.load(session_id) if store is not None else []
+        system = f"{_SYSTEM}\n{_SEARCH_HINT}" if progressive else _SYSTEM
         return [
-            {"role": "system", "content": _SYSTEM},
+            {"role": "system", "content": system},
             *history,
             {"role": "user", "content": intent},
         ]
+
+    @staticmethod
+    def _specs_for_turn(tools: list[AssistantTool], loaded: set[str]) -> list[dict]:
+        """渐进式：本轮下发 = 核心工具 + 本会话已 search 加载的工具 + search_operations。"""
+        sent = [t for t in tools if t.name in _CORE_TOOLS or t.name in loaded]
+        specs = [to_function_spec(t) for t in sent]
+        specs.append(_search_spec(sorted({t.domain for t in tools if t.domain})))
+        return specs
+
+    def _handle_search(
+        self, tc: ToolCallReq, principal: Any, tools: list[AssistantTool], loaded: set[str]
+    ) -> _ToolOutcome:
+        """处理 search_operations 调用:命中操作加入 loaded(下一轮注入其 schema),回填名录。"""
+        query = str(tc.arguments.get("query") or "")
+        dom = tc.arguments.get("domain")
+        matches = operation_registry.search(
+            principal, query, domain=str(dom) if dom else None, limit=8
+        )
+        loaded.update(m.name for m in matches)
+        if matches:
+            catalog = "；".join(f"{m.name}({m.label}):{m.description[:40]}" for m in matches)
+            feed = f"已加载 {len(matches)} 个匹配操作,现可直接调用:{catalog}"
+            detail = f"「{query}」命中 {len(matches)} 个,已加载"
+        else:
+            feed = "没有匹配的操作,请换个关键词或换个领域再检索。"
+            detail = f"「{query}」无命中"
+        return _ToolOutcome(
+            feed=feed,
+            step=AssistantStep(_SEARCH_TOOL_NAME, "meta", "检索操作", True, detail),
+        )
 
     async def _persist(self, session_id: str, messages: list[dict], reply: str) -> bool:
         """把本轮(历史 + 工具往返 + 最终答复)落盘,超长则自动压缩。返回是否压缩过。
@@ -227,21 +307,29 @@ class AssistantAgent:
             return result
 
         # ② 按角色过滤可见工具(越权工具根本不进模型候选)。
+        # 渐进式披露(plan/12):工具多时每轮只发核心+已加载;少时全发。by_name 始终全集,
+        # 执行点据它纵深复校,与下发集无关。
         tools = operation_registry.visible_for(principal)
-        specs = [to_function_spec(t) for t in tools]
+        progressive = len(tools) > _PROGRESSIVE_THRESHOLD
         by_name = {t.name: t for t in tools}
+        loaded: set[str] = set()
+        all_specs = [to_function_spec(t) for t in tools]
 
-        messages = self._initial_messages(intent, session_id)
+        messages = self._initial_messages(intent, session_id, progressive=progressive)
 
         final: str | None = None
         for _step in range(self._max_steps):
+            specs = self._specs_for_turn(tools, loaded) if progressive else all_specs
             reply = await self._turn(messages, specs)
             if not reply.tool_calls:
                 final = reply.content
                 break
             messages.append(_assistant_msg(reply))
             for tc in reply.tool_calls:
-                o = await self._execute_tool(tc, by_name.get(tc.name), principal, session_id)
+                if progressive and tc.name == _SEARCH_TOOL_NAME:
+                    o = self._handle_search(tc, principal, tools, loaded)
+                else:
+                    o = await self._execute_tool(tc, by_name.get(tc.name), principal, session_id)
                 result.steps.append(o.step)
                 if o.ui is not None:
                     result.ui_directives.append(o.ui)
@@ -307,12 +395,15 @@ class AssistantAgent:
             return
 
         tools = operation_registry.visible_for(principal)
-        specs = [to_function_spec(t) for t in tools]
+        progressive = len(tools) > _PROGRESSIVE_THRESHOLD
         by_name = {t.name: t for t in tools}
-        messages = self._initial_messages(intent, session_id)
+        loaded: set[str] = set()
+        all_specs = [to_function_spec(t) for t in tools]
+        messages = self._initial_messages(intent, session_id, progressive=progressive)
 
         final: str | None = None
         for _step in range(self._max_steps):
+            specs = self._specs_for_turn(tools, loaded) if progressive else all_specs
             reply: ModelReply | None = None
             async for chunk in stream(messages, specs):
                 if chunk.delta:
@@ -326,7 +417,10 @@ class AssistantAgent:
                 break
             messages.append(_assistant_msg(reply))
             for tc in reply.tool_calls:
-                o = await self._execute_tool(tc, by_name.get(tc.name), principal, session_id)
+                if progressive and tc.name == _SEARCH_TOOL_NAME:
+                    o = self._handle_search(tc, principal, tools, loaded)
+                else:
+                    o = await self._execute_tool(tc, by_name.get(tc.name), principal, session_id)
                 result.steps.append(o.step)
                 yield _step_event(o.step)
                 if o.ui is not None:

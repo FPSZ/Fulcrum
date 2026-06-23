@@ -163,6 +163,65 @@ def test_registry_visible_for_filters_by_permission() -> None:
     assert "navigate" in names  # ui·无 requires,人人可调
 
 
+# ───────────────────────── 渐进式披露(plan/12)─────────────────────────
+def test_domain_derived_from_permission_prefix() -> None:
+    """领域由首个权限点前缀自动派生(零维护);无 requires → general。"""
+    assert operation_registry.get("list_users").domain == "users"
+    assert operation_registry.get("update_gateway_config").domain == "settings"
+    assert operation_registry.get("navigate").domain == "general"
+
+
+def test_search_respects_rbac() -> None:
+    """search 只在可见集合内检索 —— 不绕 RBAC。"""
+    admin = _principal(ALL_PERMISSION_KEYS)
+    low = _principal(frozenset({"ai.operate", "overview.view"}))
+    assert "list_users" in {t.name for t in operation_registry.search(admin, "成员")}
+    assert "list_users" not in {t.name for t in operation_registry.search(low, "成员")}
+
+
+def test_search_filters_by_domain() -> None:
+    admin = _principal(ALL_PERMISSION_KEYS)
+    hits = operation_registry.search(admin, "配置", domain="settings")
+    assert hits and all(t.domain == "settings" for t in hits)
+
+
+def test_specs_for_turn_gates_until_loaded() -> None:
+    """每轮 specs = 核心 + 已加载 + search_operations;未加载的工具不在场。"""
+    from fulcrum.adapters.assistant.agent import _CORE_TOOLS, _SEARCH_TOOL_NAME, AssistantAgent
+
+    tools = operation_registry.visible_for(_principal(ALL_PERMISSION_KEYS))
+    assert len(tools) > 16  # 超管 32 个 → 触发渐进式
+
+    cold = {s["function"]["name"] for s in AssistantAgent._specs_for_turn(tools, set())}
+    assert _SEARCH_TOOL_NAME in cold  # 元工具常驻
+    assert _CORE_TOOLS <= cold  # 核心常驻
+    assert "list_departments" not in cold  # 非核心、未加载 → 不在场
+
+    warm = {
+        s["function"]["name"] for s in AssistantAgent._specs_for_turn(tools, {"list_departments"})
+    }
+    assert "list_departments" in warm  # search 加载后 → 进场
+
+
+def test_progressive_search_loads_then_calls(tmp_path: Path) -> None:
+    """渐进式全链:模型先 search_operations 加载,再调用被加载的工具并执行。"""
+    from fulcrum.adapters.assistant.agent import _SEARCH_TOOL_NAME
+
+    pipeline = _pipeline(tmp_path)
+    agent = AssistantAgent(
+        pipeline,
+        _services(tmp_path, pipeline),
+        _scripted(
+            ModelReply(tool_calls=[ToolCallReq("1", _SEARCH_TOOL_NAME, {"query": "成员"})]),
+            ModelReply(tool_calls=[ToolCallReq("2", "list_users", {})]),
+            ModelReply(content="共若干名成员。"),
+        ),
+    )
+    res = asyncio.run(agent.run("列出成员", _principal(ALL_PERMISSION_KEYS), "s-prog"))
+    assert any(s.tool == _SEARCH_TOOL_NAME and s.kind == "meta" and s.ok for s in res.steps)
+    assert any(s.tool == "list_users" and s.kind == "read" and s.ok for s in res.steps)
+
+
 # ───────────────────────── 吃狗粮:工具返回检测 ─────────────────────────
 def test_screen_tool_return_blocks_injection(tmp_path: Path) -> None:
     pipeline = _pipeline(tmp_path)

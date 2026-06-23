@@ -79,6 +79,15 @@ class AssistantTool:
         """该角色是否被授权调用本操作(requires ⊆ 角色权限)。"""
         return all(principal.has(p) for p in self.requires)
 
+    @property
+    def domain(self) -> str:
+        """工具领域 —— 由首个权限点前缀**自动派生**(零维护),供渐进式披露按域检索。
+
+        如 `users.view→users`、`settings.manage→settings`、`dept.manage→dept`;
+        无 requires(如 ui 的 navigate)→ `general`。队友加操作不需手填领域。
+        """
+        return self.requires[0].split(".", 1)[0] if self.requires else "general"
+
 
 class OperationRegistry:
     """name -> AssistantTool。进程内单例,装配时由各领域模块 import 触发注册。"""
@@ -122,6 +131,46 @@ class OperationRegistry:
         前端隐藏≠安全。
         """
         return [t for t in self._ops.values() if t.visible_to(principal)]
+
+    def domains_for(self, principal: Any) -> list[str]:
+        """当前角色可见操作覆盖的领域(排序去重)—— 喂给 search_operations 当检索域提示。"""
+        return sorted({t.domain for t in self._ops.values() if t.visible_to(principal)})
+
+    def search(
+        self,
+        principal: Any,
+        query: str,
+        *,
+        domain: str | None = None,
+        limit: int = 8,
+    ) -> list[AssistantTool]:
+        """渐进式披露的检索:在**当前角色可见**的操作里按关键词/领域找,返回 Top-N。
+
+        只在 `visible_for` 集合内检索 —— **不绕 RBAC**。中文无分词:整串子串命中即可,
+        亦按空格/逗号切词逐个匹配;命中 name/label 加权。无命中则回退该域前 N 个(给模型兜底)。
+        """
+        pool = [t for t in self._ops.values() if t.visible_to(principal)]
+        if domain:
+            pool = [t for t in pool if t.domain == domain]
+        q = (query or "").lower().strip()
+        if not q:
+            return pool[:limit]
+        toks = [w for w in q.replace("，", " ").replace(",", " ").split() if w]
+
+        def score(t: AssistantTool) -> int:
+            name, label = t.name.lower(), t.label.lower()
+            hay = f"{name} {label} {t.description.lower()} {t.domain}"
+            s = 3 if q in hay else 0  # 整串命中(中文场景)
+            for tok in toks:
+                if tok in hay:
+                    s += 1
+                if tok in name or tok in label:
+                    s += 2
+            return s
+
+        scored = sorted(((score(t), t) for t in pool), key=lambda x: -x[0])
+        hits = [t for sc, t in scored if sc > 0]
+        return (hits or pool)[:limit]
 
     def clear(self) -> None:
         """仅供测试隔离用(进程内单例,测试间复位)。"""
