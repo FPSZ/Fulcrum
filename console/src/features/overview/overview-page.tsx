@@ -6,11 +6,12 @@ import { cn } from '@/lib/utils'
 import { ease } from '@/lib/motion'
 import { useAuth } from '@/lib/auth'
 import { useNavigateFeature } from '@/lib/nav'
+import { useResource } from '@/lib/backup'
 import type { OverviewStats } from '@/lib/api/overview'
 import type { SecurityEvent } from '../events/types'
 import { Gauge, LiveChart } from './charts'
 import type { OverviewStat } from './backup'
-import { STAT_ICON, deriveRecent, realKpiCards, type StatTone } from './data'
+import { STAT_ICON, deriveRecent, realKpiCards, statsFromEvents, type StatTone } from './data'
 import { useOverviewStats } from './use-stats'
 import { useEventsFeed } from '../events/use-events'
 
@@ -32,8 +33,8 @@ const TONE: Record<StatTone, { wrap: string; icon: string }> = {
 const BUCKETS = 15
 const BUCKET_SEC = 60
 
-/** KPI 卡(实时态:右下角显「实时」脉冲,不编造环比 delta)。 */
-function StatCard({ s }: { s: OverviewStat }) {
+/** KPI 卡(实时态显「实时」脉冲;演示备份态显静态「演示」,不伪装实时,不编造环比 delta)。 */
+function StatCard({ s, live }: { s: OverviewStat; live: boolean }) {
   const Icon = STAT_ICON[s.key]
   const tone = TONE[s.tone]
   return (
@@ -52,10 +53,17 @@ function StatCard({ s }: { s: OverviewStat }) {
         {s.unit && <span className="text-[16px] font-semibold text-ink-3 md:text-[18px]">{s.unit}</span>}
       </div>
       <div className="mt-2 flex items-center gap-2 text-[13px] text-ink-mute md:text-[13.5px]">
-        <span className="flex items-center gap-1.5 font-semibold text-accent-ink">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" style={{ animation: 'pulse-ring 2s infinite' }} />
-          实时
-        </span>
+        {live ? (
+          <span className="flex items-center gap-1.5 font-semibold text-accent-ink">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" style={{ animation: 'pulse-ring 2s infinite' }} />
+            实时
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 font-semibold text-ink-mute">
+            <span className="h-1.5 w-1.5 rounded-full bg-ink-mute/60" />
+            演示备份
+          </span>
+        )}
       </div>
     </motion.div>
   )
@@ -67,10 +75,10 @@ function EmptyOverview() {
       <Inbox className="h-9 w-9 text-line-3" strokeWidth={1.4} />
       <div>
         <p className="text-[15px] font-semibold text-ink">暂无实时数据</p>
-        <p className="mx-auto mt-1 max-w-[440px] text-[13.5px] leading-relaxed text-ink-3">
+        <p className="mx-auto mt-1 max-w-[460px] text-[13.5px] leading-relaxed text-ink-3">
           安全网关还没有处理过任何请求。开启实时流量驱动(后端置
           <code className="mx-1 text-ink-2">FULCRUM_LIVE_FEED_ENABLED=1</code>),
-          或到「网关实测」页发一条请求,这里就会显示真实的管线判定。
+          或到「网关实测」页发一条请求,这里就会显示真实的管线判定;也可在「数据与备份」载入演示备份预览。
         </p>
       </div>
     </div>
@@ -90,17 +98,58 @@ function bucketByMinute(tsList: number[], nowMs: number): number[] {
   return arr
 }
 
-export function OverviewPage() {
-  // 全实时:KPI/仪表盘来自 /overview/stats,事件表/趋势图来自 /events;无数据则诚实空态(不回退 seed)。
-  const { data: stats } = useOverviewStats()
-  const { data: events } = useEventsFeed()
-  const evs = events ?? []
-  const hasData = (stats && stats.events > 0) || evs.length > 0
-  if (!hasData) return <EmptyOverview />
-  return <LiveOverview stats={stats} events={evs} />
+/** "HH:MM:SS" → 当天秒数;非法返回 null。 */
+function parseHms(t: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(t)
+  return m ? +m[1] * 3600 + +m[2] * 60 + +(m[3] ?? 0) : null
 }
 
-function LiveOverview({ stats, events }: { stats: OverviewStats | undefined; events: SecurityEvent[] }) {
+/** 演示备份态:事件只有「时分秒」无 epoch,按其最早→最晚跨度均匀分桶,展示活跃分布(非实时窗口)。 */
+function bucketByTimeOfDay(events: SecurityEvent[]): number[] {
+  const secs = events.map((e) => parseHms(e.time)).filter((s): s is number => s != null)
+  const arr = new Array(BUCKETS).fill(0)
+  if (secs.length === 0) return arr
+  const lo = Math.min(...secs)
+  const span = Math.max(1, Math.max(...secs) - lo)
+  for (const s of secs) {
+    const idx = Math.min(BUCKETS - 1, Math.floor(((s - lo) / span) * BUCKETS))
+    arr[idx] += 1
+  }
+  return arr
+}
+
+export function OverviewPage() {
+  // 实时优先:KPI/仪表盘来自 /overview/stats,事件表/趋势图来自 /events。
+  // 无实时数据则回退到导入的「演示备份」(events 资源,聚合由 statsFromEvents 派生)——
+  // 与各页一致:载入备份则全页有数据,清空备份则全页诚实空态,绝不注入写死 seed。
+  const { data: liveStats } = useOverviewStats()
+  const { data: live } = useEventsFeed()
+  const backupEvents = useResource<SecurityEvent>('events')
+
+  const liveStatsOn = !!liveStats && liveStats.events > 0
+  const liveEventsOn = !!live && live.length > 0
+  const events = liveEventsOn ? live : backupEvents
+  const stats = liveStatsOn
+    ? liveStats
+    : events.length > 0
+      ? statsFromEvents(events)
+      : undefined
+  const isLive = liveStatsOn || liveEventsOn
+
+  const hasData = (stats && stats.events > 0) || events.length > 0
+  if (!hasData) return <EmptyOverview />
+  return <LiveOverview stats={stats} events={events} live={isLive} />
+}
+
+function LiveOverview({
+  stats,
+  events,
+  live,
+}: {
+  stats: OverviewStats | undefined
+  events: SecurityEvent[]
+  live: boolean
+}) {
   const navigate = useNavigateFeature()
   const canSeeEvents = useAuth().has('events.view')
   const [now, setNow] = useState(() => Date.now())
@@ -109,10 +158,13 @@ function LiveOverview({ stats, events }: { stats: OverviewStats | undefined; eve
     return () => clearInterval(t)
   }, [])
 
-  // 趋势图:真实事件按分钟分桶(近 15 分钟)
+  // 趋势图:实时态按分钟分桶(近 15 分钟真实时序);演示备份态按事件时分秒跨度分桶(活跃分布)。
   const series = useMemo(
-    () => bucketByMinute(events.map((e) => e.ts ?? 0).filter((t) => t > 0), now),
-    [events, now],
+    () =>
+      live
+        ? bucketByMinute(events.map((e) => e.ts ?? 0).filter((t) => t > 0), now)
+        : bucketByTimeOfDay(events),
+    [events, now, live],
   )
   const windowTotal = series.reduce((a, b) => a + b, 0)
 
@@ -134,8 +186,17 @@ function LiveOverview({ stats, events }: { stats: OverviewStats | undefined; eve
   return (
     <div className="h-full overflow-y-auto px-4 py-4 md:px-6 md:py-5">
       <p className="mb-5 flex items-center gap-1.5 text-[13.5px] text-ink-3 md:text-[14.5px]">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" style={{ animation: 'pulse-ring 2s infinite' }} />
-        实时监测中 · 数据来自运行中的安全网关(/overview/stats · /events)
+        {live ? (
+          <>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" style={{ animation: 'pulse-ring 2s infinite' }} />
+            实时监测中 · 数据来自运行中的安全网关(/overview/stats · /events)
+          </>
+        ) : (
+          <>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink-mute/60" />
+            演示备份预览 · 数据来自导入的演示备份(非实时);在「数据与备份」清空即恢复空态
+          </>
+        )}
       </p>
 
       {/* KPI */}
@@ -147,7 +208,7 @@ function LiveOverview({ stats, events }: { stats: OverviewStats | undefined; eve
           className="grid grid-cols-2 gap-4 xl:grid-cols-4"
         >
           {cards.map((c) => (
-            <StatCard key={c.key} s={c} />
+            <StatCard key={c.key} s={c} live={live} />
           ))}
         </motion.div>
       )}
@@ -160,11 +221,22 @@ function LiveOverview({ stats, events }: { stats: OverviewStats | undefined; eve
               <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">网关处理量</div>
               <div className="mt-2 flex items-baseline gap-2">
                 <span className="tabnum text-[28px] font-bold tracking-[-0.02em] text-ink">{windowTotal}</span>
-                <span className="text-[14.5px] font-semibold text-ink-3">次 / 近 15 分钟</span>
+                <span className="text-[14.5px] font-semibold text-ink-3">
+                  {live ? '次 / 近 15 分钟' : '次 / 演示样本'}
+                </span>
               </div>
               <div className="mt-0.5 flex items-center gap-1.5 text-[13.5px] text-ink-mute">
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" style={{ animation: 'pulse-ring 2s infinite' }} />
-                每 1 分一桶 · 真实事件时序
+                {live ? (
+                  <>
+                    <span className="h-1.5 w-1.5 rounded-full bg-accent" style={{ animation: 'pulse-ring 2s infinite' }} />
+                    每 1 分一桶 · 真实事件时序
+                  </>
+                ) : (
+                  <>
+                    <span className="h-1.5 w-1.5 rounded-full bg-ink-mute/60" />
+                    演示备份 · 事件活跃分布
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -193,11 +265,20 @@ function LiveOverview({ stats, events }: { stats: OverviewStats | undefined; eve
       <div className="mt-4 glass-card overflow-hidden rounded-[16px]">
         <div className="flex items-center justify-between gap-3 px-5 py-4">
           <div className="flex items-center gap-2.5">
-            <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">实时风险事件</div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-ok/14 px-2 py-0.5 text-[12px] font-semibold text-ok">
-              <span className="h-1.5 w-1.5 rounded-full bg-ok" style={{ animation: 'pulse-ring 2s infinite' }} />
-              LIVE
-            </span>
+            <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">
+              {live ? '实时风险事件' : '风险事件(演示)'}
+            </div>
+            {live ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-ok/14 px-2 py-0.5 text-[12px] font-semibold text-ok">
+                <span className="h-1.5 w-1.5 rounded-full bg-ok" style={{ animation: 'pulse-ring 2s infinite' }} />
+                LIVE
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-mute/12 px-2 py-0.5 text-[12px] font-semibold text-ink-mute">
+                <span className="h-1.5 w-1.5 rounded-full bg-ink-mute/60" />
+                演示备份
+              </span>
+            )}
           </div>
         </div>
         {/* 桌面:表格 */}

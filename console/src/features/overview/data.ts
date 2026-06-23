@@ -46,6 +46,32 @@ export function realKpiCards(stats: OverviewStats, base?: OverviewStat[]): Overv
   })
 }
 
+/**
+ * 无后端实时统计时,从导入备份的事件流派生总览聚合(口径对齐后端 /overview/stats):
+ * 受控调用=事件数,高危拦截=block 数,待研判=approve 数,审计完整率=无篡改会话占比。
+ * 仅用于「演示备份」预览;真实态一律以后端聚合为准。清空备份则无事件 → 上层走空态。
+ */
+export function statsFromEvents(events: SecurityEvent[]): OverviewStats {
+  const sessions = new Set(events.map((e) => e.sess))
+  const tampered = new Set(events.filter((e) => !e.verified).map((e) => e.sess))
+  const decisions: Record<string, number> = {}
+  const byType: Record<string, number> = {}
+  for (const e of events) {
+    decisions[e.disp] = (decisions[e.disp] ?? 0) + 1
+    byType[e.srcType] = (byType[e.srcType] ?? 0) + 1
+  }
+  return {
+    sessions: sessions.size,
+    events: events.length,
+    verified_sessions: [...sessions].filter((s) => !tampered.has(s)).length,
+    requests: events.length,
+    blocked: decisions.block ?? 0,
+    pending: decisions.approve ?? 0,
+    decisions,
+    by_type: byType,
+  }
+}
+
 /** KPI key → 图标(图标不入备份,前端按 key 映射) */
 export const STAT_ICON: Record<OverviewStat['key'], LucideIcon> = {
   controlled: ShieldCheck,
