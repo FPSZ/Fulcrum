@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Lock, Pencil, Plus, Save, Shield, Trash2, Users } from 'lucide-react'
+import { Check, Eye, Lock, Pencil, Plus, Save, Shield, Trash2, Users } from 'lucide-react'
 import {
   Avatar,
   Button,
@@ -33,6 +33,80 @@ const sameSet = (a: Set<string>, b: Iterable<string>): boolean => {
   if (a.size !== bs.size) return false
   for (const x of a) if (!bs.has(x)) return false
   return true
+}
+
+/** 一个能力域:把同 capability 的「看(read)/改(write)」合成一行,单点用 actionKey。 */
+interface Cap {
+  capability: string
+  cap_label: string
+  readKey?: string // access==='read' 的权限点(只读)
+  writeKey?: string // access==='write' 的权限点(读写需连带 readKey)
+  actionKey?: string // access==='action' 的单点(无看改之分,如审批)
+}
+
+/** 影响面分类顺序(与后端 group 对齐):末两组「成员与权限/系统配置」最敏感。 */
+const GROUP_ORDER = ['监测', '管控', '取证', '成员与权限', '系统配置']
+
+/** 容错:旧后端未带 capability/cap_label/access 时,从 key 后缀派生(.view→read / .manage|.handle|.run→write)。 */
+function metaOf(p: PermissionDef): { capability: string; cap_label: string; access: PermissionDef['access'] } {
+  if (p.capability && p.access) {
+    return { capability: p.capability, cap_label: p.cap_label || p.label, access: p.access }
+  }
+  const [dom, act] = p.key.split('.')
+  const access: PermissionDef['access'] =
+    act === 'view' ? 'read' : ['manage', 'handle', 'run'].includes(act) ? 'write' : 'action'
+  return { capability: `${dom}.${access === 'action' ? act : ''}`, cap_label: p.label, access }
+}
+
+/** 权限点目录 → 按影响面分组、组内按能力域合成(保留出现顺序)。 */
+function buildGroups(perms: PermissionDef[]): { group: string; caps: Cap[] }[] {
+  const byGroup = new Map<string, Map<string, Cap>>()
+  for (const p of perms) {
+    const m = metaOf(p)
+    if (!byGroup.has(p.group)) byGroup.set(p.group, new Map())
+    const caps = byGroup.get(p.group)!
+    const cap: Cap = caps.get(m.capability) ?? { capability: m.capability, cap_label: m.cap_label }
+    if (m.access === 'read') cap.readKey = p.key
+    else if (m.access === 'write') cap.writeKey = p.key
+    else cap.actionKey = p.key
+    caps.set(m.capability, cap)
+  }
+  const known = GROUP_ORDER.filter((g) => byGroup.has(g))
+  const extra = [...byGroup.keys()].filter((g) => !GROUP_ORDER.includes(g)) // 兜底:未知组排末尾
+  return [...known, ...extra].map((g) => ({ group: g, caps: [...byGroup.get(g)!.values()] }))
+}
+
+/** 某能力域在当前授权集下的级别:0 无 / 1 只读 / 2 读写(action 用 2 表示「已授权」)。 */
+function levelOf(cap: Cap, granted: Set<string>): 0 | 1 | 2 {
+  if (cap.actionKey) return granted.has(cap.actionKey) ? 2 : 0
+  if (cap.writeKey && granted.has(cap.writeKey)) return 2
+  if (cap.readKey && granted.has(cap.readKey)) return 1
+  return 0
+}
+
+/** 点击循环:无→只读→读写→无(只读/只写能力则二态);返回新授权集。 */
+function cycleCap(cap: Cap, granted: Set<string>): Set<string> {
+  const next = new Set(granted)
+  if (cap.actionKey) {
+    if (next.has(cap.actionKey)) next.delete(cap.actionKey)
+    else next.add(cap.actionKey)
+    return next
+  }
+  const lvl = levelOf(cap, granted)
+  if (cap.readKey) next.delete(cap.readKey)
+  if (cap.writeKey) next.delete(cap.writeKey)
+  const hasRead = !!cap.readKey
+  const hasWrite = !!cap.writeKey
+  if (hasRead && hasWrite) {
+    const target = (lvl + 1) % 3 // 0→1→2→0
+    if (target >= 1) next.add(cap.readKey!)
+    if (target === 2) next.add(cap.writeKey!) // 读写连带 read,保证能看到才改
+  } else if (hasRead) {
+    if (lvl === 0) next.add(cap.readKey!) // 二态:无↔只读
+  } else if (hasWrite) {
+    if (lvl === 0) next.add(cap.writeKey!) // 二态:无↔读写(管理类无只读)
+  }
+  return next
 }
 
 export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
@@ -71,16 +145,7 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
     loadMembers()
   }, [loadMembers])
 
-  const groups = useMemo(() => {
-    const order = ['监测', '管控', '取证', '系统']
-    const map = new Map<string, PermissionDef[]>()
-    permissions.forEach((p) => {
-      const arr = map.get(p.group) ?? []
-      arr.push(p)
-      map.set(p.group, arr)
-    })
-    return order.filter((g) => map.has(g)).map((g) => ({ group: g, items: map.get(g)! }))
-  }, [permissions])
+  const groups = useMemo(() => buildGroups(permissions), [permissions])
 
   const pickRole = (id: number) => {
     setSelectedId(id)
@@ -249,7 +314,7 @@ function RolePermissions({
 }: {
   role: Role | null
   member: Member | null
-  groups: { group: string; items: PermissionDef[] }[]
+  groups: { group: string; caps: Cap[] }[]
   canManage: boolean
   onChanged: () => void
   onEditMeta: () => void
@@ -276,14 +341,9 @@ function RolePermissions({
   const dirty = editable && !sameSet(draft, role.permissions)
   const granted = viewingMember ? new Set(role.permissions) : draft
 
-  const toggle = (key: string) => {
+  const cycle = (cap: Cap) => {
     if (!editable) return
-    setDraft((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    setDraft((prev) => cycleCap(cap, prev))
   }
 
   const save = async () => {
@@ -324,7 +384,13 @@ function RolePermissions({
         )}
       </header>
 
-      {(viewingMember || !editable) && (
+      {editable ? (
+        <p className="border-b border-line bg-subtle px-4 py-2 text-[12.5px] text-ink-mute">
+          点击循环切换:<span className="text-ink-3">无</span> →{' '}
+          <span className="font-medium text-accent-ink">只读</span> →{' '}
+          <span className="font-medium text-accent-ink">读写</span>。「成员与权限 / 系统配置」涉隐私与全体,请谨慎授权。
+        </p>
+      ) : (
         <p className="border-b border-line bg-subtle px-4 py-2 text-[12.5px] text-ink-mute">
           {viewingMember
             ? `继承自角色「${role.name}」,共 ${granted.size} 项;如需调整请修改角色或为该成员改派角色。`
@@ -335,47 +401,86 @@ function RolePermissions({
       )}
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-        {groups.map(({ group, items }) => (
+        {groups.map(({ group, caps }) => (
           <div key={group}>
             <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-mute">
               {group}
             </div>
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
-              {items.map((p) => {
-                const on = granted.has(p.key)
-                return (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() => toggle(p.key)}
-                    disabled={!editable}
-                    className={cn(
-                      'focus-ring flex items-center gap-2.5 rounded-[9px] border px-2.5 py-2 text-left transition-colors',
-                      on
-                        ? 'border-accent/40 bg-accent/8'
-                        : 'border-line-2 bg-surface hover:border-line-3',
-                      viewingMember && !on && 'opacity-45',
-                      !editable && 'cursor-default',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[5px] border transition-colors',
-                        on ? 'border-accent bg-accent text-white' : 'border-line-3 bg-surface',
-                      )}
-                    >
-                      {on && <Check className="h-3 w-3" strokeWidth={3} />}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink-2">{p.label}</span>
-                    <code className="font-data text-[11px] text-ink-mute">{p.key}</code>
-                  </button>
-                )
-              })}
+              {caps.map((cap) => (
+                <CapCell
+                  key={cap.capability}
+                  cap={cap}
+                  level={levelOf(cap, granted)}
+                  editable={editable}
+                  dimmed={viewingMember}
+                  onClick={() => cycle(cap)}
+                />
+              ))}
             </div>
           </div>
         ))}
       </div>
     </div>
+  )
+}
+
+/** 一个能力域单元:三态(无/只读/读写)指示 + 中文名 + 级别徽标。点击循环切换。 */
+function CapCell({
+  cap,
+  level,
+  editable,
+  dimmed,
+  onClick,
+}: {
+  cap: Cap
+  level: 0 | 1 | 2
+  editable: boolean
+  dimmed: boolean
+  onClick: () => void
+}) {
+  const on = level > 0
+  const isAction = !!cap.actionKey
+  const badge = isAction ? '已授权' : level === 2 ? '读写' : level === 1 ? '只读' : ''
+  // 指示器:无=空框;只读=描边+眼睛;读写/已授权=实心+对勾。
+  const Icon = level === 2 || isAction ? Check : Eye
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!editable}
+      title={[cap.readKey, cap.writeKey, cap.actionKey].filter(Boolean).join('  ·  ')}
+      className={cn(
+        'focus-ring flex items-center gap-2.5 rounded-[9px] border px-2.5 py-2 text-left transition-colors',
+        on ? 'border-accent/40 bg-accent/8' : 'border-line-2 bg-surface hover:border-line-3',
+        dimmed && !on && 'opacity-45',
+        !editable && 'cursor-default',
+      )}
+    >
+      <span
+        className={cn(
+          'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] border transition-colors',
+          level === 2
+            ? 'border-accent bg-accent text-white'
+            : level === 1
+              ? 'border-accent bg-accent/15 text-accent'
+              : 'border-line-3 bg-surface text-transparent',
+        )}
+      >
+        <Icon className="h-3 w-3" strokeWidth={level === 1 ? 2.2 : 3} />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink-2">{cap.cap_label}</span>
+      {badge && (
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium',
+            level === 2 || isAction ? 'bg-accent/12 text-accent-ink' : 'bg-accent/8 text-accent',
+          )}
+        >
+          {badge}
+        </span>
+      )}
+    </button>
   )
 }
 

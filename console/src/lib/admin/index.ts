@@ -9,6 +9,9 @@ export interface PermissionDef {
   key: string
   label: string
   group: string
+  capability: string // 能力域 id(成对看/改共享 → 合成只读/读写三态)
+  cap_label: string // 能力域中文名(展示一行)
+  access: 'read' | 'write' | 'action'
 }
 
 export interface Department {

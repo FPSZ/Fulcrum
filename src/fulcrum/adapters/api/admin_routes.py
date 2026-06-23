@@ -90,7 +90,17 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
     # ── 权限目录 ──────────────────────────────────────────────────
     @app.get("/admin/permissions", response_model=list[PermissionDTO])
     async def permissions(_: Principal = Depends(can_view)) -> list[PermissionDTO]:
-        return [PermissionDTO(key=p.key, label=p.label, group=p.group) for p in PERMISSIONS]
+        return [
+            PermissionDTO(
+                key=p.key,
+                label=p.label,
+                group=p.group,
+                capability=p.capability,
+                cap_label=p.cap_label,
+                access=p.access,
+            )
+            for p in PERMISSIONS
+        ]
 
     # ── 组织架构 ──────────────────────────────────────────────────
     @app.get("/admin/departments", response_model=list[DepartmentDTO])

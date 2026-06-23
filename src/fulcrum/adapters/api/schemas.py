@@ -352,6 +352,9 @@ class PermissionDTO(BaseModel):
     key: str
     label: str
     group: str
+    capability: str  # 能力域 id(成对看/改共享,前端合成只读/读写三态)
+    cap_label: str  # 能力域中文名(展示一行)
+    access: str  # read | write | action
 
 
 class DepartmentDTO(BaseModel):

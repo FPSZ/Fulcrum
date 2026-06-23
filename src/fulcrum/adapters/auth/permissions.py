@@ -15,40 +15,56 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class PermissionDef:
+    """一个权限点。
+
+    为让前端把「看(.view)」和「改(.manage/.handle/.run)」配成**同一能力的只读/读写
+    三态控件**,每个点声明:
+    - ``capability`` —— 能力域 id(成对的看/改共享同一个,如 events 的 view+handle);
+    - ``cap_label``  —— 能力域中文名(同一能力域两条相同,展示用一行);
+    - ``access``     —— ``read``(看)/ ``write``(改)/ ``action``(无看改之分的单点,如审批)。
+    分类(group)按**影响面**归并:监测/管控/取证/成员与权限(涉隐私·影响他人)/系统配置(影响全体)。
+    """
+
     key: str
-    label: str
-    group: str  # 与前端导航分组一致:监测/管控/取证/系统
+    label: str  # 权限点本名(成对时如「查看成员」「管理成员」)
+    group: str  # 影响面分类:监测/管控/取证/成员与权限/系统配置
+    capability: str  # 能力域 id(成对看/改共享)
+    cap_label: str  # 能力域中文名(展示一行)
+    access: str  # read | write | action
 
 
 # ── 权限点目录(唯一真源)──────────────────────────────────────────
+# 同一 capability 的 read+write 在前端合成一行三态(无→只读→读写);access=action 为单点开关。
 PERMISSIONS: tuple[PermissionDef, ...] = (
     # 监测
-    PermissionDef("overview.view", "安全总览", "监测"),
-    PermissionDef("events.view", "会话事件", "监测"),
-    PermissionDef("events.handle", "处置事件", "监测"),
+    PermissionDef("overview.view", "安全总览", "监测", "overview", "安全总览", "read"),
+    PermissionDef("events.view", "查看会话事件", "监测", "events", "会话事件", "read"),
+    PermissionDef("events.handle", "处置会话事件", "监测", "events", "会话事件", "write"),
     # 管控
-    PermissionDef("policies.view", "策略中心", "管控"),
-    PermissionDef("policies.manage", "编辑策略", "管控"),
-    PermissionDef("tools.view", "工具网关", "管控"),
-    PermissionDef("tools.manage", "管控工具", "管控"),
-    PermissionDef("supply.view", "供应链", "管控"),
-    PermissionDef("supply.manage", "处置供应链风险", "管控"),
+    PermissionDef("policies.view", "查看策略", "管控", "policies", "策略中心", "read"),
+    PermissionDef("policies.manage", "编辑策略", "管控", "policies", "策略中心", "write"),
+    PermissionDef("tools.view", "查看工具网关", "管控", "tools", "工具网关", "read"),
+    PermissionDef("tools.manage", "管控工具", "管控", "tools", "工具网关", "write"),
+    PermissionDef("supply.view", "查看供应链", "管控", "supply", "供应链", "read"),
+    PermissionDef("supply.manage", "处置供应链风险", "管控", "supply", "供应链", "write"),
     # 取证
-    PermissionDef("audit.view", "审计溯源", "取证"),
-    PermissionDef("eval.view", "评测验证", "取证"),
-    PermissionDef("eval.run", "发起评测", "取证"),
-    # 系统
-    PermissionDef("settings.view", "系统设置", "系统"),
-    PermissionDef("settings.manage", "修改设置", "系统"),
-    PermissionDef("users.view", "查看成员", "系统"),
-    PermissionDef("users.manage", "管理成员", "系统"),
-    PermissionDef("dept.manage", "管理组织架构", "系统"),
-    PermissionDef("roles.manage", "管理角色权限", "系统"),
-    PermissionDef("account.approve", "审批账号申请", "系统"),
-    PermissionDef("ai.operate", "AI 操作助手", "系统"),  # 能否使用 AI 副驾代操作控制台
+    PermissionDef("audit.view", "审计溯源", "取证", "audit", "审计溯源", "read"),
+    PermissionDef("eval.view", "查看评测", "取证", "eval", "评测验证", "read"),
+    PermissionDef("eval.run", "发起评测", "取证", "eval", "评测验证", "write"),
+    # 成员与权限(涉隐私 / 影响他人)
+    PermissionDef("users.view", "查看成员", "成员与权限", "users", "成员", "read"),
+    PermissionDef("users.manage", "管理成员", "成员与权限", "users", "成员", "write"),
+    PermissionDef("dept.manage", "管理组织架构", "成员与权限", "dept", "组织架构", "write"),
+    PermissionDef("roles.manage", "管理角色权限", "成员与权限", "roles", "角色权限", "write"),
+    PermissionDef("account.approve", "审批账号申请", "成员与权限", "account", "账号审批", "action"),
+    # 系统配置(影响全体)
+    PermissionDef("settings.view", "查看系统设置", "系统配置", "settings", "系统设置", "read"),
+    PermissionDef("settings.manage", "修改系统设置", "系统配置", "settings", "系统设置", "write"),
+    # 能否使用 AI 副驾代操作控制台。
+    PermissionDef("ai.operate", "AI 操作助手", "系统配置", "ai_operate", "AI 操作助手", "action"),
     # 能否配置 AI 助手的模型接入(协议/端点/密钥/模型名)——高敏:默认仅超管+系统管理员。
     # 其余内置角色显式列举权限、不含本点,故天然无权;新建角色需管理员显式勾选。
-    PermissionDef("ai.configure", "AI 模型配置", "系统"),
+    PermissionDef("ai.configure", "AI 模型配置", "系统配置", "ai_config", "AI 模型配置", "action"),
 )
 
 ALL_PERMISSION_KEYS: frozenset[str] = frozenset(p.key for p in PERMISSIONS)

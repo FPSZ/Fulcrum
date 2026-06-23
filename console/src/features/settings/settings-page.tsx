@@ -55,16 +55,24 @@ interface Cat {
   id: string
   label: string
   icon: LucideIcon
+  /** global=全局设置(影响整个系统/全体成员,写操作需「修改系统设置」权限);
+   *  personal=个人设置(只作用于当前账号/浏览器,人人可改,无需权限)。 */
+  scope: 'global' | 'personal'
 }
-// 顺序按真实职责分组:
-// 实例元信息(可写) → 上游接入(可写且热加载) → 运行状态(只读) → 本机数据/偏好 → 开发者 → 关于。
+// 全局设置:实例元信息 → 上游接入 → 运行状态 → 关于(影响全体,写需权限)。
+// 个人设置:本机偏好 → 开发者(只存本浏览器/本账号,人人可改)。
 const CATS: Cat[] = [
-  { id: 'instance', label: '实例信息', icon: SlidersHorizontal },
-  { id: 'gateway', label: '上游接入', icon: ShieldCheck },
-  { id: 'runtime', label: '运行状态', icon: ServerCog },
-  { id: 'local', label: '本机数据', icon: DatabaseBackup },
-  { id: 'developer', label: '开发者', icon: Code2 },
-  { id: 'about', label: '关于', icon: Info },
+  { id: 'instance', label: '实例信息', icon: SlidersHorizontal, scope: 'global' },
+  { id: 'gateway', label: '上游接入', icon: ShieldCheck, scope: 'global' },
+  { id: 'runtime', label: '运行状态', icon: ServerCog, scope: 'global' },
+  { id: 'about', label: '关于', icon: Info, scope: 'global' },
+  { id: 'local', label: '本机偏好', icon: DatabaseBackup, scope: 'personal' },
+  { id: 'developer', label: '开发者', icon: Code2, scope: 'personal' },
+]
+
+const SCOPES: { scope: 'global' | 'personal'; label: string; hint: string }[] = [
+  { scope: 'global', label: '全局设置', hint: '影响整个系统与全体成员' },
+  { scope: 'personal', label: '个人设置', hint: '只作用于你自己,人人可改' },
 ]
 
 export function SettingsPage() {
@@ -73,53 +81,71 @@ export function SettingsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col min-[821px]:flex-row">
-        {/* 移动端:横向滚动分类条(纵向二级导航在窄屏放不下) */}
-        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line px-3 py-2 min-[821px]:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {CATS.map((c) => {
-            const Icon = c.icon
-            const active = cat === c.id
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setCat(c.id)}
-                className={cn(
-                  'focus-ring flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[14px] font-medium transition-colors',
-                  active
-                    ? 'border-accent/30 bg-accent/10 text-accent-ink'
-                    : 'border-line-2 text-ink-2 hover:bg-surface-2',
-                )}
-              >
-                <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-accent' : 'text-ink-3')} strokeWidth={1.8} />
-                {c.label}
-              </button>
-            )
-          })}
+        {/* 移动端:横向滚动分类条,按「全局/个人」分两段(中间一条竖分隔) */}
+        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-line px-3 py-2 min-[821px]:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {SCOPES.map((sc, si) => (
+            <div key={sc.scope} className="flex shrink-0 items-center gap-1.5">
+              {si > 0 && <span className="mx-0.5 h-5 w-px shrink-0 bg-line" />}
+              {CATS.filter((c) => c.scope === sc.scope).map((c) => {
+                const Icon = c.icon
+                const active = cat === c.id
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCat(c.id)}
+                    className={cn(
+                      'focus-ring flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[14px] font-medium transition-colors',
+                      active
+                        ? 'border-accent/30 bg-accent/10 text-accent-ink'
+                        : 'border-line-2 text-ink-2 hover:bg-surface-2',
+                    )}
+                  >
+                    <Icon
+                      className={cn('h-4 w-4 shrink-0', active ? 'text-accent' : 'text-ink-3')}
+                      strokeWidth={1.8}
+                    />
+                    {c.label}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
         </div>
 
-        {/* 桌面:纵向二级导航 */}
-        <nav className="w-56 shrink-0 overflow-y-auto border-r border-line p-2 max-[820px]:hidden">
-          {CATS.map((c) => {
-            const Icon = c.icon
-            const active = cat === c.id
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setCat(c.id)}
-                className={cn(
-                  'focus-ring flex w-full items-center gap-2.5 rounded-sm px-2.5 py-1.5 text-[15px] font-normal text-ink-2 transition-colors hover:bg-surface-2',
-                  active && 'bg-accent/10 font-semibold text-accent-ink',
-                )}
-              >
-                <Icon
-                  className={cn('h-4 w-4 shrink-0', active ? 'text-accent' : 'text-ink-3')}
-                  strokeWidth={1.8}
-                />
-                {c.label}
-              </button>
-            )
-          })}
+        {/* 桌面:纵向二级导航,按「全局设置 / 个人设置」分组,各带标题 */}
+        <nav className="w-56 shrink-0 space-y-3 overflow-y-auto border-r border-line p-2 max-[820px]:hidden">
+          {SCOPES.map((sc) => (
+            <div key={sc.scope}>
+              <div className="px-2.5 pb-1 pt-1">
+                <div className="text-[12px] font-semibold uppercase tracking-wide text-ink-mute">
+                  {sc.label}
+                </div>
+                <div className="mt-0.5 text-[11.5px] leading-tight text-ink-mute/80">{sc.hint}</div>
+              </div>
+              {CATS.filter((c) => c.scope === sc.scope).map((c) => {
+                const Icon = c.icon
+                const active = cat === c.id
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCat(c.id)}
+                    className={cn(
+                      'focus-ring flex w-full items-center gap-2.5 rounded-sm px-2.5 py-1.5 text-[15px] font-normal text-ink-2 transition-colors hover:bg-surface-2',
+                      active && 'bg-accent/10 font-semibold text-accent-ink',
+                    )}
+                  >
+                    <Icon
+                      className={cn('h-4 w-4 shrink-0', active ? 'text-accent' : 'text-ink-3')}
+                      strokeWidth={1.8}
+                    />
+                    {c.label}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* 内容 */}
