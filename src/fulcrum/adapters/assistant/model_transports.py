@@ -317,9 +317,7 @@ def _anthropic_headers(key: str) -> dict[str, str]:
     return headers
 
 
-def _anthropic_payload(
-    cfg: AssistantModelConfig, messages: list[dict], tools: list[dict]
-) -> dict:
+def _anthropic_payload(cfg: AssistantModelConfig, messages: list[dict], tools: list[dict]) -> dict:
     system, rest = _split_system(messages)
     payload: dict = {
         "model": cfg.model,

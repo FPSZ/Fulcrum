@@ -90,8 +90,11 @@ def test_anthropic_translation_blocks_and_merged_results() -> None:
     # assistant 轮转成含 tool_use 块;两个 tool 返回合并进一个 user 消息。
     assistant = next(m for m in msgs if m["role"] == "assistant")
     assert any(b["type"] == "tool_use" and b["name"] == "get_x" for b in assistant["content"])
-    results = [m for m in msgs if isinstance(m["content"], list) and m["content"][0]
-               .get("type") == "tool_result"]
+    results = [
+        m
+        for m in msgs
+        if isinstance(m["content"], list) and m["content"][0].get("type") == "tool_result"
+    ]
     assert len(results) == 1 and len(results[0]["content"]) == 2  # 两条 tool_result 合并
 
 
