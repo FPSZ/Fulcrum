@@ -1,7 +1,8 @@
-"""控制台通用设置 —— 运行时可改、落盘持久化(Docker 卷),设置页填表即存。
+"""控制台实例设置 —— 运行时可改、落盘持久化(Docker 卷),设置页填表即存。
 
-覆盖设置页"通用 / 审计留存 / 通知"三组**实例级偏好**(非安全红线项)。安全相关配置
-另有归属:上游接入见 ``gateway`` 模块,模型出站见 .env,事件对话展示见前端 localStorage。
+只覆盖真正有后端落点的实例元信息。安全相关配置另有归属:上游接入见 ``gateway`` 模块,
+模型出站见 .env,事件对话展示见前端 localStorage。不要把尚未生效的安全策略、通知渠道、
+审计留存任务伪装成可配置项。
 
 低频写,JSON 文件足够;原子替换避免半截写入。Docker 部署挂卷于 data/runtime 即持久化。
 """
@@ -17,30 +18,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Environment = Literal["prod", "staging", "demo"]
-Language = Literal["zh", "en"]
-Timezone = Literal["sh", "utc"]
-ChainVerify = Literal["event", "5m", "1h"]
-Retention = Literal["90d", "180d", "1y", "forever"]
-ExportFormat = Literal["jsonl", "csv"]
-NotifyChannel = Literal["inapp", "webhook", "email"]
 
 
 class ConsoleSettings(BaseModel):
-    """控制台实例级偏好(单实例)。字段即设置页表单项。"""
+    """控制台实例级元信息(单实例)。字段即设置页真实可写项。"""
 
-    # 通用
     instance_name: str = Field(default="枢衡安全控制台", max_length=64)
     environment: Environment = "demo"
-    language: Language = "zh"
-    timezone: Timezone = "sh"
-    # 审计与留存
-    chain_verify_freq: ChainVerify = "event"
-    audit_retention: Retention = "1y"
-    export_format: ExportFormat = "jsonl"
-    # 通知
-    notify_severe: bool = True
-    notify_approval: bool = True
-    notify_channel: NotifyChannel = "inapp"
 
 
 class ConsoleSettingsStore:

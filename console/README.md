@@ -50,7 +50,7 @@ src/
     events/                实时事件页(master-detail + 证据归因链,接 /events)
       module.tsx · backup.ts · evidence-chain.tsx · events-page.tsx …
     admin/                 用户管理(部门树 · 成员 · 自定义角色 · 申请审批,RBAC)
-    settings/              系统设置(8 类二级导航)+ module.tsx
+    settings/              系统设置(实例信息 / 上游接入 / 运行状态 / 本机数据 / 开发者 / 关于)+ module.tsx
     backup/                备份导入 UI(导入按钮 / 数据与备份面板)
 ```
 
@@ -92,7 +92,7 @@ src/
 - ✅ **网关实测页**(端到端真驱动 `/gateway/chat`:输入闸门→转发企业智能体→出口闸门 + 一键样例)
 - ✅ 业务页接真后端(TanStack Query 轮询):实时事件 / 工具网关 / 策略中心 / 审计溯源 / 评测验证 / 供应链 / 用户管理(RBAC)/ 操作助手 —— "有真用真,否则回退演示 seed";后端置 `FULCRUM_LIVE_FEED_ENABLED=1` 实时流量驱动后显真实管线判定
 - ⚠️ 实时总览页:**KPI 四卡接真**(`/overview/stats`),但趋势曲线 + 流动事件流仍是**合成动画**(`use-live.ts`,待接 `/events` 真时序)
-- ⚠️ 系统设置页:仅「上游接入」接真后端,其余 7 类为表单占位
+- ✅ 系统设置页:只保留真实可用项。实例信息接 `/admin/settings` 落盘;上游接入接 `/admin/gateway-config` 热加载;运行状态/模型接入只读回显;本机数据仅写浏览器本地。
 - ⏳ 首页趋势图接真时序 / 审计 SQLite 持久化(真实可用对账见 [10-页面验收标准](../docs/plan/10-页面验收标准.md) §4)
 
 > 跨前后端的完整进度以 [docs/plan/03-进度看板.md](../docs/plan/03-进度看板.md) 为准;真实可用/端到端验收口径以 [docs/plan/10-页面验收标准.md](../docs/plan/10-页面验收标准.md) 为准。

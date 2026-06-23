@@ -113,7 +113,7 @@ def build_api(
         register_policies_routes(app, pipeline, deps)
         register_supply_routes(app, scanner, settings.supply_manifest_dir, deps)
         register_tools_routes(app, pipeline, deps)
-        # 控制台通用设置(通用/审计留存/通知):落盘持久化,设置页可读写。
+        # 控制台实例元信息:落盘持久化,设置页可读写。
         from ..console_settings import ConsoleSettingsStore
         from .settings_routes import register_console_settings_routes
 

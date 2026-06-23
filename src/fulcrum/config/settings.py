@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     upstream_agent_endpoint: str = "http://127.0.0.1:8800"
     # 网关上游接入配置落盘路径(JSON);Docker 部署挂卷于 data/runtime 即持久化。
     gateway_config_path: str = "data/runtime/gateway.json"
-    # 控制台通用设置(通用/审计留存/通知)落盘路径(JSON);同上挂卷即持久化。
+    # 控制台实例元信息落盘路径(JSON);同上挂卷即持久化。
     console_settings_path: str = "data/runtime/console.json"
     # 操作助手多轮对话记忆目录(一会话一文件);落盘故重启不丢,挂卷即持久化。
     conversation_dir: str = "data/runtime/conversations"

@@ -38,6 +38,7 @@ _KNOWN_PAGES = (
 )
 _DISPOSITIONS = ("allow", "sanitize", "approve", "block")
 _SEVERITIES = ("low", "medium", "high", "critical")
+_CONSOLE_SETTING_KEYS = frozenset({"instance_name", "environment"})
 
 
 def _int(value: Any, default: int, lo: int, hi: int) -> int:
@@ -583,6 +584,14 @@ async def _update_console_settings(args: dict, principal: Any, services: Any) ->
     store = services.console_store
     if store is None:
         return OperationResult(summary="未装配控制台设置。", ok=False, error="no_store")
+    unknown = sorted(set(args or {}) - _CONSOLE_SETTING_KEYS)
+    if unknown:
+        return OperationResult(
+            summary="设置未保存:这些字段当前没有运行时落点,不能作为控制台设置修改:"
+            + ", ".join(unknown),
+            ok=False,
+            error="unknown_fields",
+        )
     old = store.load().model_dump()
     try:
         new = ConsoleSettings.model_validate({**old, **(args or {})})
@@ -614,14 +623,6 @@ _CONSOLE_PARAMS = {
     "properties": {
         "instance_name": {"type": "string", "description": "实例名称"},
         "environment": {"type": "string", "enum": ["prod", "staging", "demo"]},
-        "language": {"type": "string", "enum": ["zh", "en"]},
-        "timezone": {"type": "string", "enum": ["sh", "utc"]},
-        "chain_verify_freq": {"type": "string", "enum": ["event", "5m", "1h"]},
-        "audit_retention": {"type": "string", "enum": ["90d", "180d", "1y", "forever"]},
-        "export_format": {"type": "string", "enum": ["jsonl", "csv"]},
-        "notify_severe": {"type": "boolean"},
-        "notify_approval": {"type": "boolean"},
-        "notify_channel": {"type": "string", "enum": ["inapp", "webhook", "email"]},
     },
 }
 
@@ -631,8 +632,8 @@ operation_registry.register(
         kind="write",
         label="改控制台设置",
         description=(
-            "按字段补丁更新控制台通用设置(实例名/语言/留存/通知等,非安全红线项);"
-            "**只把要改的字段放进参数**。"
+            "按字段补丁更新控制台真实落盘设置(实例名称/部署环境);"
+            "**只把要改的字段放进参数**。通知、审计留存、语言等未接运行时的项不可通过本工具修改。"
         ),
         parameters=_CONSOLE_PARAMS,
         requires=("settings.manage",),
