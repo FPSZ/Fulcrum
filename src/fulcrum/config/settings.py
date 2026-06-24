@@ -38,6 +38,9 @@ class Settings(BaseSettings):
 
     # 供应链:待扫描的组件 manifest 目录(供应链页只读展示其静态扫描评级)
     supply_manifest_dir: str = "samples/supplychain"
+    # 控制台「登记组件」上传的 manifest 落盘目录(运行时数据,与仓库种子目录分离,
+    # 已 gitignore)。供应链页列表 = 种子目录 + 本目录合并(同 component_id 以上传为准)。
+    supply_upload_dir: str = "data/runtime/supply"
 
     # 前端静态资源目录(生产:指向已构建的 console/dist);留空则只提供 API
     frontend_dir: str = ""

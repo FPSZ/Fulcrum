@@ -304,6 +304,12 @@ class SupplyScanReportDTO(BaseModel):
     risks: list[SupplyScanRiskDTO] = Field(default_factory=list)
 
 
+class SupplyScanRequest(BaseModel):
+    """控制台「登记组件」提交体:一份 manifest 原文(YAML 或 JSON,后端 yaml.safe_load 解析)。"""
+
+    manifest: str = Field(min_length=1, max_length=64_000)
+
+
 # ---- /tools/calls(工具网关:工具调用治理流水)----
 class ToolCallDTO(BaseModel):
     """一次过治理的工具调用(归因→评分→链→策略→处置)+ 其可展示证据。

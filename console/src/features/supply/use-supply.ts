@@ -1,6 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
-import { api } from '@/lib/api/client'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, j } from '@/lib/api/client'
 import type { ScanReport } from './data'
+
+const KEY = ['supply', 'scans'] as const
 
 /**
  * 供应链扫描(接真后端 GET /supply/scans)。对配置目录的组件 manifest 跑静态扫描评级;
@@ -9,8 +11,22 @@ import type { ScanReport } from './data'
  */
 export function useSupplyScans() {
   return useQuery<ScanReport[]>({
-    queryKey: ['supply', 'scans'],
+    queryKey: KEY,
     queryFn: () => api<ScanReport[]>('/supply/scans'),
     refetchInterval: 60_000,
   })
+}
+
+/**
+ * 登记组件(POST /supply/scan,需 supply.manage)。贴入一份 manifest 原文 → 后端当场静态
+ * 扫描评级、落盘登记并写审计 → 返回该组件评级报告;成功后刷新扫描列表(新行随即出现)。
+ */
+export function useRegisterScan() {
+  const qc = useQueryClient()
+  const register = async (manifest: string): Promise<ScanReport> => {
+    const report = await api<ScanReport>('/supply/scan', j({ manifest }))
+    await qc.invalidateQueries({ queryKey: KEY })
+    return report
+  }
+  return { register }
 }

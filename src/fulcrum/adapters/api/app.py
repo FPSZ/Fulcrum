@@ -91,6 +91,7 @@ def build_api(
     # 鉴权 + 管理后台路由;auth/settings 缺省时跳过,便于纯管线测试。
     if auth is not None and settings is not None:
         from ..assistant import make_model_backend
+        from ..supply_store import SupplyManifestStore
         from .admin_routes import register_admin_routes
         from .assistant_routes import register_assistant_routes
         from .audit_routes import register_audit_routes
@@ -111,7 +112,14 @@ def build_api(
         register_audit_routes(app, pipeline, deps)
         register_eval_routes(app, settings.eval_report_path, deps)
         register_policies_routes(app, pipeline, deps)
-        register_supply_routes(app, scanner, settings.supply_manifest_dir, deps)
+        register_supply_routes(
+            app,
+            pipeline,
+            scanner,
+            settings.supply_manifest_dir,
+            SupplyManifestStore(settings.supply_upload_dir),
+            deps,
+        )
         register_tools_routes(app, pipeline, deps)
         # 控制台实例元信息:落盘持久化,设置页可读写。
         from ..console_settings import ConsoleSettingsStore

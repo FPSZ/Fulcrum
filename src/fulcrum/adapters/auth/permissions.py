@@ -132,6 +132,7 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
                 "policies.manage",
                 "tools.view",
                 "supply.view",
+                "supply.manage",
                 "audit.view",
                 "eval.view",
                 "eval.run",
