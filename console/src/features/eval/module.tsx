@@ -1,6 +1,6 @@
 import { FlaskConical } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
-import { EvalPage } from './eval-page'
+import { lazy } from 'react'
 
 export const evalModule = defineFeature({
   id: 'eval',
@@ -10,5 +10,5 @@ export const evalModule = defineFeature({
   order: 70,
   requires: 'eval.view',
   dev: true, // 测试集 ASR/FPR 记分卡,纯开发/答辩用;政企管理员用不到,默认隐藏
-  component: EvalPage,
+  component: lazy(() => import('./eval-page').then((m) => ({ default: m.EvalPage }))),
 })

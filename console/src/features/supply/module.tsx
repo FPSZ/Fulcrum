@@ -1,6 +1,6 @@
 import { Package } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
-import { SupplyPage } from './supply-page'
+import { lazy } from 'react'
 import { scanResourceSpec } from './backup'
 
 export const supplyModule = defineFeature({
@@ -10,7 +10,7 @@ export const supplyModule = defineFeature({
   group: '管控',
   order: 50,
   requires: 'supply.view',
-  component: SupplyPage,
+  component: lazy(() => import('./supply-page').then((m) => ({ default: m.SupplyPage }))),
   resources: [scanResourceSpec],
   actions: [
     {

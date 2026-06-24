@@ -1,6 +1,6 @@
 import { FileSearch } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
-import { AuditPage } from './audit-page'
+import { lazy } from 'react'
 import { auditResourceSpec } from './backup'
 
 export const auditModule = defineFeature({
@@ -10,7 +10,7 @@ export const auditModule = defineFeature({
   group: '取证',
   order: 60,
   requires: 'audit.view',
-  component: AuditPage,
+  component: lazy(() => import('./audit-page').then((m) => ({ default: m.AuditPage }))),
   resources: [auditResourceSpec],
   actions: [
     {

@@ -1,6 +1,6 @@
 import { Activity } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
-import { EventsPage } from './events-page'
+import { lazy } from 'react'
 import { eventResourceSpec } from './backup'
 
 export const eventsModule = defineFeature({
@@ -10,7 +10,7 @@ export const eventsModule = defineFeature({
   group: '监测',
   order: 20,
   requires: 'events.view',
-  component: EventsPage,
+  component: lazy(() => import('./events-page').then((m) => ({ default: m.EventsPage }))),
   resources: [eventResourceSpec],
   actions: [
     {

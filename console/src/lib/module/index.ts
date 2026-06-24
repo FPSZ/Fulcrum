@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react'
+import type { ComponentType, LazyExoticComponent } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import type { ResourceSpec } from '@/lib/backup'
 
@@ -59,8 +59,8 @@ export interface FeatureModule {
   badge?: number
   /** 计数是否以告警色强调 */
   danger?: boolean
-  /** 页面组件 */
-  component: ComponentType
+  /** 页面组件(可同步组件,或 React.lazy 懒加载组件 —— 落地页外的页按需加载,见各 module.tsx) */
+  component: ComponentType | LazyExoticComponent<ComponentType>
   /** 该模块贡献的可备份/可导入资源(自动注册进备份系统) */
   resources?: ResourceSpec[]
   /** 可见所需权限点(RBAC):缺省=人人可见;设置后无此权限者导航/路由都看不到 */
