@@ -109,9 +109,6 @@ export function Sidebar({
               <Sparkles className="h-[15px] w-[15px] text-accent" strokeWidth={1.9} />
               AI 安全研判
             </div>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
-              实时分析多源输入、归因溯源与处置建议,辅助值班研判。
-            </p>
             <button
               type="button"
               className="focus-ring mt-2.5 h-7 w-full whitespace-nowrap rounded-[8px] bg-accent text-[14px] font-semibold text-white transition-colors hover:bg-accent-hover"
