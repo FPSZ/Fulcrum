@@ -70,6 +70,12 @@ class Principal:
 
     携带角色与**生效权限点集合**,供 require_permission 与前端按权过滤使用;
     绝不暴露口令哈希。
+
+    团队范围(plan/13 P1b):
+    - ``team_ids`` —— 本人所属团队 id(展示/未来资源可见范围用);
+    - ``managed_teams`` —— 本人作为团队负责人(maintainer)可管的团队 id,**已展开到子树**
+      (选父团队即覆盖其下全部子团队);组织级成员管理权(users.manage)另算,见 can_manage_team。
+    新增字段都带默认值,旧的 Principal 构造(测试/历史)不受影响。
     """
 
     user_id: int
@@ -78,6 +84,18 @@ class Principal:
     role_key: str | None
     role_name: str | None
     permissions: frozenset[str]
+    team_ids: frozenset[int] = field(default_factory=frozenset)
+    managed_teams: frozenset[int] = field(default_factory=frozenset)
 
     def has(self, permission: str) -> bool:
         return permission in self.permissions
+
+    def can_manage_team(self, team_id: int | None) -> bool:
+        """能否管理某团队的成员:组织级 users.manage 管全部;否则需是该团队(子树)的负责人。
+
+        这是"团队组长只管本团队、不能跨团队"的判据(plan/13 §5)。team_id 为 None(无归属)
+        时,仅组织级成员管理权可管。
+        """
+        if self.has("users.manage"):  # 组织级成员管理 → 跨团队管全部
+            return True
+        return team_id is not None and team_id in self.managed_teams
