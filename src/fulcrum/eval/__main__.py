@@ -61,6 +61,46 @@ def _corpus_version() -> str:
     return p.read_text(encoding="utf-8").strip() if p.exists() else "dev"
 
 
+def _write_report(
+    metrics: dict[str, Any],
+    results: list[Any],
+    dataset: str,
+    policy: str,
+    out_path: str,
+) -> dict[str, Any]:
+    """把一次评测的指标/明细写成 JSON 报告 + md 记分卡,返回报告 dict。"""
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    report = build_report(metrics, results, dataset=dataset)
+    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    md = build_markdown_report(
+        metrics,
+        results,
+        dataset=dataset,
+        policy=policy,
+        version=_corpus_version(),
+        generated_at=datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M %Z"),
+    )
+    out.with_suffix(".md").write_text(md, encoding="utf-8")
+    return report
+
+
+def run_and_write(
+    dataset: str = _DEFAULT_DATASET,
+    policy: str = _DEFAULT_POLICY,
+    out_path: str = _DEFAULT_OUT,
+) -> dict[str, Any]:
+    """回放样例集 → 写 JSON 报告 + md 记分卡 → 返回报告 dict(同步;内部 `asyncio.run`)。
+
+    CLI(`main`)与控制台「发起评测」(组装层 `EvalRunner` 经 `asyncio.to_thread`)共用此函数,
+    保证两条入口出分口径、产物路径完全一致。内部 `asyncio.run`,故调用方须在**非事件循环线程**里跑。
+    """
+    samples = load_dataset(dataset)
+    pipeline = build_pipeline(_eval_config(policy))
+    results = asyncio.run(run_dataset(pipeline, samples))
+    return _write_report(compute(results), results, dataset, policy, out_path)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="fulcrum.eval", description="枢衡评测:样例回放出分")
     parser.add_argument(
@@ -88,24 +128,9 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print(format_gate_breakdown(metrics))
 
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    report = build_report(metrics, results, dataset=args.dataset)
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    # 标准测试报告(md 记分卡):每次跑都产出,统计各项标准数据(plan 08 §6)。
-    md_path = out.with_suffix(".md")
-    md = build_markdown_report(
-        metrics,
-        results,
-        dataset=args.dataset,
-        policy=args.policy,
-        version=_corpus_version(),
-        generated_at=datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M %Z"),
-    )
-    md_path.write_text(md, encoding="utf-8")
-    print(f"\n标准测试报告(记分卡)已写入:{md_path}")
-    print(f"完整报告(逐样例明细 JSON)已写入:{out}")
+    _write_report(metrics, results, args.dataset, args.policy, args.out)
+    print(f"\n标准测试报告(记分卡)已写入:{Path(args.out).with_suffix('.md')}")
+    print(f"完整报告(逐样例明细 JSON)已写入:{args.out}")
     return 0
 
 

@@ -33,8 +33,11 @@ class Settings(BaseSettings):
     # 装配清单路径(None 用包内默认 fulcrum.yml)
     capability_config: str | None = None
 
-    # 评测报告路径:`python -m fulcrum.eval` 的最近一次产物;评测页只读展示,无则回退演示
+    # 评测报告路径:`python -m fulcrum.eval` / 控制台「发起评测」的最近一次产物;评测页读它展示
     eval_report_path: str = "docs/eval/results/latest.json"
+    # 控制台「发起评测」(eval.run)回放的样例集与策略,与 CLI 默认一致(corpus 200 条 + gov_demo)
+    eval_dataset: str = "samples/eval/corpus"
+    eval_policy: str = "data/policies/gov_demo.yml"
 
     # 供应链:待扫描的组件 manifest 目录(供应链页只读展示其静态扫描评级)
     supply_manifest_dir: str = "samples/supplychain"

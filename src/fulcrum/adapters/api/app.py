@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from ..assistant.planner import ModelComplete
     from ..auth import AuthBundle
     from ..gateway import GatewayConfigStore, UpstreamForwarder
+    from .eval_routes import EvalRunnerLike
 
 
 def _output_of(result: object | None) -> str | None:
@@ -79,6 +80,7 @@ def build_api(
     scanner: SupplyChainScanner | None = None,
     assistant_complete: ModelComplete | None = None,
     assistant_model_turn: ModelTurn | None = None,
+    eval_runner: EvalRunnerLike | None = None,
 ) -> FastAPI:
     app = FastAPI(title="枢衡 Fulcrum API", version=__version__)
 
@@ -109,7 +111,7 @@ def build_api(
         register_overview_routes(app, pipeline, deps)
         register_events_routes(app, pipeline, deps)
         register_audit_routes(app, pipeline, deps)
-        register_eval_routes(app, settings.eval_report_path, deps)
+        register_eval_routes(app, settings.eval_report_path, eval_runner, deps)
         register_policies_routes(app, pipeline, deps)
         register_supply_routes(app, scanner, settings.supply_manifest_dir, deps)
         register_tools_routes(app, pipeline, deps)

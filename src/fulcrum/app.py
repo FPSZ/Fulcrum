@@ -70,7 +70,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     pipeline = build_pipeline(cfg)  # 触发 _load_builtins,注册表此后含 scanner
     # 供应链扫描器经组装根注入 API(不入管线装配 —— 离线关切;adapters 不依赖 capabilities)。
     scanner = registry.create("scanner", "manifest")
-    app = build_api(pipeline, build_auth_bundle(settings), settings, upstream, store, scanner)
+    # 控制台「发起评测」触发器:组装层(同 live_feed),经协议注入 API,不破 adapters↛组装根边界。
+    from .eval_runner import EvalRunner
+
+    eval_runner = EvalRunner(settings.eval_report_path, settings.eval_dataset, settings.eval_policy)
+    app = build_api(
+        pipeline,
+        build_auth_bundle(settings),
+        settings,
+        upstream,
+        store,
+        scanner,
+        eval_runner=eval_runner,
+    )
     _maybe_start_live_feed(app, pipeline, settings, upstream)
     return app
 

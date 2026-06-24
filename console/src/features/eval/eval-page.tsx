@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Check, FlaskConical, X } from 'lucide-react'
-import { Badge, type BadgeTone, Card, EmptyState, Segmented } from '@/components/ui'
+import { Check, FlaskConical, Play, X } from 'lucide-react'
+import { toast } from 'sonner'
+import { Badge, type BadgeTone, Button, Card, EmptyState, Segmented } from '@/components/ui'
+import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { METRIC_ROWS } from './data'
-import { useEvalReport } from './use-eval'
+import { useEvalReport, useRunEval } from './use-eval'
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
 
@@ -28,8 +30,22 @@ const FILTERS: { value: Filter; label: string }[] = [
 ]
 
 export function EvalPage() {
-  // 评测是离线产物(python -m fulcrum.eval → /eval/report)。无报告/不可达 → 诚实空态(绝不塞假指标)。
+  // 评测是产物(/eval/report);`eval.run` 可在控制台「发起评测」(POST /eval/run)直接刷新。
   const report = useEvalReport().data
+  const { has } = useAuth()
+  const canRun = has('eval.run')
+  const run = useRunEval()
+  const runEval = () =>
+    run.mutate(undefined, {
+      onSuccess: (r) =>
+        toast.success(r ? `评测完成 · ${r.metrics.totals.samples} 条样例已出分` : '评测完成'),
+      onError: (e) => toast.error(e instanceof Error ? e.message : '评测失败'),
+    })
+  const RunButton = canRun ? (
+    <Button variant="primary" size="sm" disabled={run.isPending} onClick={runEval}>
+      <Play className="h-3.5 w-3.5" /> {run.isPending ? '评测中…' : '发起评测'}
+    </Button>
+  ) : null
   const [filter, setFilter] = useState<Filter>('all')
   const rows = useMemo(
     () =>
@@ -41,11 +57,18 @@ export function EvalPage() {
 
   if (!report) {
     return (
-      <EmptyState
-        icon={FlaskConical}
-        title="暂无评测报告"
-        hint="运行 uv run python -m fulcrum.eval --dataset samples/eval/corpus 生成报告后,这里显示 P0 主结果表与逐样例。"
-      />
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-4">
+        <EmptyState
+          icon={FlaskConical}
+          title="暂无评测报告"
+          hint={
+            canRun
+              ? '点「发起评测」在控制台回放样例集出分,或运行 uv run python -m fulcrum.eval。'
+              : '运行 uv run python -m fulcrum.eval --dataset samples/eval/corpus 生成报告后,这里显示 P0 主结果表与逐样例。'
+          }
+        />
+        {RunButton}
+      </div>
     )
   }
   const { dataset, metrics } = report
@@ -60,6 +83,7 @@ export function EvalPage() {
           数据集 <code className="text-ink-2">{dataset}</code> · {t.samples} 条(攻击 {t.malicious}{' '}
           · 正常 {t.benign})· 混淆 TP {t.tp}/FN {t.fn}/FP {t.fp}/TN {t.tn}
         </span>
+        {RunButton && <span className="ml-auto">{RunButton}</span>}
       </div>
 
       {/* 主结果表 */}
