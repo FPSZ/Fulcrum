@@ -370,13 +370,13 @@ export function AssistantPage() {
         onDelete={deleteConversation}
       />
       <div className="flex min-h-0 flex-1 flex-col">
-        <AnimatePresence mode="wait" initial={false}>
+        {/* 切会话即刻换内容:不套 AnimatePresence mode="wait"(那会先等旧态退场 0.25s 才挂新态,
+            从空态点历史会话时表现为「点了没反应」)。各分支自带挂载淡入,key 变即瞬时替换。 */}
         {empty ? (
           <motion.div
             key="hero"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.25, ease: EASE }}
             className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-16"
           >
@@ -488,7 +488,6 @@ export function AssistantPage() {
             </div>
           </motion.div>
         )}
-        </AnimatePresence>
       </div>
       <AnimatePresence>
         {settingsOpen && (
