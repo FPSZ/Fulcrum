@@ -43,6 +43,9 @@ class GatewayConfig(BaseModel):
     # 通用 REST 映射
     rest_message_field: str = Field(default="message", max_length=64)
     rest_response_path: str = Field(default="reply", max_length=128)  # 点路径,如 data.answer
+    # 该被保护智能体归属的团队 id(plan/13 P2 数据隔离);
+    # None=不归属任何团队,其事件对所有 events.view 可见。
+    team_id: int | None = None
 
     def default_path(self) -> str:
         if self.path:
@@ -87,6 +90,7 @@ class GatewayConfigPublic(BaseModel):
     verify_tls: bool
     rest_message_field: str
     rest_response_path: str
+    team_id: int | None = None
 
     @classmethod
     def of(cls, c: GatewayConfig) -> GatewayConfigPublic:
@@ -105,6 +109,7 @@ class GatewayConfigPublic(BaseModel):
             verify_tls=c.verify_tls,
             rest_message_field=c.rest_message_field,
             rest_response_path=c.rest_response_path,
+            team_id=c.team_id,
         )
 
 

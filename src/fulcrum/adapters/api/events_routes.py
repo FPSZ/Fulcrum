@@ -74,6 +74,23 @@ def is_feed_noise(event: AuditEvent) -> bool:
     return False
 
 
+def event_team_visible(event: AuditEvent, principal: Principal) -> bool:
+    """该事件是否对当事人可见(plan/13 P2 团队级数据隔离)。
+
+    向后兼容、不破坏演示:
+    - 事件**无团队归属**(evidence 无 team_id;演示流量 / 助手内部活动)→ 对任何 events.view 可见;
+    - 事件**有团队归属**→ 仅本团队成员/负责人(team_ids ∪ managed_teams)及组织级管理员可见,
+      跨团队看不到——政企不同处室/局的流量彼此隔离。
+    组织级(users.manage)视为跨租户监管,看全部;细化到专门的"全租户事件"权限留 P3。
+    """
+    team = event.evidence.get("team_id")
+    if team is None:
+        return True
+    if principal.has("users.manage"):
+        return True
+    return int(team) in (frozenset(principal.team_ids) | frozenset(principal.managed_teams))
+
+
 def to_security_event(event: AuditEvent, verified: bool) -> SecurityEventDTO:
     """把一个 policy_decided 审计事件 + 其证据映射成事件行(纯函数,便于测试)。
 
@@ -134,7 +151,7 @@ def register_events_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthD
     @app.get("/events", response_model=list[SecurityEventDTO])
     async def events(
         limit: int = Query(default=200, ge=1, le=1000),
-        _: Principal = Depends(can_view),
+        principal: Principal = Depends(can_view),
     ) -> list[SecurityEventDTO]:
         sink = pipeline.audit
         # 跨会话聚合是内存实现的具体能力(端口只暴露 per-session 读);非内存实现暂返回空,
@@ -156,6 +173,8 @@ def register_events_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthD
             if e.event_id in resolved:  # 待审工单已处置,隐去原行
                 continue
             if is_feed_noise(e):  # 助手吃狗粮的干净工具返回筛查 —— 不刷上墙(详见 is_feed_noise)
+                continue
+            if not event_team_visible(e, principal):  # 团队级数据隔离:跨团队看不到(P2)
                 continue
             if e.session_id not in verified_cache:
                 verified_cache[e.session_id] = await sink.verify_chain(e.session_id)

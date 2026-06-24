@@ -9,8 +9,13 @@ from __future__ import annotations
 
 import asyncio
 
-from fulcrum.adapters.api.events_routes import is_feed_noise, to_security_event
+from fulcrum.adapters.api.events_routes import (
+    event_team_visible,
+    is_feed_noise,
+    to_security_event,
+)
 from fulcrum.adapters.audit.memory_sink import InMemoryAuditSink
+from fulcrum.adapters.auth.models import Principal
 from fulcrum.adapters.model.fake_client import FakeModelClient
 from fulcrum.capabilities import load_builtin_capabilities
 from fulcrum.capabilities.policy.allow_all import AllowAllPolicy
@@ -140,6 +145,51 @@ def test_non_assistant_approve_still_surfaces() -> None:
         evidence={"stage": "input_gateway"},
     )
     assert is_feed_noise(e) is False
+
+
+def _principal(
+    *, perms: set[str] | None = None, teams: set[int] | None = None, managed: set[int] | None = None
+) -> Principal:
+    return Principal(
+        user_id=1,
+        username="u",
+        display_name="U",
+        role_key=None,
+        role_name=None,
+        permissions=frozenset(perms or set()),
+        team_ids=frozenset(teams or set()),
+        managed_teams=frozenset(managed or set()),
+    )
+
+
+def _decided(team_id: int | None) -> AuditEvent:
+    ev = {"stage": "input_gateway"}
+    if team_id is not None:
+        ev["team_id"] = team_id
+    return AuditEvent(
+        session_id="s",
+        event_type=AuditEventType.POLICY_DECIDED,
+        decision=Disposition.ALLOW,
+        evidence=ev,
+    )
+
+
+def test_untagged_event_visible_to_everyone() -> None:
+    """无团队归属(演示/内部)→ 对任何 events.view 可见,不破坏现有演示。"""
+    assert event_team_visible(_decided(None), _principal(teams={9})) is True
+
+
+def test_tagged_event_isolated_across_teams() -> None:
+    """有团队归属 → 仅本团队成员/负责人可见,跨团队看不到(政企数据隔离)。"""
+    ev = _decided(team_id=5)
+    assert event_team_visible(ev, _principal(teams={5})) is True  # 本团队成员
+    assert event_team_visible(ev, _principal(managed={5})) is True  # 团队负责人(子树)
+    assert event_team_visible(ev, _principal(teams={9})) is False  # 别团队 → 隔离
+
+
+def test_org_admin_sees_all_tenants() -> None:
+    """组织级 users.manage 视为跨租户监管,看全部团队事件。"""
+    assert event_team_visible(_decided(team_id=5), _principal(perms={"users.manage"})) is True
 
 
 def test_to_security_event_defaults_on_sparse_evidence() -> None:

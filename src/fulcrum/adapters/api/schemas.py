@@ -87,6 +87,7 @@ class GatewayConfigWrite(BaseModel):
     verify_tls: bool = True
     rest_message_field: str = Field(default="message", max_length=64)
     rest_response_path: str = Field(default="reply", max_length=128)
+    team_id: int | None = None  # 该被保护智能体归属团队(P2 数据隔离);None=全局可见
 
 
 class GatewayProbeResponse(BaseModel):

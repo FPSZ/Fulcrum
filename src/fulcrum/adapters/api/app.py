@@ -252,7 +252,9 @@ def build_api(
     @app.post("/gateway/chat", response_model=GatewayChatResponse)
     async def gateway_chat(body: GatewayChatRequest) -> GatewayChatResponse:
         """前置网关:判恶意 → 拦截/审核/放行;仅放行时转发企业智能体并回传其真实回复。"""
-        verdict = await pipeline.screen_input(body.session_id, body.message)
+        # 该被保护智能体归属的团队(P2 数据隔离):据此给事件打 team_id,仅本团队/组织管理员可见。
+        team_id = gateway_store.load().team_id if gateway_store is not None else None
+        verdict = await pipeline.screen_input(body.session_id, body.message, team_id=team_id)
         resp = GatewayChatResponse(
             session_id=body.session_id,
             decision=verdict.decision,
@@ -275,7 +277,7 @@ def build_api(
 
         # 出口闸门:对回复做敏感/危险内容检测;高危则拦截打码,不把疑似外泄内容回给用户。
         if reply.ok and reply.reply:
-            out = await pipeline.screen_output(body.session_id, reply.reply)
+            out = await pipeline.screen_output(body.session_id, reply.reply, team_id=team_id)
             resp.output_decision = out.decision
             resp.output_risk_level = out.risk_level
             resp.output_reason = out.reason
