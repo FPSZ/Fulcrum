@@ -133,3 +133,32 @@ def test_lead_removes_own_team_member(tmp_path: Path) -> None:
     client.post(f"/admin/teams/{ids['soc']}/members", json={"user_id": ids["outsider"]})
     r = client.delete(f"/admin/teams/{ids['soc']}/members/{ids['outsider']}")
     assert r.status_code == 204
+
+
+def test_lead_lists_only_own_team_members(tmp_path: Path) -> None:
+    client, ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)  # 纯负责人:无组织级 users.view
+    r = client.get("/admin/users")
+    assert r.status_code == 200, r.text  # 负责人可读成员列表
+    seen = {u["id"] for u in r.json()}
+    assert ids["insider"] in seen and ids["outsider"] not in seen  # 行级过滤:只见本团队
+
+
+def test_lead_can_read_org_meta(tmp_path: Path) -> None:
+    client, _ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)
+    assert client.get("/admin/departments").status_code == 200
+    assert client.get("/admin/roles").status_code == 200
+
+
+def test_lead_cannot_read_global_stats(tmp_path: Path) -> None:
+    client, _ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)
+    assert client.get("/admin/users/stats").status_code == 403  # 全局统计仍限组织级读权
+
+
+def test_me_exposes_managed_teams(tmp_path: Path) -> None:
+    client, ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)
+    me = client.get("/auth/me").json()
+    assert ids["soc"] in me["managed_teams"]  # 负责人范围下发前端,据此放管理界面
