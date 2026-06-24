@@ -219,6 +219,10 @@ class AuthService:
         if user is None:
             return None
         role = self._store.get_role(user.role_id) if user.role_id is not None else None
+        memberships = self._store.list_user_memberships(user.id)
+        team_ids = frozenset(m.team_id for m in memberships)
+        lead_roots = {m.team_id for m in memberships if m.is_lead}
+        managed_teams = self._expand_subtrees(lead_roots) if lead_roots else frozenset()
         return Principal(
             user_id=user.id,
             username=user.username,
@@ -226,7 +230,25 @@ class AuthService:
             role_key=role.key if role else None,
             role_name=role.name if role else None,
             permissions=role.permissions if role else frozenset(),
+            team_ids=team_ids,
+            managed_teams=managed_teams,
         )
+
+    def _expand_subtrees(self, roots: set[int]) -> frozenset[int]:
+        """把一组团队 id 展开成"含自身的整棵子树"并集(团队负责人覆盖其下全部子团队)。"""
+        children: dict[int, list[int]] = {}
+        for d in self._store.list_departments():
+            if d.parent_id is not None:
+                children.setdefault(d.parent_id, []).append(d.id)
+        out: set[int] = set()
+        stack = list(roots)
+        while stack:
+            cur = stack.pop()
+            if cur in out:
+                continue
+            out.add(cur)
+            stack.extend(children.get(cur, []))
+        return frozenset(out)
 
     def logout(self, token: str | None) -> None:
         if token:
