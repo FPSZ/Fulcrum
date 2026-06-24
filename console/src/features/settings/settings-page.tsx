@@ -225,7 +225,7 @@ function RuntimePanel() {
           <code className="font-data text-[13px] text-ink-2">data/policies/default.yml</code>
         </SettingRow>
       </SettingSection>
-      <SettingSection title="审计运行态" desc="当前版本的硬事实,不提供未接运行时的留存/通知假开关。">
+      <SettingSection title="审计运行态">
         <SettingRow label="hash-chain 审计" hint="管线写入防篡改事件链">
           <Badge tone="ok">已启用</Badge>
         </SettingRow>
@@ -271,7 +271,7 @@ function LocalPanel() {
   const [convShow, setConvShow] = useConversationDisplay()
   return (
     <div className="space-y-5">
-      <SettingSection title="本机偏好" desc="只保存在当前浏览器,不改变后端安全策略。">
+      <SettingSection title="本机偏好" desc="只存本浏览器。">
         <SettingRow label="事件对话展示" hint="实时事件详情页展示同会话对话摘要;文本已由后端脱敏">
           <Switch checked={convShow} onCheckedChange={setConvShow} />
         </SettingRow>

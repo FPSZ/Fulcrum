@@ -482,7 +482,7 @@ export function AssistantPage() {
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
                 <p className="mt-2 text-center text-[13.5px] text-ink-mute">
-                  助手在权限闸门内操作,工具调用与写操作均经审计、可一键撤销 · AI 可能出错,请核对
+                  AI 可能出错,请核对结果
                 </p>
               </div>
             </div>

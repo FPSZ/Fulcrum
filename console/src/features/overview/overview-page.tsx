@@ -73,14 +73,7 @@ function EmptyOverview() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-5 p-10 text-center">
       <Inbox className="h-9 w-9 text-line-3" strokeWidth={1.4} />
-      <div>
-        <p className="text-[15px] font-semibold text-ink">暂无实时数据</p>
-        <p className="mx-auto mt-1 max-w-[460px] text-[13.5px] leading-relaxed text-ink-3">
-          安全网关还没有处理过任何请求。开启实时流量驱动(后端置
-          <code className="mx-1 text-ink-2">FULCRUM_LIVE_FEED_ENABLED=1</code>),
-          或到「网关实测」页发一条请求,这里就会显示真实的管线判定;也可在「数据与备份」载入演示备份预览。
-        </p>
-      </div>
+      <p className="text-[15px] font-semibold text-ink">暂无实时数据</p>
     </div>
   )
 }
