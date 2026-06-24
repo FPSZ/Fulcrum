@@ -84,3 +84,21 @@ class AuthDeps:
             )
 
         return _dep
+
+    def require_member_reader(self) -> Callable[..., Principal]:
+        """成员/组织读访问(plan/13 §6):组织级 `users.view` 或 **团队负责人** 均可进。
+
+        团队负责人即便其角色不含 users.view,也要能看本团队成员/团队/角色以管理本队;
+        但成员列表会按"可管团队子树"行级过滤(见 admin_routes.list_users),只见自己人。
+        """
+        principal_dep = self.principal_dependency()
+
+        def _dep(principal: Principal = Depends(principal_dep)) -> Principal:
+            if principal.has("users.view") or principal.managed_teams:
+                return principal
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权限:需要 users.view 或团队负责人",
+            )
+
+        return _dep

@@ -357,6 +357,10 @@ class PrincipalResponse(BaseModel):
     role_key: str | None = None
     role_name: str | None = None
     permissions: list[str] = Field(default_factory=list)
+    # 团队范围(plan/13):所属团队 + 作为负责人可管的团队(已展开子树)。
+    # 前端据 managed_teams 是否非空判「我是不是团队负责人」,据此放出成员/团队/审批等管理界面。
+    team_ids: list[int] = Field(default_factory=list)
+    managed_teams: list[int] = Field(default_factory=list)
 
 
 # ---- 权限 / 角色 / 组织 / 成员(管理后台)----

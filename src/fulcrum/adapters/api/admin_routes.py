@@ -86,7 +86,8 @@ def _raise(exc: NotFound | Conflict) -> NoReturn:
 
 
 def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthDeps) -> None:
-    can_view = deps.require("users.view")
+    can_view = deps.require_member_reader()  # users.view 或团队负责人(成员列表行级过滤)
+    can_view_stats = deps.require("users.view")  # 全局统计仍限组织级读权
     can_manage_users = deps.require("users.manage")
     can_admin_members = deps.require_member_admin()  # 组织管理员 或 团队负责人
     can_manage_dept = deps.require("dept.manage")
@@ -259,7 +260,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
     # ── 成员 ──────────────────────────────────────────────────────
     @app.get("/admin/users", response_model=list[UserDTO])
     async def list_users(
-        _: Principal = Depends(can_view),
+        principal: Principal = Depends(can_view),
         department_id: int | None = Query(default=None),
         user_status: str | None = Query(default=None, alias="status"),
         role_id: int | None = Query(default=None),
@@ -268,10 +269,13 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
         users = directory.list_users(
             department_id=department_id, status=user_status, role_id=role_id, search=search
         )
+        # 纯团队负责人(无组织级 users.view)只见本人可管团队子树内的成员(plan/13 §6 行级过滤)。
+        if not principal.has("users.view"):
+            users = [u for u in users if _target_team_ids(u) & principal.managed_teams]
         return [_user_dto(u) for u in users]
 
     @app.get("/admin/users/stats", response_model=dict[str, int])
-    async def user_stats(_: Principal = Depends(can_view)) -> dict[str, int]:
+    async def user_stats(_: Principal = Depends(can_view_stats)) -> dict[str, int]:
         return directory.status_counts()
 
     @app.post("/admin/users", response_model=TempPasswordResponse, status_code=201)

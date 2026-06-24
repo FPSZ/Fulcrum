@@ -34,6 +34,8 @@ def _principal_dto(p: Principal) -> PrincipalResponse:
         role_key=p.role_key,
         role_name=p.role_name,
         permissions=sorted(p.permissions),
+        team_ids=sorted(p.team_ids),
+        managed_teams=sorted(p.managed_teams),
     )
 
 
