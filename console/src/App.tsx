@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { Suspense, useEffect, useState, type ReactNode } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
+import { Loader2 } from 'lucide-react'
 import { AppShell } from './components/app/app-shell'
 import { FooterReveal } from './components/app/footer-reveal'
 import { Placeholder } from './components/app/placeholder'
@@ -13,12 +14,25 @@ import { ease } from './lib/motion'
 import { getDefaultFeatureIdFor, getFeature } from './lib/module'
 import { NavProvider } from './lib/nav'
 
+/** 懒加载页面切入时的占位:overview 外的页按需加载,加载窗口极短(且常被登录入场动画盖住) */
+function PageFallback() {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center">
+      <Loader2 className="h-5 w-5 animate-spin text-ink-3" />
+    </div>
+  )
+}
+
 /** 按功能模块注册表渲染当前页面 */
 function View({ id }: { id: string }) {
   const feature = getFeature(id)
   if (!feature) return <Placeholder title={id} />
   const Page = feature.component
-  return <Page />
+  return (
+    <Suspense fallback={<PageFallback />}>
+      <Page />
+    </Suspense>
+  )
 }
 
 /**

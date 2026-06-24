@@ -1,6 +1,6 @@
 import { Plug } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
-import { ToolsPage } from './tools-page'
+import { lazy } from 'react'
 import { toolCallResourceSpec } from './backup'
 
 export const toolsModule = defineFeature({
@@ -11,7 +11,7 @@ export const toolsModule = defineFeature({
   order: 40,
   danger: true,
   requires: 'tools.view',
-  component: ToolsPage,
+  component: lazy(() => import('./tools-page').then((m) => ({ default: m.ToolsPage }))),
   resources: [toolCallResourceSpec],
   actions: [
     {

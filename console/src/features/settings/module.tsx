@@ -1,6 +1,6 @@
 import { Settings } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
-import { SettingsPage } from './settings-page'
+import { lazy } from 'react'
 
 export const settingsModule = defineFeature({
   id: 'settings',
@@ -9,5 +9,5 @@ export const settingsModule = defineFeature({
   group: '系统',
   order: 90,
   requires: 'settings.view',
-  component: SettingsPage,
+  component: lazy(() => import('./settings-page').then((m) => ({ default: m.SettingsPage }))),
 })
