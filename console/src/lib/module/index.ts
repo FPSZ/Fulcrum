@@ -65,6 +65,9 @@ export interface FeatureModule {
   resources?: ResourceSpec[]
   /** 可见所需权限点(RBAC):缺省=人人可见;设置后无此权限者导航/路由都看不到 */
   requires?: string
+  /** 团队负责人也可见:即便其角色不含 requires 权限,只要是某团队负责人即可进(plan/13 §6)。
+   *  用于成员/团队管理这类"组长须管本团队"的页面;进去后数据仍按可管团队范围过滤。 */
+  leadVisible?: boolean
   /** 开发者专属页:仅开发/答辩用(评测验证、网关实测),默认隐藏,开「开发者模式」才显示 */
   dev?: boolean
   /** 该模块贡献给 AI 操作助手的可调动作(注册即进助手动作目录,与后端 catalog 对称) */
@@ -93,12 +96,17 @@ export function getModuleActions(): ModuleAction[] {
   return getFeatures().flatMap((f) => f.actions ?? [])
 }
 
-/** 按权限 + 开发者模式过滤后的可见模块(无 requires 的恒可见;dev 页仅 devMode 开启时显) */
+/** 按权限 + 开发者模式过滤后的可见模块(无 requires 的恒可见;dev 页仅 devMode 开启时显;
+ *  leadVisible 模块对团队负责人放行,即便其角色不含 requires 权限) */
 export function getFeaturesFor(
   can: (perm: string) => boolean,
   devMode = false,
+  isLead = false,
 ): FeatureModule[] {
-  return getFeatures().filter((f) => (!f.requires || can(f.requires)) && (!f.dev || devMode))
+  return getFeatures().filter(
+    (f) =>
+      (!f.requires || can(f.requires) || (isLead && f.leadVisible)) && (!f.dev || devMode),
+  )
 }
 
 export function getFeature(id: string): FeatureModule | undefined {
@@ -111,6 +119,10 @@ export function getDefaultFeatureId(): string {
 }
 
 /** 当前权限下的默认模块 id(可见集合里 order 最小者) */
-export function getDefaultFeatureIdFor(can: (perm: string) => boolean, devMode = false): string {
-  return getFeaturesFor(can, devMode)[0]?.id ?? ''
+export function getDefaultFeatureIdFor(
+  can: (perm: string) => boolean,
+  devMode = false,
+  isLead = false,
+): string {
+  return getFeaturesFor(can, devMode, isLead)[0]?.id ?? ''
 }

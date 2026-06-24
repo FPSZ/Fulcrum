@@ -71,8 +71,12 @@ export const deleteDepartment = (id: number) =>
 
 // ── 角色 ────────────────────────────────────────────────────────
 export const listRoles = () => api<Role[]>('/admin/roles')
-export const createRole = (b: { name: string; description: string; permissions: string[] }) =>
-  api<Role>('/admin/roles', j(b))
+export const createRole = (b: {
+  name: string
+  description: string
+  permissions: string[]
+  scope?: 'org' | 'team'
+}) => api<Role>('/admin/roles', j(b))
 export const updateRole = (
   id: number,
   b: { name?: string; description?: string; permissions?: string[] },
@@ -166,6 +170,8 @@ export interface GatewayConfig {
   verify_tls: boolean
   rest_message_field: string
   rest_response_path: string
+  /** 被保护智能体归属的团队 id(null=未归属/全局);其流量与事件按此团队隔离(plan/13 P2)。 */
+  team_id: number | null
 }
 
 /** PUT / 测试连接 提交体:auth_value=null 表示不改密钥,""=清空,其它=替换。 */
@@ -183,6 +189,7 @@ export interface GatewayConfigWrite {
   verify_tls: boolean
   rest_message_field: string
   rest_response_path: string
+  team_id: number | null
 }
 
 export interface GatewayProbeResult {

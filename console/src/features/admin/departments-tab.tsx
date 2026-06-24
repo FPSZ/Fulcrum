@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { Badge, Button, Dialog, EmptyState, IconButton, Input, Select, toast } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/auth'
 import {
   addTeamMember,
   createDepartment,
@@ -42,6 +43,7 @@ interface DialogState {
 }
 
 export function DepartmentsTab({ departments, canManage, onChanged }: Props) {
+  const { canManageTeam } = useAuth()
   const rows = flattenTree(buildTree(departments))
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [teamFor, setTeamFor] = useState<Department | null>(null)
@@ -184,7 +186,11 @@ export function DepartmentsTab({ departments, canManage, onChanged }: Props) {
       )}
 
       {teamFor && (
-        <TeamMembersDialog team={teamFor} canManage={canManage} onClose={() => setTeamFor(null)} />
+        <TeamMembersDialog
+          team={teamFor}
+          canManage={canManageTeam(teamFor.id)}
+          onClose={() => setTeamFor(null)}
+        />
       )}
     </div>
   )

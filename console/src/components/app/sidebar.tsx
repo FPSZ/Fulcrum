@@ -21,9 +21,9 @@ export function Sidebar({
   active: string
   onNavigate: (id: string) => void
 }) {
-  const { user, has, logout } = useAuth()
+  const { user, has, isLead, logout } = useAuth()
   const [devMode] = useDevMode()
-  const features = getFeaturesFor(has, devMode)
+  const features = getFeaturesFor(has, devMode, isLead)
   const displayName = user?.displayName || '未登录'
   const sections = FEATURE_GROUPS.map((group) => ({
     group,

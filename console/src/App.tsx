@@ -46,16 +46,18 @@ function PageTransition({ id, children }: { id: string; children: ReactNode }) {
 
 /** 登录后的主控制台(外壳 + 当前页面) */
 function AppView() {
-  const { has } = useAuth()
+  const { has, isLead } = useAuth()
   const [devMode] = useDevMode()
   const [view, setView] = useState(() =>
-    getFeature('overview') && has('overview.view') ? 'overview' : getDefaultFeatureIdFor(has),
+    getFeature('overview') && has('overview.view')
+      ? 'overview'
+      : getDefaultFeatureIdFor(has, false, isLead),
   )
   // 关掉开发者模式时若正停在开发者页 → 回退默认页(避免停在已隐藏的页)
   useEffect(() => {
     const f = getFeature(view)
-    if (f?.dev && !devMode) setView(getDefaultFeatureIdFor(has, false))
-  }, [devMode, view, has])
+    if (f?.dev && !devMode) setView(getDefaultFeatureIdFor(has, false, isLead))
+  }, [devMode, view, has, isLead])
   return (
     <BackupProvider>
       <TooltipProvider delayDuration={250}>

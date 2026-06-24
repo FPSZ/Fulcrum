@@ -3,8 +3,10 @@ import { CheckCircle2, Loader2, PlugZap, XCircle } from 'lucide-react'
 import { Badge, Button, Input, Select, SettingRow, SettingSection, Switch, toast } from '@/components/ui'
 import {
   getGatewayConfig,
+  listDepartments,
   saveGatewayConfig,
   testGatewayConfig,
+  type Department,
   type GatewayAuthType,
   type GatewayConfig,
   type GatewayConfigWrite,
@@ -15,6 +17,8 @@ import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
 type Form = Omit<GatewayConfig, 'auth_value_masked' | 'auth_value_set'>
+
+const NO_TEAM = '0' // Select 哨兵:未归属(全局可见)
 
 const PROTOCOLS: { value: GatewayProtocol; label: string }[] = [
   { value: 'openai', label: 'OpenAI 兼容(推荐 · 覆盖市面多数)' },
@@ -43,6 +47,7 @@ export function GatewayUpstreamPanel() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [probe, setProbe] = useState<GatewayProbeResult | null>(null)
+  const [teams, setTeams] = useState<Department[]>([])
 
   const apply = (c: GatewayConfig) => {
     const { auth_value_masked, auth_value_set, ...rest } = c
@@ -56,6 +61,9 @@ export function GatewayUpstreamPanel() {
     getGatewayConfig()
       .then(apply)
       .catch((e: Error) => setLoadErr(e.message))
+    listDepartments()
+      .then(setTeams)
+      .catch(() => setTeams([])) // 团队列表仅用于归属选择,取不到不阻断主表单
   }, [])
 
   if (loadErr) {
@@ -129,6 +137,22 @@ export function GatewayUpstreamPanel() {
         <Input
           value={form.name}
           onChange={(e) => set('name', e.target.value)}
+          disabled={ro}
+          className="w-full"
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="归属团队"
+        hint="被保护智能体属于哪个团队;其流量与事件按此隔离,仅该团队成员与管理员可见"
+      >
+        <Select
+          value={form.team_id == null ? NO_TEAM : String(form.team_id)}
+          onValueChange={(v) => set('team_id', v === NO_TEAM ? null : Number(v))}
+          options={[
+            { value: NO_TEAM, label: '未归属(全局可见)' },
+            ...teams.map((t) => ({ value: String(t.id), label: t.name })),
+          ]}
           disabled={ro}
           className="w-full"
         />
