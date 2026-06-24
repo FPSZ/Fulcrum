@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -174,17 +175,68 @@ def test_department_no_cycle(tmp_path: Path) -> None:
 
 
 # ── 角色 RBAC ─────────────────────────────────────────────────────
-def test_custom_role_and_system_role_locked(tmp_path: Path) -> None:
+def test_custom_role_and_system_roles_are_editable(tmp_path: Path) -> None:
     clock = _Clock()
-    _, directory = _build(tmp_path, clock)
+    auth, directory = _build(tmp_path, clock)
     role = directory.create_role("值班长", "带班", ["overview.view", "events.handle", "bogus.x"])
     assert role.permissions == frozenset({"overview.view", "events.handle"})  # 非法点被滤掉
     assert role.is_system is False
-    system_role = next(r for r in directory.list_roles() if r.is_system)
-    with pytest.raises(Conflict):
-        directory.update_role(system_role.id, name="改不动")
-    with pytest.raises(Conflict):
-        directory.delete_role(system_role.id)
+
+    system_role = next(r for r in directory.list_roles() if r.key == "sec_operator")
+    updated = directory.update_role(
+        system_role.id,
+        name="一线运营",
+        permissions=["overview.view", "ai.operate", "bogus.x"],
+    )
+    assert updated.name == "一线运营"
+    assert updated.permissions == frozenset({"overview.view", "ai.operate"})
+
+    directory.delete_role(system_role.id)
+    assert all(r.key != "sec_operator" for r in directory.list_roles())
+
+    # 再次 seed 不应覆盖管理员对内置角色的改动,也不应把已删除的内置角色补回来。
+    auth.seed("admin", ADMIN_PW)
+    roles = {r.key: r for r in directory.list_roles()}
+    assert "sec_operator" not in roles
+    assert roles["super_admin"].permissions == ALL_PERMISSION_KEYS
+
+
+def test_builtin_roles_default_ai_operate_except_viewer(tmp_path: Path) -> None:
+    clock = _Clock()
+    auth, directory = _build(tmp_path, clock)
+
+    roles = {r.key: r for r in directory.list_roles() if r.is_system}
+    assert "ai.operate" not in roles["viewer"].permissions
+    for key, role in roles.items():
+        if key != "viewer":
+            assert "ai.operate" in role.permissions
+
+    manager = roles["sec_manager"]
+    directory.update_role(
+        manager.id,
+        permissions=sorted(manager.permissions - {"ai.operate"}),
+    )
+    auth.seed("admin", ADMIN_PW)
+    reloaded = next(r for r in directory.list_roles() if r.key == "sec_manager")
+    assert "ai.operate" not in reloaded.permissions
+
+
+def test_existing_auth_db_migration_grants_ai_operate_to_builtin_non_viewers(
+    tmp_path: Path,
+) -> None:
+    clock = _Clock()
+    _auth, directory = _build(tmp_path, clock)
+    manager = next(r for r in directory.list_roles() if r.key == "sec_manager")
+    directory.update_role(manager.id, permissions=sorted(manager.permissions - {"ai.operate"}))
+
+    db = tmp_path / "auth.sqlite"
+    with sqlite3.connect(db) as conn:
+        conn.execute("PRAGMA user_version = 1")
+
+    migrated = DirectoryService(SQLiteAuthStore(str(db)), clock=clock)
+    roles = {r.key: r for r in migrated.list_roles() if r.is_system}
+    assert "ai.operate" not in roles["viewer"].permissions
+    assert "ai.operate" in roles["sec_manager"].permissions
 
 
 def test_delete_role_in_use_refused(tmp_path: Path) -> None:

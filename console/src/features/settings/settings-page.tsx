@@ -70,9 +70,9 @@ const CATS: Cat[] = [
   { id: 'developer', label: '开发者', icon: Code2, scope: 'personal' },
 ]
 
-const SCOPES: { scope: 'global' | 'personal'; label: string; hint: string }[] = [
-  { scope: 'global', label: '全局设置', hint: '影响整个系统与全体成员' },
-  { scope: 'personal', label: '个人设置', hint: '只作用于你自己,人人可改' },
+const SCOPES: { scope: 'global' | 'personal'; label: string }[] = [
+  { scope: 'global', label: '全局设置' },
+  { scope: 'personal', label: '个人设置' },
 ]
 
 export function SettingsPage() {
@@ -117,11 +117,8 @@ export function SettingsPage() {
         <nav className="w-56 shrink-0 space-y-3 overflow-y-auto border-r border-line p-2 max-[820px]:hidden">
           {SCOPES.map((sc) => (
             <div key={sc.scope}>
-              <div className="px-2.5 pb-1 pt-1">
-                <div className="text-[12px] font-semibold uppercase tracking-wide text-ink-mute">
-                  {sc.label}
-                </div>
-                <div className="mt-0.5 text-[11.5px] leading-tight text-ink-mute/80">{sc.hint}</div>
+              <div className="px-2.5 pb-1 pt-1 text-[12px] font-semibold uppercase tracking-wide text-ink-mute">
+                {sc.label}
               </div>
               {CATS.filter((c) => c.scope === sc.scope).map((c) => {
                 const Icon = c.icon
@@ -169,7 +166,7 @@ export function SettingsPage() {
 function InstancePanel() {
   const { form, set, dirty, saving, onSave, loading, ro } = useSettingsForm()
   return (
-    <SettingSection title="实例信息" desc="真实落盘到 data/runtime/console.json。">
+    <SettingSection title="实例信息">
       {loading || !form ? (
         <LoadingRow />
       ) : (
@@ -211,7 +208,7 @@ function RuntimePanel() {
   return (
     <div className="space-y-5">
       <ModelsPanel />
-      <SettingSection title="防护链路" desc="这些是代码与策略装配决定的安全红线,当前页面只读展示。">
+      <SettingSection title="防护链路">
         <SettingRow label="输入闸门" hint="用户请求先过 screen_input,危险请求不转发给企业智能体">
           <Badge tone="ok">已启用</Badge>
         </SettingRow>

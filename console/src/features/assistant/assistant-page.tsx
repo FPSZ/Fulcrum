@@ -911,10 +911,7 @@ function ModelSettingsModal({
             <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent/10 text-accent">
               <Settings2 className="h-[18px] w-[18px]" />
             </div>
-            <div>
-              <h2 className="text-[16px] font-semibold text-ink">AI 模型接入</h2>
-              <p className="text-[12.5px] text-ink-mute">本地私有化优先 · 三协议 · 密钥仅存服务端</p>
-            </div>
+            <h2 className="text-[16px] font-semibold text-ink">AI 模型接入</h2>
           </div>
           <button
             type="button"
@@ -1013,9 +1010,6 @@ function ModelSettingsModal({
               autoComplete="off"
               className={cn(inputCls, 'font-mono text-[13px]')}
             />
-            <p className="mt-1.5 text-[12px] leading-snug text-ink-mute">
-              密钥仅保存在服务端(0600 文件),不写入前端、不回显;私有化部署数据不出域。
-            </p>
           </div>
 
           <div className="flex items-center gap-4">

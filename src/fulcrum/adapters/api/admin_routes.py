@@ -27,6 +27,7 @@ from .schemas import (
     PasswordReset,
     PermissionDTO,
     RoleDTO,
+    RoleUpdate,
     RoleWrite,
     StatusUpdate,
     TempPasswordResponse,
@@ -158,14 +159,15 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
 
     @app.patch("/admin/roles/{role_id}", response_model=RoleDTO)
     async def update_role(
-        role_id: int, body: RoleWrite, _: Principal = Depends(can_manage_roles)
+        role_id: int, body: RoleUpdate, _: Principal = Depends(can_manage_roles)
     ) -> RoleDTO:
+        fields = body.model_dump(exclude_unset=True)
         try:
             r = directory.update_role(
                 role_id,
-                name=body.name,
-                description=body.description,
-                permissions=body.permissions,
+                name=fields.get("name"),
+                description=fields.get("description"),
+                permissions=fields.get("permissions"),
             )
         except (NotFound, Conflict) as exc:
             _raise(exc)
