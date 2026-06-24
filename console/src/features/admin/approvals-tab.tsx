@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Inbox, X } from 'lucide-react'
 import { Avatar, Button, Dialog, EmptyState, Select, toast } from '@/components/ui'
+import { useAuth } from '@/lib/auth'
 import {
   approveMember,
   listMembers,
@@ -16,10 +17,17 @@ const NONE = '0'
 interface Props {
   departments: Department[]
   roles: Role[]
+  /** 团队负责人视图:审批只能把人审进自己负责的团队、且只能赋团队级角色(后端亦强制) */
+  scoped?: boolean
   onChanged: () => void
 }
 
-export function ApprovalsTab({ departments, roles, onChanged }: Props) {
+export function ApprovalsTab({ departments, roles, scoped = false, onChanged }: Props) {
+  const { user } = useAuth()
+  const managed = new Set(user?.managedTeams ?? [])
+  // 负责人:可选部门限本人可管团队,角色限团队级模板;组织审批人不受限。
+  const deptOptions = scoped ? departments.filter((d) => managed.has(d.id)) : departments
+  const roleOptions = scoped ? roles.filter((r) => r.scope === 'team') : roles
   const [pending, setPending] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [approving, setApproving] = useState<Member | null>(null)
@@ -91,8 +99,8 @@ export function ApprovalsTab({ departments, roles, onChanged }: Props) {
       {approving && (
         <ApproveDialog
           member={approving}
-          departments={departments}
-          roles={roles}
+          departments={deptOptions}
+          roles={roleOptions}
           onClose={() => setApproving(null)}
           onDone={afterChange}
         />

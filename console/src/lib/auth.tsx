@@ -16,6 +16,10 @@ export interface SessionUser {
   roleKey: string | null
   roleName: string | null
   permissions: string[]
+  /** 所属团队 id */
+  teamIds: number[]
+  /** 作为负责人可管的团队 id(已展开子树);非空 = 我是团队负责人 */
+  managedTeams: number[]
 }
 
 interface AuthValue {
@@ -25,6 +29,10 @@ interface AuthValue {
   user: SessionUser | null
   /** 是否拥有某权限点 */
   has: (permission: string) => boolean
+  /** 我是不是某团队的负责人(managed_teams 非空)—— 据此放出本团队管理界面 */
+  isLead: boolean
+  /** 我能否管理某团队(组织级 users.manage 或该团队负责人) */
+  canManageTeam: (teamId: number) => boolean
   /** 失败时抛错(消息用于表单提示);成功后置 authed=true,触发登录页滑走 */
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -39,6 +47,8 @@ async function readPrincipal(res: Response): Promise<SessionUser> {
     role_key: string | null
     role_name: string | null
     permissions: string[]
+    team_ids?: number[]
+    managed_teams?: number[]
   }
   return {
     username: d.username,
@@ -46,6 +56,8 @@ async function readPrincipal(res: Response): Promise<SessionUser> {
     roleKey: d.role_key,
     roleName: d.role_name,
     permissions: d.permissions ?? [],
+    teamIds: d.team_ids ?? [],
+    managedTeams: d.managed_teams ?? [],
   }
 }
 
@@ -104,11 +116,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const perms = useMemo(() => new Set(user?.permissions ?? []), [user])
+  const managed = useMemo(() => new Set(user?.managedTeams ?? []), [user])
+  const has = (p: string) => perms.has(p)
   const value: AuthValue = {
     ready,
     authed: user !== null,
     user,
-    has: (p) => perms.has(p),
+    has,
+    isLead: managed.size > 0,
+    canManageTeam: (teamId) => perms.has('users.manage') || managed.has(teamId),
     login,
     logout,
   }

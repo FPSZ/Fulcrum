@@ -39,10 +39,12 @@ interface Props {
   departments: Department[]
   roles: Role[]
   canManage: boolean
+  /** 纯团队负责人视图:成员列表后端已按本团队行级过滤,隐藏组织架构树筛选 */
+  scoped?: boolean
   onChanged: () => void
 }
 
-export function MembersTab({ departments, roles, canManage, onChanged }: Props) {
+export function MembersTab({ departments, roles, canManage, scoped = false, onChanged }: Props) {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [deptFilter, setDeptFilter] = useState<number | null>(null)
@@ -100,21 +102,23 @@ export function MembersTab({ departments, roles, canManage, onChanged }: Props) 
 
   return (
     <div className="flex min-h-0 flex-1 gap-4">
-      {/* 左:组织架构树(点击筛选);移动端隐藏,表格占满 */}
-      <aside className="hidden w-60 shrink-0 flex-col gap-1 overflow-y-auto rounded-[12px] border border-line bg-surface/60 p-2 md:flex">
-        <TreeItem label="全部成员" active={deptFilter === null} depth={0}
-          onClick={() => setDeptFilter(null)} />
-        {tree.map((d) => (
-          <TreeItem
-            key={d.id}
-            label={d.name}
-            count={d.member_count}
-            depth={d.depth}
-            active={deptFilter === d.id}
-            onClick={() => setDeptFilter(d.id)}
-          />
-        ))}
-      </aside>
+      {/* 左:组织架构树(点击筛选);移动端隐藏,表格占满;团队负责人视图不展示(已限本团队) */}
+      {!scoped && (
+        <aside className="hidden w-60 shrink-0 flex-col gap-1 overflow-y-auto rounded-[12px] border border-line bg-surface/60 p-2 md:flex">
+          <TreeItem label="全部成员" active={deptFilter === null} depth={0}
+            onClick={() => setDeptFilter(null)} />
+          {tree.map((d) => (
+            <TreeItem
+              key={d.id}
+              label={d.name}
+              count={d.member_count}
+              depth={d.depth}
+              active={deptFilter === d.id}
+              onClick={() => setDeptFilter(d.id)}
+            />
+          ))}
+        </aside>
+      )}
 
       {/* 右:工具条 + 成员表 */}
       <div className="flex min-w-0 flex-1 flex-col">

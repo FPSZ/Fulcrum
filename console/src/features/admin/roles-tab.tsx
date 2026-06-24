@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Eye, Pencil, Plus, Save, Shield, Trash2, Users } from 'lucide-react'
 import {
   Avatar,
+  Badge,
   Button,
   Dialog,
   EmptyState,
   IconButton,
   Input,
+  Select,
   toast,
 } from '@/components/ui'
 import { cn } from '@/lib/utils'
@@ -20,6 +22,13 @@ import {
   type Role,
 } from '@/lib/admin'
 import { StatusBadge } from './shared'
+
+/** 角色范围(plan/13 §4):组织级全局生效;团队级是团队内模板。 */
+const SCOPE_META = {
+  org: { label: '组织级', short: '组织', tone: 'accent' as const, hint: '全局生效:平台管理类角色' },
+  team: { label: '团队级', short: '团队', tone: 'info' as const, hint: '团队内模板:在所属团队范围生效' },
+}
+const scopeOf = (r: Role): 'org' | 'team' => (r.scope === 'org' ? 'org' : 'team')
 
 interface Props {
   roles: Role[]
@@ -180,51 +189,26 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
               <span className="text-[14.5px] font-semibold">新建角色</span>
             </button>
           )}
-          {roles.map((r) => {
-            const active = selected?.id === r.id
+          {(['org', 'team'] as const).map((sc) => {
+            const group = roles.filter((r) => scopeOf(r) === sc)
+            if (group.length === 0) return null
             return (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => pickRole(r.id)}
-                className={cn(
-                  'focus-ring flex w-full items-center gap-2.5 rounded-[10px] border px-2.5 py-2 text-left transition-colors',
-                  active
-                    ? 'border-accent/30 bg-accent/10'
-                    : 'border-transparent hover:border-line-2 hover:bg-surface-2',
-                )}
-              >
-                <span
-                  className={cn(
-                    'grid h-8 w-8 shrink-0 place-items-center rounded-[9px]',
-                    active ? 'bg-accent text-white' : 'bg-accent/10 text-accent',
-                  )}
-                >
-                  <Shield className="h-[17px] w-[17px]" strokeWidth={1.9} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={cn(
-                        'min-w-0 flex-1 truncate text-[14.5px] font-semibold',
-                        active ? 'text-accent-ink' : 'text-ink',
-                      )}
-                    >
-                      {r.name}
-                    </span>
-                    {r.is_system && (
-                      <span className="shrink-0 rounded-full bg-subtle px-1.5 py-0.5 text-[11px] font-medium text-ink-mute">
-                        内置
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-2 text-[12px] text-ink-mute">
-                    <span>{r.permissions.length} 权限</span>
-                    <span>·</span>
-                    <span>{r.member_count} 人</span>
-                  </div>
+              <div key={sc} className="space-y-1">
+                <div className="flex items-center gap-1.5 px-1 pb-0.5 pt-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-mute">
+                  {SCOPE_META[sc].label}
+                  <span className="font-normal normal-case tracking-normal text-ink-mute/70">
+                    {SCOPE_META[sc].hint}
+                  </span>
                 </div>
-              </button>
+                {group.map((r) => (
+                  <RoleListItem
+                    key={r.id}
+                    role={r}
+                    active={selected?.id === r.id}
+                    onClick={() => pickRole(r.id)}
+                  />
+                ))}
+              </div>
             )
           })}
           {roles.length === 0 && (
@@ -306,6 +290,61 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
   )
 }
 
+/** 左栏角色条目(图标 + 名称 + 内置标 + 权限/人数)。范围由所在分组标题体现。 */
+function RoleListItem({
+  role,
+  active,
+  onClick,
+}: {
+  role: Role
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'focus-ring flex w-full items-center gap-2.5 rounded-[10px] border px-2.5 py-2 text-left transition-colors',
+        active
+          ? 'border-accent/30 bg-accent/10'
+          : 'border-transparent hover:border-line-2 hover:bg-surface-2',
+      )}
+    >
+      <span
+        className={cn(
+          'grid h-8 w-8 shrink-0 place-items-center rounded-[9px]',
+          active ? 'bg-accent text-white' : 'bg-accent/10 text-accent',
+        )}
+      >
+        <Shield className="h-[17px] w-[17px]" strokeWidth={1.9} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate text-[14.5px] font-semibold',
+              active ? 'text-accent-ink' : 'text-ink',
+            )}
+          >
+            {role.name}
+          </span>
+          {role.is_system && (
+            <span className="shrink-0 rounded-full bg-subtle px-1.5 py-0.5 text-[11px] font-medium text-ink-mute">
+              内置
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 flex items-center gap-2 text-[12px] text-ink-mute">
+          <span>{role.permissions.length} 权限</span>
+          <span>·</span>
+          <span>{role.member_count} 人</span>
+        </div>
+      </div>
+    </button>
+  )
+}
+
 /** 右栏:角色权限(自定义可就地编辑);选中成员时只读展示其继承的角色权限 */
 function RolePermissions({
   role,
@@ -369,6 +408,9 @@ function RolePermissions({
         <h3 className="text-[15px] font-semibold text-ink">
           {viewingMember ? `${member.display_name} 的权限` : '角色权限'}
         </h3>
+        {!viewingMember && (
+          <Badge tone={SCOPE_META[scopeOf(role)].tone}>{SCOPE_META[scopeOf(role)].label}</Badge>
+        )}
         <span className="font-data text-[13px] text-ink-mute">{granted.size} 项</span>
         {dirty && (
           <Button size="sm" variant="primary" className="ml-auto" onClick={save} disabled={busy}>
@@ -499,6 +541,7 @@ function RoleMetaDialog({
   const isEdit = role !== null
   const [name, setName] = useState(role?.name ?? '')
   const [description, setDescription] = useState(role?.description ?? '')
+  const [scope, setScope] = useState<'org' | 'team'>(role ? scopeOf(role) : 'team')
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
@@ -514,6 +557,7 @@ function RoleMetaDialog({
           name: name.trim(),
           description: description.trim(),
           permissions: [],
+          scope,
         })
         toast.success('角色已创建,请在右侧勾选权限')
         onSaved(created.id)
@@ -555,6 +599,26 @@ function RoleMetaDialog({
             placeholder="该角色的职责"
           />
         </label>
+        {!isEdit ? (
+          <label className="block">
+            <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">范围</span>
+            <Select
+              value={scope}
+              onValueChange={(v) => setScope(v as 'org' | 'team')}
+              options={[
+                { value: 'team', label: '团队级 —— 团队内模板,在所属团队范围生效' },
+                { value: 'org', label: '组织级 —— 全局生效(平台管理类)' },
+              ]}
+              className="w-full"
+            />
+          </label>
+        ) : (
+          <div className="flex items-center gap-2 text-[12.5px] text-ink-mute">
+            范围
+            <Badge tone={SCOPE_META[scope].tone}>{SCOPE_META[scope].label}</Badge>
+            <span>(范围在创建时确定,不可改)</span>
+          </div>
+        )}
       </div>
     </Dialog>
   )
