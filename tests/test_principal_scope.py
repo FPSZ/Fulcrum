@@ -71,9 +71,7 @@ def test_org_admin_manages_all_teams(tmp_path: Path) -> None:
     soc = store.create_department("SOC", None, 10, 1000)
     grc = store.create_department("合规组", None, 30, 1000)
     admin_role = store.create_role("admin", "管理员", "", True, ["users.manage"], 1000)
-    carol = store.create_user(
-        "carol", "Carol", "h", "active", 1000, role_id=admin_role.id
-    )
+    carol = store.create_user("carol", "Carol", "h", "active", 1000, role_id=admin_role.id)
     _session(svc, store, carol.id, "tok-carol")
 
     p = svc.authenticate("tok-carol")
