@@ -18,6 +18,7 @@ from ..sqlite_support import Migration, connect, run_migrations
 from .models import (
     STATUS_ACTIVE,
     Department,
+    Membership,
     Role,
     User,
 )
@@ -124,6 +125,36 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_users_dept ON users(department_id)")
 
 
+# v3:团队成员关系(多对多)—— 把"部门"升格为带访问边界的团队的第一步(plan/13 P1a)。
+# 仅追加新表,不动 users.role_id / department_id 的既有语义(P1b 才切 Principal),
+# 保证两版之间鉴权不变。
+_TEAM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS team_memberships (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    team_id    INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    team_role  TEXT    NOT NULL DEFAULT 'member',
+    is_lead    INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, team_id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_memberships_team ON team_memberships(team_id);
+"""
+
+
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """建团队成员关系表;并把现有"有部门归属"的用户回填成该团队的 member(幂等)。
+
+    回填只给已部署库一个合理初值(团队页不空);team_role/is_lead 的真正归一在 P1b 接 Principal
+    时按角色映射做。新建用户不经此回填——由管理流程显式设成员关系。
+    """
+    conn.executescript(_TEAM_SCHEMA)
+    conn.execute(
+        "INSERT OR IGNORE INTO team_memberships(user_id, team_id, team_role, is_lead, created_at) "
+        "SELECT id, department_id, 'member', 0, COALESCE(created_at, 0) "
+        "FROM users WHERE department_id IS NOT NULL"
+    )
+
+
 def _migrate_v2(conn: sqlite3.Connection) -> None:
     """v2:既有库补齐默认 AI 助手使用权。
 
@@ -143,7 +174,20 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
 
 
 # 有序迁移清单(只进不退;加 schema 变更 = 追加更高 version,绝不改历史迁移)。见 sqlite_support。
-_MIGRATIONS = (Migration(1, _migrate_v1), Migration(2, _migrate_v2))
+_MIGRATIONS = (
+    Migration(1, _migrate_v1),
+    Migration(2, _migrate_v2),
+    Migration(3, _migrate_v3),
+)
+
+
+def _to_membership(row: sqlite3.Row) -> Membership:
+    return Membership(
+        user_id=row["user_id"],
+        team_id=row["team_id"],
+        team_role=row["team_role"],
+        is_lead=bool(row["is_lead"]),
+    )
 
 
 class SQLiteAuthStore:
@@ -220,6 +264,54 @@ class SQLiteAuthStore:
                     "SELECT COUNT(*) FROM users WHERE department_id = ?", (dept_id,)
                 ).fetchone()[0]
             )
+
+    # ── 团队成员关系(多对多;部门即团队)────────────────────────────
+    def list_user_memberships(self, user_id: int) -> list[Membership]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT user_id, team_id, team_role, is_lead FROM team_memberships "
+                "WHERE user_id = ? ORDER BY team_id",
+                (user_id,),
+            ).fetchall()
+        return [_to_membership(r) for r in rows]
+
+    def list_team_memberships(self, team_id: int) -> list[Membership]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT user_id, team_id, team_role, is_lead FROM team_memberships "
+                "WHERE team_id = ? ORDER BY is_lead DESC, user_id",
+                (team_id,),
+            ).fetchall()
+        return [_to_membership(r) for r in rows]
+
+    def set_user_memberships(
+        self, user_id: int, memberships: list[tuple[int, str, bool]], now: int
+    ) -> None:
+        """整体替换某用户的团队成员关系(team_id, team_role, is_lead 三元组列表)。"""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM team_memberships WHERE user_id = ?", (user_id,))
+            conn.executemany(
+                "INSERT OR IGNORE INTO team_memberships"
+                "(user_id, team_id, team_role, is_lead, created_at) VALUES(?,?,?,?,?)",
+                [(user_id, tid, role, int(lead), now) for tid, role, lead in memberships],
+            )
+
+    def team_member_count(self, team_id: int) -> int:
+        with self._connect() as conn:
+            return int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM team_memberships WHERE team_id = ?", (team_id,)
+                ).fetchone()[0]
+            )
+
+    def team_lead_user_ids(self, team_id: int) -> list[int]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT user_id FROM team_memberships WHERE team_id = ? AND is_lead = 1 "
+                "ORDER BY user_id",
+                (team_id,),
+            ).fetchall()
+        return [int(r["user_id"]) for r in rows]
 
     # ── 角色 ──────────────────────────────────────────────────────
     def _role_perms(self, conn: sqlite3.Connection, role_id: int) -> frozenset[str]:

@@ -21,6 +21,21 @@ class Department:
 
 
 @dataclass(frozen=True, slots=True)
+class Membership:
+    """成员在某团队(部门升格)里的归属:团队内角色 + 是否团队负责人(maintainer)。
+
+    多对多——一人可在多个团队、各持不同团队角色(plan/13 §5)。team_role 指向团队级角色模板
+    的 key(P1b 接 `can(perm, scope)` 时据它算该团队内的生效权限);is_lead 标记团队负责人,
+    可读写管理本团队子树。本结构是数据层真源,P1b/P1d 消费。
+    """
+
+    user_id: int
+    team_id: int
+    team_role: str = "member"
+    is_lead: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Role:
     id: int
     key: str

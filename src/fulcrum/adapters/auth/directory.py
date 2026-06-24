@@ -16,6 +16,7 @@ from .models import (
     STATUS_PENDING,
     VALID_STATUSES,
     Department,
+    Membership,
     Role,
     User,
 )
@@ -137,6 +138,32 @@ class DirectoryService:
             out.append(cur)
             stack.extend(children.get(cur, []))
         return out
+
+    # ── 团队成员关系(多对多;部门即团队)────────────────────────────
+    def list_user_teams(self, user_id: int) -> list[Membership]:
+        return self._store.list_user_memberships(user_id)
+
+    def list_team_members(self, team_id: int) -> list[Membership]:
+        return self._store.list_team_memberships(team_id)
+
+    def team_member_count(self, team_id: int) -> int:
+        return self._store.team_member_count(team_id)
+
+    def set_user_teams(self, user_id: int, teams: list[tuple[int, str, bool]]) -> list[Membership]:
+        """整体设置某用户的团队归属(team_id, team_role, is_lead)。团队不存在即拒;按 team 去重。"""
+        self._require_user(user_id)
+        dept_ids = {d.id for d in self._store.list_departments()}
+        cleaned: list[tuple[int, str, bool]] = []
+        seen: set[int] = set()
+        for team_id, team_role, is_lead in teams:
+            if team_id not in dept_ids:
+                raise NotFound("团队不存在")
+            if team_id in seen:
+                continue
+            seen.add(team_id)
+            cleaned.append((team_id, (team_role or "member").strip() or "member", bool(is_lead)))
+        self._store.set_user_memberships(user_id, cleaned, self._now())
+        return self._store.list_user_memberships(user_id)
 
     # ── 角色 ──────────────────────────────────────────────────────
     def list_roles(self) -> list[Role]:
