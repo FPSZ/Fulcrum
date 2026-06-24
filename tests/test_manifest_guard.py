@@ -118,8 +118,10 @@ def test_clean_manifest_not_flagged() -> None:
 def test_corpus_supplychain_routed_through_gate() -> None:
     expect = {
         "sc-01": "block",  # 安装钩子执行 → 主动恶意
+        "sc-03": "block",  # 工具描述投毒藏读 ~/.ssh/id_rsa → 敏感凭据访问,主动恶意
         "sc-04": "approve",  # 过宽权限 → 仅声明可疑,送审(不过拦)
         "sc-05": "approve",  # 可疑端点(裸 IP)→ 送审
+        "sc-10": "block",  # 凭据窃取:.env/AWS_/~/.aws 枚举外发 → 主动恶意
         "sc-12": "allow",  # 干净清单 → 放行(无 FP)
     }
     seen: dict[str, str] = {}
