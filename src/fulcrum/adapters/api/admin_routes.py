@@ -84,9 +84,45 @@ def _raise(exc: NotFound | Conflict) -> NoReturn:
 def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthDeps) -> None:
     can_view = deps.require("users.view")
     can_manage_users = deps.require("users.manage")
+    can_admin_members = deps.require_member_admin()  # 组织管理员 或 团队负责人
     can_manage_dept = deps.require("dept.manage")
     can_manage_roles = deps.require("roles.manage")
     can_approve = deps.require("account.approve")
+
+    def _target_team_ids(user: User) -> set[int]:
+        """目标成员归属的团队集合(成员关系 + 兼容旧 department_id)。"""
+        teams = {m.team_id for m in directory.list_user_teams(user.id)}
+        if user.department_id is not None:
+            teams.add(user.department_id)
+        return teams
+
+    def _ensure_can_manage(principal: Principal, target: User) -> None:
+        """复校:组织级 users.manage 放行;否则目标必须落在本人可管的团队子树内。"""
+        if principal.has("users.manage"):
+            return
+        teams = _target_team_ids(target)
+        if not teams or not (teams & principal.managed_teams):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="只能管理你所负责团队内的成员"
+            )
+
+    def _guard_lead_mutation(principal: Principal, fields: dict) -> None:
+        """团队负责人的边界(非组织管理员时):不得改派角色、不得把成员移出自己管的团队。
+
+        防越权升级——团队负责人不能给人安插组织级角色,也不能把人挪到管不到的团队。
+        角色改派 / 跨团队调动仍归组织管理员(users.manage)。
+        """
+        if principal.has("users.manage"):
+            return
+        if "role_id" in fields:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="团队负责人不能改派成员角色"
+            )
+        new_dept = fields.get("department_id")
+        if new_dept is not None and new_dept not in principal.managed_teams:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="不能把成员移出你负责的团队"
+            )
 
     # ── 权限目录 ──────────────────────────────────────────────────
     @app.get("/admin/permissions", response_model=list[PermissionDTO])
@@ -220,9 +256,14 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
 
     @app.patch("/admin/users/{user_id}", response_model=UserDTO)
     async def update_user(
-        user_id: int, body: UserUpdate, _: Principal = Depends(can_manage_users)
+        user_id: int, body: UserUpdate, principal: Principal = Depends(can_admin_members)
     ) -> UserDTO:
+        target = directory.get_user(user_id)
+        if target is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="成员不存在")
+        _ensure_can_manage(principal, target)
         fields = body.model_dump(exclude_unset=True)
+        _guard_lead_mutation(principal, fields)
         try:
             user = directory.update_user(user_id, fields=fields)
         except (NotFound, Conflict) as exc:
@@ -231,8 +272,12 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
 
     @app.post("/admin/users/{user_id}/status", response_model=UserDTO)
     async def set_status(
-        user_id: int, body: StatusUpdate, _: Principal = Depends(can_manage_users)
+        user_id: int, body: StatusUpdate, principal: Principal = Depends(can_admin_members)
     ) -> UserDTO:
+        target = directory.get_user(user_id)
+        if target is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="成员不存在")
+        _ensure_can_manage(principal, target)
         try:
             user = directory.set_status(user_id, body.status)
         except (NotFound, Conflict) as exc:
@@ -241,8 +286,12 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
 
     @app.post("/admin/users/{user_id}/reset-password", response_model=TempPasswordResponse)
     async def reset_password(
-        user_id: int, body: PasswordReset, _: Principal = Depends(can_manage_users)
+        user_id: int, body: PasswordReset, principal: Principal = Depends(can_admin_members)
     ) -> TempPasswordResponse:
+        target = directory.get_user(user_id)
+        if target is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="成员不存在")
+        _ensure_can_manage(principal, target)
         try:
             temp = directory.reset_password(user_id, body.password)
         except (NotFound, Conflict) as exc:
