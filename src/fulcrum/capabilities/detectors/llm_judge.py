@@ -78,11 +78,22 @@ def _build_messages(text: str) -> list[dict[str, str]]:
 
 
 def _load_default_backend(
-    endpoint: str, api_key: str, model: str, timeout: float, max_chars: int
+    endpoint: str,
+    api_key: str,
+    model: str,
+    timeout: float,
+    max_chars: int,
+    max_tokens: int,
+    extra_body: dict[str, object],
 ) -> Callable[[str], bool]:
     """构建默认 LLM-judge 后端:(text) -> 是否攻击。同步 HTTP(适配同步 Detector 端口)。
 
     httpx 延迟导入;调用 OpenAI 兼容 /chat/completions,只取 ATTACK/SAFE 裁决。
+    `max_tokens` 必须够**推理模型**(如 MiMo)先吐思维链再给裁决——设太小(如 4)会让
+    `content` 空返、被误读为 SAFE(静默漏判);非推理模型吐完一词即停,大预算无害。
+    `extra_body` 透传到请求体:推理模型作快速二元闸门应**关思考**(裁决无需思维链,且
+    每条几十秒推理对内联闸门不可接受)——MiMo/vLLM 传 `{"chat_template_kwargs":
+    {"enable_thinking": False}}` 即直出裁决、~2s/条;非推理端点(如 deepseek-chat)留空。
     """
     import httpx
 
@@ -93,13 +104,19 @@ def _load_default_backend(
         payload = {
             "model": model,
             "messages": _build_messages(text[:max_chars]),
-            "max_tokens": 4,
+            "max_tokens": max_tokens,
             "temperature": 0,
+            **extra_body,
         }
         resp = httpx.post(url, json=payload, headers=headers, timeout=timeout)
         resp.raise_for_status()
-        content = str(resp.json()["choices"][0]["message"]["content"]).upper()
-        return "ATTACK" in content
+        content = str(resp.json()["choices"][0]["message"]["content"] or "").strip()
+        if not content:
+            # 空裁决(多见于推理模型 token 预算不足、裁决被截在思维链里)——不可判定。
+            # 记日志后按"非攻击"处理(judge 仅作增益,不因自身无结论而拦一切);调大 max_tokens 可消除。
+            _LOG.warning("llm_judge 裁决为空(model=%s,疑 max_tokens 不足),本条按 SAFE 计", model)
+            return False
+        return "ATTACK" in content.upper()
 
     return judge
 
@@ -120,7 +137,9 @@ class LlmJudgeDetector:
         api_key: str = "",
         max_score: float = 0.7,
         max_chars: int = 2000,
-        timeout: float = 12.0,
+        timeout: float = 20.0,
+        max_tokens: int = 1024,
+        extra_body: dict[str, object] | None = None,
         backend: Callable[[str], bool] | None = None,
     ) -> None:
         self._model = model
@@ -129,6 +148,11 @@ class LlmJudgeDetector:
         self._max_score = float(max_score)  # judge 单独贡献封顶(独自最多升复核,不自动拦截)
         self._max_chars = int(max_chars)
         self._timeout = float(timeout)
+        # 裁决输出预算:推理模型需 ≥数百 token 走思维链再吐 ATTACK/SAFE(见 _load_default_backend)。
+        self._max_tokens = int(max_tokens)
+        # 透传请求体:推理模型关思考使其快速直出裁决
+        # (MiMo 传 chat_template_kwargs.enable_thinking=False)。
+        self._extra_body: dict[str, object] = dict(extra_body or {})
         self._backend = backend
         self._tried_load = backend is not None
         self._degraded = False
@@ -139,7 +163,13 @@ class LlmJudgeDetector:
         self._tried_load = True
         try:
             self._backend = _load_default_backend(
-                self._endpoint, self._api_key, self._model, self._timeout, self._max_chars
+                self._endpoint,
+                self._api_key,
+                self._model,
+                self._timeout,
+                self._max_chars,
+                self._max_tokens,
+                self._extra_body,
             )
         except Exception as exc:  # noqa: BLE001 —— 缺 httpx/构建失败 → 降级,不拖垮规则基线
             self._degraded = True
