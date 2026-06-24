@@ -48,3 +48,21 @@ class AuthDeps:
             return principal
 
         return _dep
+
+    def require_member_admin(self) -> Callable[..., Principal]:
+        """成员管理入口(plan/13 P1b):组织级 `users.manage` 或 **任一团队负责人** 均可进。
+
+        进得来不代表能管所有人——具体"能否管这个目标成员"由处理器按 `can_manage_team` 复校
+        (团队负责人只能管本团队子树)。这是把"团队组长读写本团队"接进真实端点的闸。
+        """
+        principal_dep = self.principal_dependency()
+
+        def _dep(principal: Principal = Depends(principal_dep)) -> Principal:
+            if principal.has("users.manage") or principal.managed_teams:
+                return principal
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权限:需要成员管理权(组织级 users.manage 或团队负责人)",
+            )
+
+        return _dep
