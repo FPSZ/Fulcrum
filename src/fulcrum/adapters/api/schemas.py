@@ -382,6 +382,23 @@ class DepartmentWrite(BaseModel):
     sort_order: int | None = None
 
 
+class MembershipDTO(BaseModel):
+    """成员在某团队的归属(plan/13 P1b):团队内角色 + 是否负责人。"""
+
+    user_id: int
+    team_id: int
+    team_role: str = "member"
+    is_lead: bool = False
+
+
+class TeamMemberWrite(BaseModel):
+    """把某成员加入/更新到某团队(团队负责人或组织管理员可调)。"""
+
+    user_id: int
+    team_role: str = Field(default="member", max_length=64)
+    is_lead: bool = False
+
+
 class RoleDTO(BaseModel):
     id: int
     key: str
