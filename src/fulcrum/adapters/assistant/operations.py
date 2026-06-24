@@ -22,6 +22,7 @@ from ..api.policies_routes import to_policy_set
 from ..api.supply_routes import scan_directory
 from ..api.tools_routes import build_tool_calls
 from ..audit.memory_sink import InMemoryAuditSink
+from ..auth.models import ROLE_SCOPE_TEAM
 from ..auth.permissions import PERMISSIONS
 from ..console_settings import ConsoleSettings
 from ..gateway import GatewayConfig, GatewayConfigPublic
@@ -388,6 +389,51 @@ async def get_gateway_config(args: dict, principal: Any, services: Any) -> Opera
     return OperationResult(summary=summary, data=pub.model_dump())
 
 
+# ──────────────────────────── 团队负责人范围闸(plan/13 §3「助手权限=与本人共享」)──────
+# team_scoped 写操作对团队负责人放开可见性(见 core.operations.visible_to)后,**目标范围**仍须
+# 在执行点复校:组织级 users.manage 跨团队放行;否则目标成员/团队必须落在本人 managed_teams
+# 子树内,越界即业务级拒绝(ok=False,非 500)。与 admin_routes 的 _ensure_can_manage 同语义。
+_FORBID_MEMBER = "只能管理你所负责团队内的成员。"
+
+
+def _is_org_member_admin(principal: Any) -> bool:
+    has = getattr(principal, "has", None)
+    return bool(has("users.manage")) if callable(has) else False
+
+
+def _managed_teams(principal: Any) -> frozenset[int]:
+    mt = getattr(principal, "managed_teams", None)
+    return mt if mt else frozenset()
+
+
+def _member_in_scope(principal: Any, services: Any, user_id: int) -> bool:
+    """目标成员是否在本人可管团队子树内(组织级 users.manage 恒真)。"""
+    if _is_org_member_admin(principal):
+        return True
+    managed = _managed_teams(principal)
+    if not managed:
+        return False
+    d = services.directory
+    teams = {m.team_id for m in d.list_user_teams(user_id)}
+    u = d.get_user(user_id)
+    if u is not None and u.department_id is not None:
+        teams.add(u.department_id)
+    return bool(teams & managed)
+
+
+def _is_team_role(services: Any, role_id: int) -> bool:
+    """该角色是否为团队级模板(防团队负责人借审批/改派安插组织级角色提权)。"""
+    role = next((r for r in services.directory.list_roles() if r.id == role_id), None)
+    return role is not None and getattr(role, "scope", ROLE_SCOPE_TEAM) == ROLE_SCOPE_TEAM
+
+
+def _can_manage_team(principal: Any, team_id: int) -> bool:
+    fn = getattr(principal, "can_manage_team", None)
+    if callable(fn):
+        return bool(fn(team_id))
+    return _is_org_member_admin(principal)
+
+
 # ──────────────────────────── write(后端,提案-确认-可撤销)────────────────────────────
 # 写操作不进 chat 循环执行;助手只产出待确认提案,确认走 /assistant/confirm(纵深 RBAC + 前态
 # 快照 + 审计),撤销走 /assistant/undo(逆操作 + 审计)。handler 执行时把**前态**塞进
@@ -406,6 +452,8 @@ async def _set_user_status(args: dict, principal: Any, services: Any) -> Operati
     user = d.get_user(uid)
     if user is None:
         return OperationResult(summary=f"成员 {uid} 不存在。", ok=False, error="not_found")
+    if not _member_in_scope(principal, services, uid):
+        return OperationResult(summary=_FORBID_MEMBER, ok=False, error="forbidden")
     old = user.status
     try:
         d.set_status(uid, status)
@@ -444,6 +492,7 @@ operation_registry.register(
             "required": ["user_id", "status"],
         },
         requires=("users.manage",),
+        team_scoped=True,
         risk="high",
         handler=_set_user_status,
         reversible=True,
@@ -471,6 +520,24 @@ async def _approve_account(args: dict, principal: Any, services: Any) -> Operati
         )
     role_id = args.get("role_id")
     dept_id = args.get("department_id")
+    # 审批下放范围闸(plan/13 §6):组织级 account.approve 不限;团队负责人只能把账号审进
+    # 自己负责的团队、且只能赋团队级角色——防借审批跨团队安插或提权为组织级角色。
+    if not (getattr(principal, "has", lambda _p: False)("account.approve")):
+        managed = _managed_teams(principal)
+        if not managed:
+            return OperationResult(summary="你没有账号审批权。", ok=False, error="forbidden")
+        if user.department_id is not None and user.department_id not in managed:
+            return OperationResult(
+                summary="该申请属于其他团队,你无权审批。", ok=False, error="forbidden"
+            )
+        if dept_id is None or int(dept_id) not in managed:
+            return OperationResult(
+                summary="团队负责人只能把账号审批进你负责的团队。", ok=False, error="forbidden"
+            )
+        if role_id is not None and not _is_team_role(services, int(role_id)):
+            return OperationResult(
+                summary="团队负责人只能赋予团队级角色。", ok=False, error="forbidden"
+            )
     try:
         d.approve(
             uid,
@@ -507,6 +574,7 @@ operation_registry.register(
             "required": ["user_id"],
         },
         requires=("account.approve",),
+        team_scoped=True,
         risk="high",
         handler=_approve_account,
         reversible=True,
@@ -820,9 +888,22 @@ async def _update_user(args: dict, principal: Any, services: Any) -> OperationRe
     user = d.get_user(uid)
     if user is None:
         return OperationResult(summary=f"成员 {uid} 不存在。", ok=False, error="not_found")
+    if not _member_in_scope(principal, services, uid):
+        return OperationResult(summary=_FORBID_MEMBER, ok=False, error="forbidden")
     fields = {k: args[k] for k in _USER_PROFILE_KEYS if k in args}
     if not fields:
         return OperationResult(summary="没有要改的字段。", ok=False, error="no_fields")
+    # 团队负责人(非组织管理员)防越权升级:不得改派角色、不得把成员移出可管团队。
+    if not _is_org_member_admin(principal):
+        if "role_id" in fields:
+            return OperationResult(
+                summary="团队负责人不能改派成员角色。", ok=False, error="forbidden"
+            )
+        new_dept = fields.get("department_id")
+        if new_dept is not None and int(new_dept) not in _managed_teams(principal):
+            return OperationResult(
+                summary="不能把成员移出你负责的团队。", ok=False, error="forbidden"
+            )
     old = {k: getattr(user, k) for k in fields}
     try:
         updated = d.update_user(uid, fields=fields)
@@ -870,6 +951,7 @@ operation_registry.register(
             "required": ["user_id"],
         },
         requires=("users.manage",),
+        team_scoped=True,
         risk="high",
         handler=_update_user,
         reversible=True,
@@ -891,6 +973,8 @@ async def _reset_password(args: dict, principal: Any, services: Any) -> Operatio
     user = d.get_user(uid)
     if user is None:
         return OperationResult(summary=f"成员 {uid} 不存在。", ok=False, error="not_found")
+    if not _member_in_scope(principal, services, uid):
+        return OperationResult(summary=_FORBID_MEMBER, ok=False, error="forbidden")
     try:
         temp = d.reset_password(uid)  # 不传新口令 → 生成一次性临时口令
     except Exception as exc:  # noqa: BLE001
@@ -913,6 +997,7 @@ operation_registry.register(
             "required": ["user_id"],
         },
         requires=("users.manage",),
+        team_scoped=True,
         risk="high",
         handler=_reset_password,
         reversible=False,
@@ -932,6 +1017,13 @@ async def _reject_account(args: dict, principal: Any, services: Any) -> Operatio
     user = d.get_user(uid)
     if user is None:
         return OperationResult(summary=f"账号 {uid} 不存在。", ok=False, error="not_found")
+    # 驳回下放范围闸:团队负责人只能驳回"申请加入本团队"的待审账号(department_id 在可管子树内)。
+    if not (getattr(principal, "has", lambda _p: False)("account.approve")):
+        managed = _managed_teams(principal)
+        if not managed or user.department_id is None or user.department_id not in managed:
+            return OperationResult(
+                summary="团队负责人只能驳回本团队的待审批申请。", ok=False, error="forbidden"
+            )
     name = user.username
     try:
         d.reject(uid)  # 驳回即删除待审批记录
@@ -952,6 +1044,7 @@ operation_registry.register(
             "required": ["user_id"],
         },
         requires=("account.approve",),
+        team_scoped=True,
         risk="high",
         handler=_reject_account,
         reversible=False,
@@ -1313,5 +1406,168 @@ operation_registry.register(
         handler=_delete_department,
         reversible=False,
         inverse=None,
+    )
+)
+
+
+# ──────────────────────────── write:团队成员关系(负责人平权)────────────────────────────
+# 与团队页 TeamMembersDialog 平权:团队负责人的助手也能增减本团队成员、任免负责人(plan/13 §6)。
+# requires=users.manage 但 team_scoped=True:负责人可见可调;执行点按 can_manage_team 钉死范围。
+def _membership_brief(team_id: int, user_id: int, team_role: str, is_lead: bool) -> dict:
+    return {"team_id": team_id, "user_id": user_id, "team_role": team_role, "is_lead": is_lead}
+
+
+def _prior_membership(services: Any, team_id: int, user_id: int) -> Any:
+    return next(
+        (m for m in services.directory.list_team_members(team_id) if m.user_id == user_id), None
+    )
+
+
+async def _add_team_member(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        team_id = int(args["team_id"])
+        user_id = int(args["user_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(
+            summary="参数非法(需 team_id、user_id)。", ok=False, error="bad_args"
+        )
+    if not _can_manage_team(principal, team_id):
+        return OperationResult(summary="只能管理你负责的团队成员。", ok=False, error="forbidden")
+    prior = _prior_membership(services, team_id, user_id)
+    team_role = str(args.get("team_role") or "member").strip() or "member"
+    is_lead = bool(args.get("is_lead", False))
+    try:
+        m = d.add_team_member(team_id, user_id, team_role, is_lead)
+    except Exception as exc:  # noqa: BLE001 —— 团队/成员不存在等护栏如实回报
+        return OperationResult(summary=f"加入团队失败:{exc}", ok=False, error="conflict")
+    lead_note = "(任为负责人)" if is_lead else ""
+    return OperationResult(
+        summary=f"已把成员 {user_id} 加入团队 {team_id}{lead_note}。",
+        data=_membership_brief(m.team_id, m.user_id, m.team_role, m.is_lead),
+        undo={
+            "team_id": team_id,
+            "user_id": user_id,
+            "existed": prior is not None,
+            "team_role": prior.team_role if prior else None,
+            "is_lead": prior.is_lead if prior else None,
+        },
+    )
+
+
+async def _add_team_member_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if args.get("existed"):
+        d.add_team_member(
+            int(args["team_id"]),
+            int(args["user_id"]),
+            str(args["team_role"] or "member"),
+            bool(args["is_lead"]),
+        )
+        return OperationResult(summary="已回滚团队成员关系为原值。")
+    d.remove_team_member(int(args["team_id"]), int(args["user_id"]))
+    return OperationResult(summary=f"已撤销:成员 {args['user_id']} 移出团队 {args['team_id']}。")
+
+
+operation_registry.register(
+    AssistantTool(
+        name="add_team_member",
+        kind="write",
+        label="加成员入团队",
+        description=(
+            "把某成员加入某团队(可设团队角色 / 任为负责人)。团队负责人只能操作自己负责的团队。"
+            "team_id 见 list_departments,user_id 见 list_users。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "team_id": {"type": "integer", "description": "团队(部门)id"},
+                "user_id": {"type": "integer", "description": "成员 id"},
+                "team_role": {
+                    "type": "string",
+                    "description": "团队内角色,如 member/operator,默认 member",
+                },
+                "is_lead": {"type": "boolean", "description": "是否任为团队负责人"},
+            },
+            "required": ["team_id", "user_id"],
+        },
+        requires=("users.manage",),
+        team_scoped=True,
+        risk="high",
+        handler=_add_team_member,
+        reversible=True,
+        inverse="移出团队/恢复原关系",
+        undo_handler=_add_team_member_undo,
+    )
+)
+
+
+async def _remove_team_member(args: dict, principal: Any, services: Any) -> OperationResult:
+    d = services.directory
+    if d is None:
+        return OperationResult(summary="未装配目录服务。", ok=False, error="no_directory")
+    try:
+        team_id = int(args["team_id"])
+        user_id = int(args["user_id"])
+    except (KeyError, TypeError, ValueError):
+        return OperationResult(
+            summary="参数非法(需 team_id、user_id)。", ok=False, error="bad_args"
+        )
+    if not _can_manage_team(principal, team_id):
+        return OperationResult(summary="只能管理你负责的团队成员。", ok=False, error="forbidden")
+    prior = _prior_membership(services, team_id, user_id)
+    if prior is None:
+        return OperationResult(summary="该成员不在此团队。", ok=False, error="not_found")
+    try:
+        d.remove_team_member(team_id, user_id)
+    except Exception as exc:  # noqa: BLE001
+        return OperationResult(summary=f"移出团队失败:{exc}", ok=False, error="conflict")
+    return OperationResult(
+        summary=f"已把成员 {user_id} 移出团队 {team_id}。",
+        data={"team_id": team_id, "user_id": user_id},
+        undo={
+            "team_id": team_id,
+            "user_id": user_id,
+            "team_role": prior.team_role,
+            "is_lead": prior.is_lead,
+        },
+    )
+
+
+async def _remove_team_member_undo(args: dict, principal: Any, services: Any) -> OperationResult:
+    services.directory.add_team_member(
+        int(args["team_id"]),
+        int(args["user_id"]),
+        str(args["team_role"] or "member"),
+        bool(args["is_lead"]),
+    )
+    return OperationResult(
+        summary=f"已恢复成员 {args['user_id']} 在团队 {args['team_id']} 的关系。"
+    )
+
+
+operation_registry.register(
+    AssistantTool(
+        name="remove_team_member",
+        kind="write",
+        label="移出团队成员",
+        description="把某成员移出某团队(不删账号)。团队负责人只能操作自己负责的团队。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "team_id": {"type": "integer", "description": "团队(部门)id"},
+                "user_id": {"type": "integer", "description": "成员 id"},
+            },
+            "required": ["team_id", "user_id"],
+        },
+        requires=("users.manage",),
+        team_scoped=True,
+        risk="high",
+        handler=_remove_team_member,
+        reversible=True,
+        inverse="恢复团队成员关系",
+        undo_handler=_remove_team_member_undo,
     )
 )

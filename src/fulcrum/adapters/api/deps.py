@@ -66,3 +66,21 @@ class AuthDeps:
             )
 
         return _dep
+
+    def require_approver(self) -> Callable[..., Principal]:
+        """账号审批入口(plan/13 §6 审批下放):组织级 `account.approve` 或 **团队负责人** 可进。
+
+        进得来不代表能审所有人——团队负责人只能把账号审进/驳回**自己负责的团队**,且只能赋
+        团队级角色;该范围与角色约束由路由处理器复校(_guard_approve / _guard_reject)。
+        """
+        principal_dep = self.principal_dependency()
+
+        def _dep(principal: Principal = Depends(principal_dep)) -> Principal:
+            if principal.has("account.approve") or principal.managed_teams:
+                return principal
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权限:需要账号审批权(account.approve 或团队负责人)",
+            )
+
+        return _dep

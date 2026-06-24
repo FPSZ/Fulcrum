@@ -64,6 +64,10 @@ class AssistantTool:
     description: str  # 给模型看的用途(决定模型何时选它)
     parameters: dict = field(default_factory=dict)  # JSON Schema(OpenAI function 参数规范)
     requires: tuple[str, ...] = ()  # 所需权限点(RBAC)
+    # 团队负责人平权(plan/13 §3 铁律「助手权限=与本人共享」):置 True 的**团队级**操作,
+    # 即便缺组织级 requires 权限,只要本人是某团队负责人(managed_teams 非空)也可见可调;
+    # 但"能否管这个具体目标"由 handler 执行点按 can_manage_team 复校(只能管本团队子树)。
+    team_scoped: bool = False
     risk: str = "read_only"  # read_only | normal | high
     handler: OperationHandler | None = None  # read/write:进程内执行;ui:None(前端执行)
     reversible: bool = False  # write 是否可一键撤销
@@ -76,8 +80,16 @@ class AssistantTool:
     before_handler: OperationHandler | None = None
 
     def visible_to(self, principal: Any) -> bool:
-        """该角色是否被授权调用本操作(requires ⊆ 角色权限)。"""
-        return all(principal.has(p) for p in self.requires)
+        """该角色是否被授权调用本操作。
+
+        ① 组织级:requires ⊆ 角色权限 → 放行(跨团队全量,如系统管理员)。
+        ② 团队负责人平权:`team_scoped` 操作即便缺 requires,只要本人是某团队负责人
+           (managed_teams 非空)即可见——具体目标范围由 handler 按 can_manage_team 复校。
+        前端隐藏≠安全:执行点(actuator/handler)仍以本方法 + 目标范围纵深复校。
+        """
+        if all(principal.has(p) for p in self.requires):
+            return True
+        return self.team_scoped and bool(getattr(principal, "managed_teams", None))
 
     @property
     def domain(self) -> str:
@@ -192,6 +204,7 @@ def operation(
     risk: str = "read_only",
     reversible: bool = False,
     inverse: str | None = None,
+    team_scoped: bool = False,
 ) -> Callable[[OperationHandler], OperationHandler]:
     """函数装饰器:把一个 read/write handler 注册成 AI 可调操作。
 
@@ -207,6 +220,7 @@ def operation(
                 description=description,
                 parameters=params or {"type": "object", "properties": {}},
                 requires=requires,
+                team_scoped=team_scoped,
                 risk=risk,
                 handler=fn,
                 reversible=reversible,

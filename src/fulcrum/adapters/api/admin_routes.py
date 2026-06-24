@@ -18,6 +18,7 @@ from ..auth import (
     Role,
     User,
 )
+from ..auth.models import ROLE_SCOPE_TEAM
 from ..auth.permissions import PERMISSIONS
 from .deps import AuthDeps
 from .schemas import (
@@ -90,7 +91,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
     can_admin_members = deps.require_member_admin()  # 组织管理员 或 团队负责人
     can_manage_dept = deps.require("dept.manage")
     can_manage_roles = deps.require("roles.manage")
-    can_approve = deps.require("account.approve")
+    can_approve = deps.require_approver()  # 组织级审批人 或 团队负责人(范围由处理器复校)
 
     def _target_team_ids(user: User) -> set[int]:
         """目标成员归属的团队集合(成员关系 + 兼容旧 department_id)。"""
@@ -125,6 +126,42 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
         if new_dept is not None and new_dept not in principal.managed_teams:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="不能把成员移出你负责的团队"
+            )
+
+    def _guard_approve(
+        principal: Principal, target: User, role_id: int | None, department_id: int | None
+    ) -> None:
+        """审批下放范围闸(plan/13 §6):组织级 account.approve 不限;团队负责人只能把账号审进
+        自己负责的团队、且只能赋团队级角色——防借审批跨团队安插或提权为组织级角色。"""
+        if principal.has("account.approve"):
+            return
+        managed = principal.managed_teams
+        if not managed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="你没有账号审批权")
+        if target.department_id is not None and target.department_id not in managed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="该申请属于其他团队,你无权审批"
+            )
+        if department_id is None or department_id not in managed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="团队负责人只能把账号审批进你负责的团队",
+            )
+        if role_id is not None:
+            role = next((r for r in directory.list_roles() if r.id == role_id), None)
+            if role is None or role.scope != ROLE_SCOPE_TEAM:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="团队负责人只能赋予团队级角色"
+                )
+
+    def _guard_reject(principal: Principal, target: User) -> None:
+        """驳回下放范围闸:团队负责人只能驳回"申请加入本团队"的待审账号。"""
+        if principal.has("account.approve"):
+            return
+        managed = principal.managed_teams
+        if not managed or target.department_id is None or target.department_id not in managed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="团队负责人只能驳回本团队的待审批申请"
             )
 
     # ── 权限目录 ──────────────────────────────────────────────────
@@ -305,8 +342,12 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
 
     @app.post("/admin/users/{user_id}/approve", response_model=UserDTO)
     async def approve(
-        user_id: int, body: ApproveRequest, _: Principal = Depends(can_approve)
+        user_id: int, body: ApproveRequest, principal: Principal = Depends(can_approve)
     ) -> UserDTO:
+        target = directory.get_user(user_id)
+        if target is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账号不存在")
+        _guard_approve(principal, target, body.role_id, body.department_id)
         try:
             user = directory.approve(user_id, body.role_id, body.department_id)
         except (NotFound, Conflict) as exc:
@@ -314,7 +355,11 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
         return _user_dto(user)
 
     @app.post("/admin/users/{user_id}/reject", status_code=204)
-    async def reject(user_id: int, _: Principal = Depends(can_approve)) -> None:
+    async def reject(user_id: int, principal: Principal = Depends(can_approve)) -> None:
+        target = directory.get_user(user_id)
+        if target is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账号不存在")
+        _guard_reject(principal, target)
         try:
             directory.reject(user_id)
         except (NotFound, Conflict) as exc:

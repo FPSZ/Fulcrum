@@ -142,9 +142,6 @@ class AssistantActuator:
         self._signer = signer
         self._undo = undo_store
 
-    def _has_all(self, principal: Any, tool: AssistantTool) -> bool:
-        return all(principal.has(p) for p in tool.requires)
-
     async def confirm(
         self, action_token: str, edited_args: dict, principal: Any, session_id: str
     ) -> ConfirmResult:
@@ -163,8 +160,9 @@ class AssistantActuator:
             return ConfirmResult(
                 ok=False, summary="令牌主体与当前用户不符。", denied=True, error="actor"
             )
-        # 纵深 RBAC:执行点再校验工具自身权限点(不靠提案自觉)。
-        if not self._has_all(principal, tool):
+        # 纵深 RBAC:执行点按 visible_to 复校(组织级权限 或 团队负责人平权;不靠提案自觉)。
+        # 团队负责人的**目标范围**(只能管本团队子树)由 handler 内部再校验,返回业务级拒绝。
+        if not tool.visible_to(principal):
             return ConfirmResult(
                 ok=False, summary=f"无权限执行「{tool.label}」。", denied=True, error="forbidden"
             )
@@ -211,8 +209,8 @@ class AssistantActuator:
         tool = self._registry.get(rec.tool_name)
         if tool is None or tool.undo_handler is None:
             return UndoResult(ok=False, summary="对应工具无撤销执行器。", error="no_undo")
-        # 撤销与原写操作同权(plan §4.6)。
-        if not all(principal.has(p) for p in rec.requires):
+        # 撤销与原写操作同权(plan §4.6):按工具 visible_to 复校(含团队负责人平权)。
+        if not tool.visible_to(principal):
             return UndoResult(
                 ok=False, summary=f"无权限撤销「{rec.label}」。", denied=True, error="forbidden"
             )
