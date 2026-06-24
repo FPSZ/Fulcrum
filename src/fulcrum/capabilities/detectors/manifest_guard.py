@@ -50,11 +50,12 @@ _MANIFEST_SIGNAL_KEYS: frozenset[str] = frozenset(
 )
 
 # 请求路径处置 = 按风险**性质**分级,而非照搬离线扫描器的最严重级评级:
-#   主动恶意载荷(安装钩子执行 / 后门挖矿等描述 / 指令字段注入)→ 装载即危害,入口拦截;
+#   主动恶意载荷(安装钩子执行 / 后门挖矿等描述 / 指令字段注入 / 指名窃取敏感凭据)→
+#     装载即危害,入口拦截;
 #   仅"声明"可疑(过宽权限 / 可疑端点 / 从 URL 装依赖 / 生命周期钩子)→ 尚未发作,送人工复核。
 # 这与 corpus 校准一致:声明吓人 ≠ 已作恶,前者 approve、后者 block。
 _ACTIVE_MALICE_KINDS: frozenset[str] = frozenset(
-    {"hook.install_exec", "desc.suspicious", "manifest.prompt_injection"}
+    {"hook.install_exec", "desc.suspicious", "manifest.prompt_injection", "sensitive_file_access"}
 )
 _BLOCK_SCORE = 0.9  # → 入口闸门 block(BLOCK_AT=0.8)
 _REVIEW_SCORE = 0.7  # → 入口闸门 approve(REVIEW_AT=0.6)
