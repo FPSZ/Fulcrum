@@ -125,6 +125,26 @@ export const approveMember = (id: number, b: { role_id: number | null; departmen
 export const rejectMember = (id: number) =>
   api<void>(`/admin/users/${id}/reject`, { method: 'POST' })
 
+// ── 团队成员关系(plan/13:团队=带成员与负责人的实体;负责人管本团队)──────────
+export interface Membership {
+  user_id: number
+  team_id: number
+  team_role: string
+  is_lead: boolean
+}
+
+/** 某团队的成员关系(负责人在前)。 */
+export const listTeamMembers = (teamId: number) =>
+  api<Membership[]>(`/admin/teams/${teamId}/members`)
+/** 把成员加入/更新到某团队(组织管理员 或 该团队负责人可调;越权 → 后端 403)。 */
+export const addTeamMember = (
+  teamId: number,
+  b: { user_id: number; team_role?: string; is_lead?: boolean },
+) => api<Membership>(`/admin/teams/${teamId}/members`, j(b))
+/** 把成员移出某团队。 */
+export const removeTeamMember = (teamId: number, userId: number) =>
+  api<void>(`/admin/teams/${teamId}/members/${userId}`, { method: 'DELETE' })
+
 // ── 网关上游接入(设置页:配置企业智能体 + 测试连接)──────────────
 export type GatewayProtocol = 'openai' | 'rest' | 'native'
 export type GatewayAuthType = 'none' | 'bearer' | 'header'
