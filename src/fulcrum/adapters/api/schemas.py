@@ -408,12 +408,14 @@ class RoleDTO(BaseModel):
     is_system: bool = False
     permissions: list[str] = Field(default_factory=list)
     member_count: int = 0
+    scope: str = "org"  # org=组织级(全局) | team=团队级(团队内模板)
 
 
 class RoleWrite(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     description: str = ""
     permissions: list[str] = Field(default_factory=list)
+    scope: str = Field(default="team", pattern="^(org|team)$")  # 自定义角色默认团队级
 
 
 class RoleUpdate(BaseModel):

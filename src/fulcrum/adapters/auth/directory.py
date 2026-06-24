@@ -185,13 +185,20 @@ class DirectoryService:
     def list_roles(self) -> list[Role]:
         return self._store.list_roles()
 
-    def create_role(self, name: str, description: str, permissions: list[str]) -> Role:
+    def create_role(
+        self, name: str, description: str, permissions: list[str], scope: str = "team"
+    ) -> Role:
         name = name.strip()
         if not name:
             raise Conflict("角色名称不能为空")
+        from .models import ROLE_SCOPE_TEAM, VALID_ROLE_SCOPES
+
+        sc = scope if scope in VALID_ROLE_SCOPES else ROLE_SCOPE_TEAM
         perms = valid_permissions(permissions)
         key = self._unique_role_key(_slugify(name))
-        return self._store.create_role(key, name, description.strip(), False, perms, self._now())
+        return self._store.create_role(
+            key, name, description.strip(), False, perms, self._now(), scope=sc
+        )
 
     def _unique_role_key(self, base: str) -> str:
         existing = {r.key for r in self._store.list_roles()}

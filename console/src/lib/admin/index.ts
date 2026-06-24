@@ -30,6 +30,7 @@ export interface Role {
   is_system: boolean
   permissions: string[]
   member_count: number
+  scope: 'org' | 'team' // 组织级(全局)| 团队级(团队内模板)
 }
 
 export type UserStatus = 'pending' | 'active' | 'disabled' | 'left'
