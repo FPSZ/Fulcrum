@@ -149,6 +149,22 @@ class DirectoryService:
     def team_member_count(self, team_id: int) -> int:
         return self._store.team_member_count(team_id)
 
+    def add_team_member(
+        self, team_id: int, user_id: int, team_role: str = "member", is_lead: bool = False
+    ) -> Membership:
+        """把某成员加入/更新到某团队(团队不存在或成员不存在即拒)。"""
+        if self._get_dept(team_id) is None:
+            raise NotFound("团队不存在")
+        self._require_user(user_id)
+        role = (team_role or "member").strip() or "member"
+        self._store.add_membership(user_id, team_id, role, bool(is_lead), self._now())
+        return Membership(user_id=user_id, team_id=team_id, team_role=role, is_lead=bool(is_lead))
+
+    def remove_team_member(self, team_id: int, user_id: int) -> None:
+        if self._get_dept(team_id) is None:
+            raise NotFound("团队不存在")
+        self._store.remove_membership(user_id, team_id)
+
     def set_user_teams(self, user_id: int, teams: list[tuple[int, str, bool]]) -> list[Membership]:
         """整体设置某用户的团队归属(team_id, team_role, is_lead)。团队不存在即拒;按 team 去重。"""
         self._require_user(user_id)

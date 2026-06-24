@@ -60,7 +60,12 @@ def _build(tmp_path: Path) -> tuple[TestClient, dict[str, int]]:
     pipeline = build_pipeline(load_capability_config(settings.capability_config))
     scanner = registry.create("scanner", "manifest")
     client = TestClient(build_api(pipeline, bundle, settings, scanner=scanner))
-    return client, {"insider": insider.id, "outsider": outsider.id}
+    return client, {
+        "insider": insider.id,
+        "outsider": outsider.id,
+        "soc": soc.id,
+        "grc": grc.id,
+    }
 
 
 def _login(client: TestClient, username: str, password: str) -> None:
@@ -103,3 +108,28 @@ def test_org_admin_manages_all(tmp_path: Path) -> None:
     _login(client, "admin", _ADMIN_PW)
     r = client.post(f"/admin/users/{ids['outsider']}/status", json={"status": "disabled"})
     assert r.status_code == 200, r.text
+
+
+def test_lead_adds_member_to_own_team(tmp_path: Path) -> None:
+    client, ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)
+    r = client.post(
+        f"/admin/teams/{ids['soc']}/members",
+        json={"user_id": ids["outsider"], "team_role": "member"},
+    )
+    assert r.status_code == 200, r.text  # 把人招进自己负责的团队 → 放行
+
+
+def test_lead_cannot_add_member_to_other_team(tmp_path: Path) -> None:
+    client, ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)
+    r = client.post(f"/admin/teams/{ids['grc']}/members", json={"user_id": ids["insider"]})
+    assert r.status_code == 403  # 别团队 → 拒
+
+
+def test_lead_removes_own_team_member(tmp_path: Path) -> None:
+    client, ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)
+    client.post(f"/admin/teams/{ids['soc']}/members", json={"user_id": ids["outsider"]})
+    r = client.delete(f"/admin/teams/{ids['soc']}/members/{ids['outsider']}")
+    assert r.status_code == 204

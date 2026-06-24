@@ -219,6 +219,15 @@
 - **P1 · 团队范围化**:`teams`(升格 departments)+ `team_memberships` 多对多 + 组织/团队角色二分;
   `Principal` 携团队范围(子树继承)+ `require(perm, scope)` 内核;成员/角色管理端点加范围约束
   (团队负责人只管本团队子树)。前端:成员/团队/角色三分区 + 实体页骨架。
+  - **P1a ✅**:`team_memberships` 数据层(多对多 + v3 迁移回填 + store/directory + 6 测试)。
+  - **P1b.1 ✅**:`Principal.{team_ids,managed_teams}` + `can_manage_team`(子树继承)+ 3 测试。
+  - **P1b.2 ✅**:成员管理端点范围化(`require_member_admin` + 目标复校 + 防越权升级)+ 5 HTTP 测试。
+  - **P1b.3 ✅**:团队成员关系管理 API(`/admin/teams/{id}/members` 增删,负责人限本团队)+ 3 测试。
+  - **P1c(助手)≈ 已满足**:助手以 `Principal` 行事、`visible_for` 按**已范围化**权限过滤工具,
+    成员写操作仍 `requires=users.manage`——团队负责人无此权限,其助手自然管不了成员(安全、无越权);
+    组织管理员有则跨团队管全部(设计如此)。"助手随人受限"由 P1b 自动达成。**遗留**:让负责人的
+    助手也能按范围管本团队(与 UI 平权)需放开可见性 + 执行点 scope 复校 → 归 **P3**。
+  - **P1b·余**:角色 org/team scope 二分(scope 列)归 P3;现以"是否含 users.manage"区分组织/团队能力。
 - **P2 · 资源租户化**:`events`/会话/`policies` 等带 `team_id`,列表按可见团队**行级过滤**;
   网关侧"被保护系统 ↔ 团队"映射。政企数据隔离刚需。
 - **P3 · 高级**:GitHub 式自定义团队角色(基础角色 + 细粒度增删)、嵌套团队继承细化、审批下放。

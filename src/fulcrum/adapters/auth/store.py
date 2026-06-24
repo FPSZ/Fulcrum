@@ -296,6 +296,26 @@ class SQLiteAuthStore:
                 [(user_id, tid, role, int(lead), now) for tid, role, lead in memberships],
             )
 
+    def add_membership(
+        self, user_id: int, team_id: int, team_role: str, is_lead: bool, now: int
+    ) -> None:
+        """加入/更新单条团队成员关系(同 user+team 已存在则改其角色/负责人标志)。"""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO team_memberships"
+                "(user_id, team_id, team_role, is_lead, created_at) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(user_id, team_id) DO UPDATE SET "
+                "team_role = excluded.team_role, is_lead = excluded.is_lead",
+                (user_id, team_id, team_role, int(is_lead), now),
+            )
+
+    def remove_membership(self, user_id: int, team_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM team_memberships WHERE user_id = ? AND team_id = ?",
+                (user_id, team_id),
+            )
+
     def team_member_count(self, team_id: int) -> int:
         with self._connect() as conn:
             return int(

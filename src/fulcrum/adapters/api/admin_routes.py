@@ -24,12 +24,14 @@ from .schemas import (
     ApproveRequest,
     DepartmentDTO,
     DepartmentWrite,
+    MembershipDTO,
     PasswordReset,
     PermissionDTO,
     RoleDTO,
     RoleUpdate,
     RoleWrite,
     StatusUpdate,
+    TeamMemberWrite,
     TempPasswordResponse,
     UserCreate,
     UserDTO,
@@ -314,5 +316,44 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
     async def reject(user_id: int, _: Principal = Depends(can_approve)) -> None:
         try:
             directory.reject(user_id)
+        except (NotFound, Conflict) as exc:
+            _raise(exc)
+
+    # ── 团队成员关系(负责人管本团队;plan/13 P1b.3)──────────────────
+    @app.get("/admin/teams/{team_id}/members", response_model=list[MembershipDTO])
+    async def team_members(team_id: int, _: Principal = Depends(can_view)) -> list[MembershipDTO]:
+        return [
+            MembershipDTO(
+                user_id=m.user_id, team_id=m.team_id, team_role=m.team_role, is_lead=m.is_lead
+            )
+            for m in directory.list_team_members(team_id)
+        ]
+
+    @app.post("/admin/teams/{team_id}/members", response_model=MembershipDTO)
+    async def add_team_member(
+        team_id: int, body: TeamMemberWrite, principal: Principal = Depends(can_admin_members)
+    ) -> MembershipDTO:
+        if not principal.can_manage_team(team_id):  # 只能往自己负责的团队加人
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="只能管理你负责的团队成员"
+            )
+        try:
+            m = directory.add_team_member(team_id, body.user_id, body.team_role, body.is_lead)
+        except (NotFound, Conflict) as exc:
+            _raise(exc)
+        return MembershipDTO(
+            user_id=m.user_id, team_id=m.team_id, team_role=m.team_role, is_lead=m.is_lead
+        )
+
+    @app.delete("/admin/teams/{team_id}/members/{user_id}", status_code=204)
+    async def remove_team_member(
+        team_id: int, user_id: int, principal: Principal = Depends(can_admin_members)
+    ) -> None:
+        if not principal.can_manage_team(team_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="只能管理你负责的团队成员"
+            )
+        try:
+            directory.remove_team_member(team_id, user_id)
         except (NotFound, Conflict) as exc:
             _raise(exc)
