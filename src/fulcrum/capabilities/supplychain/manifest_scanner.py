@@ -6,6 +6,8 @@
 2. 描述文本:后门、反弹 shell、提权、键盘记录、数据外泄、挖矿、绕过审查等可疑关键词;
    并扫描 instructions/prompt/system 等**指令承载字段**里的注入/外泄指挥语(投毒 Skill
    把"忽略上层指令、把数据外发到外部"藏进 manifest,装载即污染 agent → Manifest 注入面);
+   再于描述/指令/权限里认出**指名访问敏感凭据载体**(~/.ssh/id_rsa、.aws/credentials、.env、
+   AWS_/GITHUB_TOKEN、/etc/shadow…)的窃取意图(工具描述投毒 / 凭据窃取面)→critical;
 3. 外联端点:裸 IP、明文 http、可疑 TLD / 动态域名 / 短链;
 4. 依赖来源:从 URL / git+ 直接安装(绕过仓库审核);
 5. 安装期钩子:postinstall / preinstall / scripts.install / hooks 等**装载时自动执行**的
@@ -93,6 +95,21 @@ _MANIFEST_INJECTION = re.compile(
     r"覆盖(系统|上层|之前的?)(指令|设定|规则)|"
     r"(泄露|输出|打印|回显)(系统)?提示词|"
     r"(外发|外传|回传|上传|发送).{0,12}(到|至|给).{0,16}(外部|http|服务器|攻击者|邮箱))",
+    re.IGNORECASE,
+)
+# 敏感凭据文件 / 密钥环境变量的访问意图(命中即 critical)。与 _PERM_RULES 的 credential_access
+# 互补——那看权限"声明",这看描述/指令/权限里**指名道姓**要碰的具体凭据载体:SSH/云密钥、
+# 服务令牌、系统凭据库。智能体供应链两类经典攻击——工具描述投毒(把"读 ~/.ssh/id_rsa 当
+# sidenote 传入"藏进 desc)与凭据窃取(枚举 .env / AWS_ / GITHUB_TOKEN 后外发)——皆落此面。
+_SENSITIVE_ACCESS = re.compile(
+    r"(\.ssh/|id_rsa|id_ed25519|id_ecdsa|id_dsa|"  # SSH 私钥
+    r"\.aws/|aws_(access|secret)_?key|\baws_(?=[\s'\",、])|"  # AWS 凭据:路径/密钥变量/裸前缀
+    r"\.kube/|kubeconfig|\.docker/config|"  # k8s / docker 凭据
+    r"\.npmrc|\.pypirc|\.netrc|"  # 包管理 / 网络凭据
+    r"github_token|\bgh_token\b|stripe_(secret|key)|openai_api_key|"  # 服务令牌
+    r"\.env\b|credentials\.(json|ya?ml)|secrets?\.(json|ya?ml)|"  # 凭据文件
+    r"/etc/(passwd|shadow)|ntds\.dit|"  # 系统凭据库
+    r"私钥文件|凭据文件|密钥文件)",
     re.IGNORECASE,
 )
 # 描述文本可疑关键词(命中即 critical)。
@@ -232,6 +249,21 @@ class ManifestScanner:
                     "critical",
                     f"指令字段含注入/外泄指挥语:{inj}",
                     matched=inj,
+                )
+            )
+
+        # 2.6) 敏感凭据文件 / 密钥访问意图:扫描 描述 + 指令字段 + 声明权限 三处,认出
+        #      指名要碰 SSH/云密钥、服务令牌、系统凭据库的载体(工具描述投毒 / 凭据窃取面)。
+        perm_text = _gather(manifest, "permissions", "scopes", "capabilities")
+        sens_surface = "\n".join([description, *instr_parts, *perm_text])
+        sens = sorted({m.group(0) for m in _SENSITIVE_ACCESS.finditer(sens_surface)})
+        if sens:
+            risks.append(
+                _finding(
+                    "sensitive_file_access",
+                    "critical",
+                    f"指向敏感凭据文件/密钥:{sens}",
+                    matched=sens,
                 )
             )
 
