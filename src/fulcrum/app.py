@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 def _load_builtins() -> None:
     """显式注册所有内置实现:capabilities + 内置 adapter(model/audit)。"""
     load_builtin_capabilities()
-    from .adapters.audit import memory_sink  # noqa: F401
+    from .adapters.audit import memory_sink, sqlite_sink  # noqa: F401
     from .adapters.model import fake_client, openai_client  # noqa: F401
 
 

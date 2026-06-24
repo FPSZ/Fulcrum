@@ -21,7 +21,6 @@ from ..api.overview_routes import summarize
 from ..api.policies_routes import to_policy_set
 from ..api.supply_routes import scan_directory
 from ..api.tools_routes import build_tool_calls
-from ..audit.memory_sink import InMemoryAuditSink
 from ..auth.models import ROLE_SCOPE_TEAM
 from ..auth.permissions import PERMISSIONS
 from ..console_settings import ConsoleSettings
@@ -113,8 +112,6 @@ operation_registry.register(
 )
 async def get_overview_stats(args: dict, principal: Any, services: Any) -> OperationResult:
     sink = services.pipeline.audit
-    if not isinstance(sink, InMemoryAuditSink):
-        return OperationResult(summary="总览统计当前不可用(非内存审计实现)。", data=None)
     verified = 0
     for sid in sink.session_ids():
         if await sink.verify_chain(sid):
@@ -147,8 +144,6 @@ async def get_overview_stats(args: dict, principal: Any, services: Any) -> Opera
 )
 async def list_events(args: dict, principal: Any, services: Any) -> OperationResult:
     sink = services.pipeline.audit
-    if not isinstance(sink, InMemoryAuditSink):
-        return OperationResult(summary="事件流当前不可用(非内存审计实现)。", data=[])
     limit = _int(args.get("limit"), 20, 1, 200)
     disp = args.get("disposition")
     verified_cache: dict[str, bool] = {}
@@ -183,8 +178,6 @@ async def list_events(args: dict, principal: Any, services: Any) -> OperationRes
 )
 async def list_audit_sessions(args: dict, principal: Any, services: Any) -> OperationResult:
     sink = services.pipeline.audit
-    if not isinstance(sink, InMemoryAuditSink):
-        return OperationResult(summary="审计会话列表当前不可用(非内存审计实现)。", data=[])
     data = []
     verified_n = 0
     for sid in sink.session_ids():
@@ -241,8 +234,6 @@ async def get_audit_chain(args: dict, principal: Any, services: Any) -> Operatio
 )
 async def list_tool_calls(args: dict, principal: Any, services: Any) -> OperationResult:
     sink = services.pipeline.audit
-    if not isinstance(sink, InMemoryAuditSink):
-        return OperationResult(summary="工具流水当前不可用(非内存审计实现)。", data=[])
     limit = _int(args.get("limit"), 20, 1, 200)
     rows = build_tool_calls(sink.all_events())[:limit]
     summary = f"共 {len(rows)} 条工具调用记录。"
