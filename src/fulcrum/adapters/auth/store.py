@@ -124,8 +124,26 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_users_dept ON users(department_id)")
 
 
+def _migrate_v2(conn: sqlite3.Connection) -> None:
+    """v2:既有库补齐默认 AI 助手使用权。
+
+    只对内置角色做一次性补齐:除 viewer 外默认可使用 AI 操作助手。后续管理员若手动移除
+    该权限,启动种子不会再次覆盖。
+    """
+    role_ids = [
+        int(r["id"])
+        for r in conn.execute(
+            "SELECT id FROM roles WHERE is_system = 1 AND key <> 'viewer'"
+        ).fetchall()
+    ]
+    conn.executemany(
+        "INSERT OR IGNORE INTO role_permissions(role_id, permission) VALUES(?,?)",
+        [(rid, "ai.operate") for rid in role_ids],
+    )
+
+
 # 有序迁移清单(只进不退;加 schema 变更 = 追加更高 version,绝不改历史迁移)。见 sqlite_support。
-_MIGRATIONS = (Migration(1, _migrate_v1),)
+_MIGRATIONS = (Migration(1, _migrate_v1), Migration(2, _migrate_v2))
 
 
 class SQLiteAuthStore:

@@ -103,24 +103,18 @@ class AuthService:
         return self._bootstrap_admin(admin_username, admin_password)
 
     def _seed_roles(self) -> None:
+        if self._store.list_roles() or self._store.count_users() > 0:
+            return
         now = self._now()
         for seed in BUILTIN_ROLES:
-            existing = self._store.get_role_by_key(seed.key)
-            if existing is None:
-                self._store.create_role(
-                    seed.key,
-                    seed.name,
-                    seed.description,
-                    True,
-                    list(seed.permissions),
-                    now,
-                )
-            else:
-                # 内置角色用户不可编辑 → 始终对齐代码种子:
-                # 随版本自动补齐新权限点、纠正历史种子的偏差。
-                self._store.update_role(
-                    existing.id, seed.name, seed.description, sorted(seed.permissions)
-                )
+            self._store.create_role(
+                seed.key,
+                seed.name,
+                seed.description,
+                True,
+                list(seed.permissions),
+                now,
+            )
 
     def _seed_departments(self) -> None:
         if self._store.list_departments():

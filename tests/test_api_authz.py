@@ -89,6 +89,39 @@ def test_super_admin_passes_all_guards(tmp_path: Path) -> None:
         assert client.get(path).status_code not in (401, 403), f"{path} 不应被超管鉴权挡下"
 
 
+def test_patch_role_accepts_permissions_only(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    _login(client, "admin", _ADMIN_PW)
+    role = next(r for r in client.get("/admin/roles").json() if r["key"] == "sec_operator")
+
+    resp = client.patch(
+        f"/admin/roles/{role['id']}",
+        json={"permissions": ["overview.view", "ai.operate"]},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == role["name"]
+    assert body["permissions"] == ["ai.operate", "overview.view"]
+
+
+def test_patch_role_accepts_metadata_only(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    _login(client, "admin", _ADMIN_PW)
+    role = next(r for r in client.get("/admin/roles").json() if r["key"] == "sec_operator")
+
+    resp = client.patch(
+        f"/admin/roles/{role['id']}",
+        json={"name": "Operator Patched", "description": "patched"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "Operator Patched"
+    assert body["description"] == "patched"
+    assert body["permissions"] == role["permissions"]
+
+
 def test_approval_request_then_resolve_lifecycle(tmp_path: Path) -> None:
     """发起审批申请 → 进待审批 → 管理员批准放行 → 原工单隐去、代以放行结果行(端到端)。"""
     client = _client(tmp_path)

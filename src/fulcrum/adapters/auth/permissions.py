@@ -83,7 +83,7 @@ def valid_permissions(keys: object) -> list[str]:
     return out
 
 
-# ── 内置角色种子(is_system=True:不可删除;super_admin 不可改)──────
+# ── 内置角色种子(is_system=True:系统预置标识;管理员仍可改权限/删除未使用角色)──────
 @dataclass(frozen=True, slots=True)
 class RoleSeed:
     key: str
@@ -105,6 +105,7 @@ _BOARD_VIEW = frozenset(
         "eval.view",
     }
 )
+_AI_OPERATOR = frozenset({"ai.operate"})
 
 BUILTIN_ROLES: tuple[RoleSeed, ...] = (
     RoleSeed(
@@ -138,7 +139,8 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
                 "users.view",
                 "account.approve",
             }
-        ),
+        )
+        | _AI_OPERATOR,
     ),
     RoleSeed(
         "sec_operator",
@@ -154,13 +156,14 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
                 "audit.view",
                 "eval.view",
             }
-        ),
+        )
+        | _AI_OPERATOR,
     ),
     RoleSeed(
         "auditor",
         "审计员",
         "只读取证:审计溯源与评测结果,不可改配置",
-        frozenset({"overview.view", "events.view", "audit.view", "eval.view"}),
+        frozenset({"overview.view", "events.view", "audit.view", "eval.view"}) | _AI_OPERATOR,
     ),
     RoleSeed(
         "viewer",

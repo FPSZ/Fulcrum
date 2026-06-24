@@ -1040,7 +1040,7 @@ async def _update_role(args: dict, principal: Any, services: Any) -> OperationRe
             description=args.get("description"),
             permissions=[str(p) for p in perms] if isinstance(perms, list) else None,
         )
-    except Exception as exc:  # noqa: BLE001 —— 内置角色不可改等护栏
+    except Exception as exc:  # noqa: BLE001 —— 角色不存在/参数冲突等护栏
         return OperationResult(summary=f"改角色失败:{exc}", ok=False, error="conflict")
     return OperationResult(
         summary=f"角色「{updated.name}」已更新,现含 {len(updated.permissions)} 个权限。",
@@ -1082,8 +1082,8 @@ operation_registry.register(
         kind="write",
         label="改角色权限",
         description=(
-            "按字段改自定义角色的名称/描述/权限点;**只把要改的字段放进参数**(传 permissions "
-            "则整体替换)。内置角色不可改。"
+            "按字段改角色的名称/描述/权限点;**只把要改的字段放进参数**(传 permissions "
+            "则整体替换)。内置角色也可改。"
         ),
         parameters={
             "type": "object",
@@ -1120,7 +1120,7 @@ async def _delete_role(args: dict, principal: Any, services: Any) -> OperationRe
     name = role.name
     try:
         d.delete_role(rid)
-    except Exception as exc:  # noqa: BLE001 —— 内置/仍有成员使用 → 拒
+    except Exception as exc:  # noqa: BLE001 —— 仍有成员使用等一致性护栏 → 拒
         return OperationResult(summary=f"删角色失败:{exc}", ok=False, error="conflict")
     return OperationResult(summary=f"已删除角色「{name}」。", data={"role_id": rid})
 
@@ -1130,7 +1130,7 @@ operation_registry.register(
         name="delete_role",
         kind="write",
         label="删除角色",
-        description="删除一个自定义角色(仍有成员使用或内置角色会被拒)。不可撤销。",
+        description="删除一个角色(仍有成员使用会被拒)。内置角色也可删;不可撤销。",
         parameters={
             "type": "object",
             "properties": {"role_id": {"type": "integer"}},

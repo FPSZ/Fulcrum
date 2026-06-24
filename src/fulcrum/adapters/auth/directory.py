@@ -171,8 +171,6 @@ class DirectoryService:
         role = self._store.get_role(role_id)
         if role is None:
             raise NotFound("角色不存在")
-        if role.is_system:
-            raise Conflict("内置角色不可修改,如需调整请新建自定义角色")
         self._store.update_role(
             role_id,
             name.strip() if name else None,
@@ -187,8 +185,6 @@ class DirectoryService:
         role = self._store.get_role(role_id)
         if role is None:
             raise NotFound("角色不存在")
-        if role.is_system:
-            raise Conflict("内置角色不可删除")
         if self._store.role_member_count(role_id) > 0:
             raise Conflict("仍有成员使用该角色,请先改派后再删除")
         self._store.delete_role(role_id)

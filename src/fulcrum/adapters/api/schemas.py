@@ -398,6 +398,12 @@ class RoleWrite(BaseModel):
     permissions: list[str] = Field(default_factory=list)
 
 
+class RoleUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    description: str | None = None
+    permissions: list[str] | None = None
+
+
 class UserDTO(BaseModel):
     """成员详情(管理后台用)。绝不含口令哈希。"""
 

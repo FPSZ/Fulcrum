@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Eye, Lock, Pencil, Plus, Save, Shield, Trash2, Users } from 'lucide-react'
+import { Check, Eye, Pencil, Plus, Save, Shield, Trash2, Users } from 'lucide-react'
 import {
   Avatar,
   Button,
@@ -212,7 +212,11 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
                     >
                       {r.name}
                     </span>
-                    {r.is_system && <Lock className="h-3 w-3 shrink-0 text-ink-mute" />}
+                    {r.is_system && (
+                      <span className="shrink-0 rounded-full bg-subtle px-1.5 py-0.5 text-[11px] font-medium text-ink-mute">
+                        内置
+                      </span>
+                    )}
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[12px] text-ink-mute">
                     <span>{r.permissions.length} 权限</span>
@@ -224,7 +228,7 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
             )
           })}
           {roles.length === 0 && (
-            <EmptyState icon={Shield} title="暂无角色" hint="新建一个自定义角色。" />
+            <EmptyState icon={Shield} title="暂无角色" hint="新建或恢复一个角色。" />
           )}
         </div>
       </aside>
@@ -337,7 +341,7 @@ function RolePermissions({
 
   // 看成员 → 只读展示其角色权限;看角色本身且有权限 → 可编辑
   const viewingMember = member !== null
-  const editable = canManage && !role.is_system && !viewingMember
+  const editable = canManage && !viewingMember
   const dirty = editable && !sameSet(draft, role.permissions)
   const granted = viewingMember ? new Set(role.permissions) : draft
 
@@ -372,7 +376,7 @@ function RolePermissions({
             保存
           </Button>
         )}
-        {!viewingMember && canManage && !role.is_system && (
+        {!viewingMember && canManage && (
           <div className={cn('flex items-center gap-1', !dirty && 'ml-auto')}>
             <IconButton label="编辑信息" onClick={onEditMeta}>
               <Pencil className="h-[15px] w-[15px]" />
@@ -386,17 +390,15 @@ function RolePermissions({
 
       {editable ? (
         <p className="border-b border-line bg-subtle px-4 py-2 text-[12.5px] text-ink-mute">
-          点击循环切换:<span className="text-ink-3">无</span> →{' '}
+          点击切换:<span className="text-ink-3">无</span> →{' '}
           <span className="font-medium text-accent-ink">只读</span> →{' '}
-          <span className="font-medium text-accent-ink">读写</span>。「成员与权限 / 系统配置」涉隐私与全体,请谨慎授权。
+          <span className="font-medium text-accent-ink">读写</span>
         </p>
       ) : (
         <p className="border-b border-line bg-subtle px-4 py-2 text-[12.5px] text-ink-mute">
           {viewingMember
-            ? `继承自角色「${role.name}」,共 ${granted.size} 项;如需调整请修改角色或为该成员改派角色。`
-            : role.is_system
-              ? '内置角色权限不可修改。'
-              : '无管理权限,仅可查看。'}
+            ? `继承自角色「${role.name}」`
+            : '无管理权限,仅可查看。'}
         </p>
       )}
 
