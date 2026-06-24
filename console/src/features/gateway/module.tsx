@@ -1,6 +1,6 @@
 import { ShieldCheck } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
-import { GatewayPage } from './gateway-page'
+import { lazy } from 'react'
 
 export const gatewayModule = defineFeature({
   id: 'gateway',
@@ -10,7 +10,7 @@ export const gatewayModule = defineFeature({
   order: 15, // 紧随安全总览,作为「看网关如何防护」的入口
   requires: 'events.view',
   dev: true, // 开发/演示/联调用;真·政企管理员日常用不到,默认隐藏
-  component: GatewayPage,
+  component: lazy(() => import('./gateway-page').then((m) => ({ default: m.GatewayPage }))),
   actions: [
     {
       id: 'nav.gateway',

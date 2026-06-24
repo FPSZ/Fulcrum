@@ -1,6 +1,6 @@
 import { Scale } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
-import { PoliciesPage } from './policies-page'
+import { lazy } from 'react'
 
 export const policiesModule = defineFeature({
   id: 'policies',
@@ -9,7 +9,7 @@ export const policiesModule = defineFeature({
   group: '管控',
   order: 30,
   requires: 'policies.view',
-  component: PoliciesPage,
+  component: lazy(() => import('./policies-page').then((m) => ({ default: m.PoliciesPage }))),
   actions: [
     {
       id: 'nav.policies',
