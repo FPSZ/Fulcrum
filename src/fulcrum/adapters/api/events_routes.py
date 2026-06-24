@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 
 from ...core.domain import AuditEvent, AuditEventType, Disposition
-from ..audit.memory_sink import InMemoryAuditSink
 from ..auth import Principal
 from .deps import AuthDeps
 from .schemas import EventResolveRequest, EventResolveResponse, SecurityEventDTO
@@ -153,11 +152,7 @@ def register_events_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthD
         limit: int = Query(default=200, ge=1, le=1000),
         principal: Principal = Depends(can_view),
     ) -> list[SecurityEventDTO]:
-        sink = pipeline.audit
-        # 跨会话聚合是内存实现的具体能力(端口只暴露 per-session 读);非内存实现暂返回空,
-        # 待 SQLite 落库时以一条带 created_at 排序的查询提供等价能力。
-        if not isinstance(sink, InMemoryAuditSink):
-            return []
+        sink = pipeline.audit  # 跨会话聚合走端口方法(内存遍历 / SQLite 按 created_at 查询)
         # 已被处置的待审工单(存在一条 evidence.resolves=该 id 的处置事件)→ 不再挂在待审批,
         # 由处置结果(放行/阻断)那一行取而代之。append-only:原工单仍留在审计链中可溯源。
         resolved: set[str] = {
@@ -193,11 +188,7 @@ def register_events_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthD
         处置后原待审工单从墙上隐去,代之以放行/阻断结果行;原工单与本处置都留在审计链可溯源,
         处置人(actor)、决定与理由一并入证据。
         """
-        sink = pipeline.audit
-        if not isinstance(sink, InMemoryAuditSink):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="当前审计存储不支持事件处置"
-            )
+        sink = pipeline.audit  # all_events()/append() 经端口暴露,任意 sink(内存/SQLite)同口径
         original = next((e for e in sink.all_events() if e.event_id == event_id), None)
         if original is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="事件不存在")
