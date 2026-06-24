@@ -37,6 +37,6 @@ python -m fulcrum.eval --dataset samples/eval/corpus --policy data/policies/defa
 - **订阅交付**:季度增量(新手法 + 新 CVE/技术映射)+ 每次增量的"检出 delta"。
 - **外部情报源**:`../upstream/feeds.yml` 登记维护中的开源攻击语料(garak/PayloadsAllTheThings/LOLBAS/HarmBench/agentdojo 等),引用不内置(license 干净)。
 
-## 当前基线(v1.0.0)
-200 条 · default 策略:召回 50.6% · FPR 6.7% · Utility 93.3% · 审计 100%。
-工具层强(93%)、输入层弱(~21%)= 加固路线图,详见 [`docs/eval/corpus-gap-report.md`](../../../docs/eval/corpus-gap-report.md)。
+## 当前基线(v1.0.0,评测装配对齐生产)
+200 条 · default 策略:召回 75.3% · FPR 0.0% · Utility 100% · 审计 100%(gov_demo 策略召回 78.8%)。
+按闸门分域:工具层 90%(gov_demo 100%)、出口层 90% 已强,输入层 62% 为短板(语义攻击撞规则天花板,待 `llm_judge` 默认启用)= 加固路线图,详见 [`docs/eval/corpus-gap-report.md`](../../../docs/eval/corpus-gap-report.md)。
