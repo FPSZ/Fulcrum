@@ -485,7 +485,8 @@ function CapCell({
 }) {
   const on = level > 0
   const isAction = !!cap.actionKey
-  const badge = isAction ? '已授权' : level === 2 ? '读写' : level === 1 ? '只读' : ''
+  // 未授权一律不显示徽标(单点能力此前漏判 on,未勾也显示「已授权」)。
+  const badge = !on ? '' : isAction ? '已授权' : level === 2 ? '读写' : '只读'
   // 极简三态指示器:无=空框;只读=描边 + 居中圆点;读写/已授权=实心 + 对勾。
   return (
     <button
@@ -503,15 +504,11 @@ function CapCell({
       <span
         className={cn(
           'grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[5px] border transition-colors',
-          level === 2
-            ? 'border-accent bg-accent text-white'
-            : level === 1
-              ? 'border-accent/55 bg-accent/10'
-              : 'border-line-3 bg-surface',
+          level >= 1 ? 'border-accent bg-accent text-white' : 'border-line-3 bg-surface',
         )}
       >
         {level === 2 && <Check className="h-3 w-3" strokeWidth={3} />}
-        {level === 1 && <span className="h-[5px] w-[5px] rounded-full bg-accent" />}
+        {level === 1 && <span className="h-[2px] w-2.5 rounded-full bg-white" />}
       </span>
       <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink-2">{cap.cap_label}</span>
       {badge && (
