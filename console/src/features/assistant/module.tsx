@@ -1,6 +1,6 @@
 import { Bot } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
-import { AssistantPage } from './assistant-page'
+import { lazy } from 'react'
 
 export const assistantModule = defineFeature({
   id: 'assistant',
@@ -9,5 +9,5 @@ export const assistantModule = defineFeature({
   group: '管控',
   order: 60,
   requires: 'ai.operate',
-  component: AssistantPage,
+  component: lazy(() => import('./assistant-page').then((m) => ({ default: m.AssistantPage }))),
 })
