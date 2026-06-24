@@ -183,7 +183,9 @@ class SecurityPipeline:
         return result
 
     # ---- 流程 1b:前置输入闸门(/gateway/chat 用)----
-    async def screen_input(self, session_id: str, message: str) -> GateVerdict:
+    async def screen_input(
+        self, session_id: str, message: str, *, team_id: int | None = None
+    ) -> GateVerdict:
         """对一条用户输入做"标注 → 检测 → 闸门",产出拦截/审核/放行结论并落审计。
 
         只用检测器既有结论(judgment 不变),闸门映射见 core.gateway.screen。
@@ -229,6 +231,7 @@ class SecurityPipeline:
                 "source_type": SourceType.USER.value,
                 "trust_level": TrustLevel.UNTRUSTED.value,
                 "stage": "input_gateway",
+                "team_id": team_id,  # 团队级数据隔离(P2);None=无归属,对所有 events.view 可见
             },
         )
         if verdict.decision == Disposition.BLOCK:
@@ -240,7 +243,9 @@ class SecurityPipeline:
         return verdict
 
     # ---- 流程 1c:出口闸门(/gateway/chat 收到企业智能体回复后)----
-    async def screen_output(self, session_id: str, text: str) -> GateVerdict:
+    async def screen_output(
+        self, session_id: str, text: str, *, team_id: int | None = None
+    ) -> GateVerdict:
         """对**企业智能体的回复**做"检测 → 出口闸门",判敏感/危险内容并落审计。
 
         对应安全问题路径「响应后检查模型输出」(01 §4.2):入口拦恶意输入,出口拦回复里的
@@ -274,12 +279,15 @@ class SecurityPipeline:
                 "source_type": SourceType.ASSISTANT.value,
                 "trust_level": TrustLevel.UNTRUSTED.value,
                 "stage": "output_gateway",
+                "team_id": team_id,  # 团队级数据隔离(P2)
             },
         )
         return verdict
 
     # ---- 流程 1d:工具返回闸门(AI 操作助手吃狗粮:把工具结果回填模型之前先检测)----
-    async def screen_tool_return(self, session_id: str, text: str) -> GateVerdict:
+    async def screen_tool_return(
+        self, session_id: str, text: str, *, team_id: int | None = None
+    ) -> GateVerdict:
         """对**助手工具读到的数据**做"检测 → 输入闸门",防间接提示注入劫持助手(plan/11 §5.2)。
 
         助手是个能调工具的 Agent;它读到的事件摘要、审计记录、成员备注、企业回复等都是
@@ -315,6 +323,7 @@ class SecurityPipeline:
                 "source_type": SourceType.TOOL_RETURN.value,
                 "trust_level": TrustLevel.UNTRUSTED.value,
                 "stage": "tool_return_gateway",
+                "team_id": team_id,  # 团队级数据隔离(P2)
             },
         )
         return verdict

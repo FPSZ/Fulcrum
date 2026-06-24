@@ -48,6 +48,7 @@ def register_gateway_routes(
             verify_tls=body.verify_tls,
             rest_message_field=body.rest_message_field,
             rest_response_path=body.rest_response_path,
+            team_id=body.team_id,
         )
         return GatewayConfigPublic.of(store.save(cfg))
 
