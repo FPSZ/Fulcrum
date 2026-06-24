@@ -90,6 +90,7 @@ class RoleSeed:
     name: str
     description: str
     permissions: frozenset[str]
+    scope: str = "org"  # org=组织级(全局) | team=团队级(团队内模板),见 models.ROLE_SCOPE_*
 
 
 # 业务看板的只读视图(不含 settings.view / users.view 等"系统管理"面 ——
@@ -113,12 +114,14 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
         "超级管理员",
         "系统拥有者:全部权限,可管理成员、组织与角色",
         ALL_PERMISSION_KEYS,
+        scope="org",
     ),
     RoleSeed(
         "sys_admin",
         "系统管理员",
         "日常管理:成员/组织/设置/管控,审批账号(不含重定义角色)",
         ALL_PERMISSION_KEYS - {"roles.manage"},
+        scope="org",
     ),
     RoleSeed(
         "sec_manager",
@@ -140,6 +143,7 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
             }
         )
         | _AI_OPERATOR,
+        scope="team",
     ),
     RoleSeed(
         "sec_operator",
@@ -157,18 +161,21 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
             }
         )
         | _AI_OPERATOR,
+        scope="team",
     ),
     RoleSeed(
         "auditor",
         "审计员",
         "只读取证:审计溯源与评测结果,不可改配置",
         frozenset({"overview.view", "events.view", "audit.view", "eval.view"}) | _AI_OPERATOR,
+        scope="team",
     ),
     RoleSeed(
         "viewer",
         "只读访客",
         "只读:仅查看各业务看板,不可操作、不可见系统管理",
         _BOARD_VIEW,
+        scope="team",
     ),
 )
 

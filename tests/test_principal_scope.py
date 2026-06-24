@@ -55,6 +55,17 @@ def test_plain_member_manages_nothing(tmp_path: Path) -> None:
     assert not p.can_manage_team(soc.id)  # 只是成员,非负责人
 
 
+def test_builtin_role_scopes(tmp_path: Path) -> None:
+    """内置角色按 plan/13 §4 分组:平台管理员=组织级,值班/审计/访客=团队级模板。"""
+    svc, store = _svc(tmp_path)
+    svc.seed("admin", "seed-admin-pw-123")
+    scopes = {r.key: r.scope for r in store.list_roles()}
+    assert scopes["super_admin"] == "org" and scopes["sys_admin"] == "org"
+    assert scopes["sec_manager"] == "team"
+    assert scopes["sec_operator"] == "team"
+    assert scopes["auditor"] == "team" and scopes["viewer"] == "team"
+
+
 def test_org_admin_manages_all_teams(tmp_path: Path) -> None:
     svc, store = _svc(tmp_path)
     soc = store.create_department("SOC", None, 10, 1000)

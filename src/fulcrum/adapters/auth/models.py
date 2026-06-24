@@ -35,6 +35,12 @@ class Membership:
     is_lead: bool = False
 
 
+# 角色范围(plan/13 §4):组织级角色全局生效(平台管理员);团队级角色是团队内模板。
+ROLE_SCOPE_ORG = "org"
+ROLE_SCOPE_TEAM = "team"
+VALID_ROLE_SCOPES = frozenset({ROLE_SCOPE_ORG, ROLE_SCOPE_TEAM})
+
+
 @dataclass(frozen=True, slots=True)
 class Role:
     id: int
@@ -43,6 +49,7 @@ class Role:
     description: str
     is_system: bool
     permissions: frozenset[str] = field(default_factory=frozenset)
+    scope: str = ROLE_SCOPE_ORG  # org=组织级(全局) | team=团队级(团队内模板)
 
 
 @dataclass(frozen=True, slots=True)

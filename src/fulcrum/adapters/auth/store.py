@@ -174,10 +174,22 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
 
 
 # 有序迁移清单(只进不退;加 schema 变更 = 追加更高 version,绝不改历史迁移)。见 sqlite_support。
+def _migrate_v4(conn: sqlite3.Connection) -> None:
+    """roles 增 scope 列(org|team;plan/13 §4)。既有库默认 org,内置团队级角色归一为 team。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(roles)")}
+    if "scope" not in cols:
+        conn.execute("ALTER TABLE roles ADD COLUMN scope TEXT NOT NULL DEFAULT 'org'")
+    conn.execute(
+        "UPDATE roles SET scope = 'team' "
+        "WHERE key IN ('sec_manager', 'sec_operator', 'auditor', 'viewer')"
+    )
+
+
 _MIGRATIONS = (
     Migration(1, _migrate_v1),
     Migration(2, _migrate_v2),
     Migration(3, _migrate_v3),
+    Migration(4, _migrate_v4),
 )
 
 
@@ -343,7 +355,7 @@ class SQLiteAuthStore:
     def list_roles(self) -> list[Role]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT id, key, name, description, is_system FROM roles ORDER BY id"
+                "SELECT id, key, name, description, is_system, scope FROM roles ORDER BY id"
             ).fetchall()
             return [
                 Role(
@@ -353,6 +365,7 @@ class SQLiteAuthStore:
                     r["description"],
                     bool(r["is_system"]),
                     self._role_perms(conn, r["id"]),
+                    scope=r["scope"],
                 )
                 for r in rows
             ]
@@ -360,7 +373,7 @@ class SQLiteAuthStore:
     def get_role(self, role_id: int) -> Role | None:
         with self._connect() as conn:
             r = conn.execute(
-                "SELECT id, key, name, description, is_system FROM roles WHERE id = ?",
+                "SELECT id, key, name, description, is_system, scope FROM roles WHERE id = ?",
                 (role_id,),
             ).fetchone()
             if r is None:
@@ -372,6 +385,7 @@ class SQLiteAuthStore:
                 r["description"],
                 bool(r["is_system"]),
                 self._role_perms(conn, r["id"]),
+                scope=r["scope"],
             )
 
     def get_role_by_key(self, key: str) -> Role | None:
@@ -387,19 +401,20 @@ class SQLiteAuthStore:
         is_system: bool,
         permissions: list[str],
         now: int,
+        scope: str = "org",
     ) -> Role:
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT INTO roles(key, name, description, is_system, created_at) "
-                "VALUES(?,?,?,?,?)",
-                (key, name, description, int(is_system), now),
+                "INSERT INTO roles(key, name, description, is_system, scope, created_at) "
+                "VALUES(?,?,?,?,?,?)",
+                (key, name, description, int(is_system), scope, now),
             )
             rid = int(cur.lastrowid or 0)
             conn.executemany(
                 "INSERT OR IGNORE INTO role_permissions(role_id, permission) VALUES(?,?)",
                 [(rid, p) for p in permissions],
             )
-        return Role(rid, key, name, description, is_system, frozenset(permissions))
+        return Role(rid, key, name, description, is_system, frozenset(permissions), scope=scope)
 
     def update_role(
         self,

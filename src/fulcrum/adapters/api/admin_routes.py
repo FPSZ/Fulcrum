@@ -58,6 +58,7 @@ def _role_dto(r: Role, member_count: int) -> RoleDTO:
         is_system=r.is_system,
         permissions=sorted(r.permissions),
         member_count=member_count,
+        scope=r.scope,
     )
 
 
@@ -190,7 +191,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
     @app.post("/admin/roles", response_model=RoleDTO, status_code=201)
     async def create_role(body: RoleWrite, _: Principal = Depends(can_manage_roles)) -> RoleDTO:
         try:
-            r = directory.create_role(body.name, body.description, body.permissions)
+            r = directory.create_role(body.name, body.description, body.permissions, body.scope)
         except (NotFound, Conflict) as exc:
             _raise(exc)
         return _role_dto(r, 0)

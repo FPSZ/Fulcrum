@@ -114,6 +114,7 @@ class AuthService:
                 True,
                 list(seed.permissions),
                 now,
+                scope=seed.scope,
             )
 
     def _seed_departments(self) -> None:
