@@ -278,6 +278,7 @@ class PolicyRuleDTO(BaseModel):
     decision: str
     risk_level: str = ""
     reason: str = ""
+    enabled: bool = True  # 控制台可临时停用单条规则(停用即 decide 跳过,留痕可恢复)
 
 
 class PolicySetDTO(BaseModel):
@@ -287,6 +288,29 @@ class PolicySetDTO(BaseModel):
     workspace: str = ""
     allow_domains: list[str] = Field(default_factory=list)
     rules: list[PolicyRuleDTO] = Field(default_factory=list)
+
+
+# ---- PUT /policies(控制台编辑策略:安全可控的子集,不开放裸 when 谓词编辑)----
+class PolicyRulePatch(BaseModel):
+    """逐规则的可编辑字段。`when` 谓词不在此(按 id 回原文档保留),只调启停/处置/理由。"""
+
+    id: str
+    enabled: bool = True
+    decision: str
+    reason: str = ""
+
+
+class PolicySetWrite(BaseModel):
+    """控制台提交的策略编辑:顶层默认/工作区/白名单 + 规则补丁列表(按 id 合并回当前文档)。
+
+    规则列表即"编辑后期望保留的规则、且按此顺序";current 文档里不在列表中的规则视为删除。
+    新增带 `when` 谓词的规则不走本通道(MVP 不开放裸谓词编辑,避免误配削弱防护)。
+    """
+
+    default: str = "allow"
+    workspace: str = ""
+    allow_domains: list[str] = Field(default_factory=list)
+    rules: list[PolicyRulePatch] = Field(default_factory=list)
 
 
 # ---- /supply/scans(供应链:组件 manifest 静态扫描评级,只读)----

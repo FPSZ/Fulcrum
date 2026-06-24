@@ -91,26 +91,63 @@ class YamlPolicyEngine:
         if not path.exists():
             raise ConfigError(f"策略文件不存在:{path}")
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        YamlPolicyEngine._validate(data)
+        return data
+
+    @staticmethod
+    def _validate(data: dict[str, Any]) -> None:
+        """加载期/热替换期 fail-closed 校验:任何非法都报错而非静默放过。
+
+        除条件键白名单与信任级字面量(`_load` 旧逻辑),并校验处置/默认/风险等级取值合法——
+        否则非法 `decision` 会拖到 `decide()` 运行时才 `Disposition(...)` 抛错(那时已绕过编辑校验)。
+        """
+        valid_disp = {d.value for d in Disposition}
+        valid_level = {lvl.value for lvl in RiskLevel}
+        default = data.get("default", "allow")
+        if default not in valid_disp:
+            raise ConfigError(f"默认处置非法:{default!r}(可选:{sorted(valid_disp)})")
         for rule in data.get("rules", []):
+            rid = rule.get("id")
             when = rule.get("when", {})
             unknown = set(when) - _PREDICATES
             if unknown:
-                raise ConfigError(f"策略规则 {rule.get('id')!r} 含未知条件:{sorted(unknown)}")
+                raise ConfigError(f"策略规则 {rid!r} 含未知条件:{sorted(unknown)}")
             for key in _TRUST_PREDICATES & set(when):
                 if when[key] not in _TRUST_RANK_BY_VALUE:
                     raise ConfigError(
-                        f"策略规则 {rule.get('id')!r} 的 {key} 含未知信任级:{when[key]!r}"
+                        f"策略规则 {rid!r} 的 {key} 含未知信任级:{when[key]!r}"
                         f"(可选:{sorted(_TRUST_RANK_BY_VALUE)})"
                     )
-        return data
+            if rule.get("decision") not in valid_disp:
+                raise ConfigError(
+                    f"策略规则 {rid!r} 的处置非法:{rule.get('decision')!r}"
+                    f"(可选:{sorted(valid_disp)})"
+                )
+            if "risk_level" in rule and rule["risk_level"] not in valid_level:
+                raise ConfigError(
+                    f"策略规则 {rid!r} 的风险等级非法:{rule['risk_level']!r}"
+                    f"(可选:{sorted(valid_level)})"
+                )
 
     def policy_document(self) -> dict[str, Any]:
         """当前装配的策略文档(深拷贝,只读展示用 —— 调用方改不动内部状态)。"""
         return copy.deepcopy(self._policy)
 
+    def replace_document(self, doc: dict[str, Any]) -> None:
+        """热替换当前策略文档:校验通过即生效(`decide()` 后续调用读新文档),非法则原样不动并抛错。
+
+        控制台编辑策略(`PUT /policies`)的落点。校验先行 → 任何非法字段都不会替换掉正在生效的
+        策略(fail-closed,避免"保存了一份坏策略导致全放行")。经 `getattr` 鸭子类型调用,不破
+        adapters↛capabilities 边界(与 `policy_document` 同)。
+        """
+        self._validate(doc)
+        self._policy = copy.deepcopy(doc)
+
     async def decide(self, intent: ToolIntent, ctx: Context) -> PolicyDecision:
         facts = self._facts(intent, ctx)
         for rule in self._policy.get("rules", []):
+            if rule.get("enabled") is False:  # 控制台临时停用的规则:跳过(不删,留痕可一键恢复)
+                continue
             if self._matches(rule.get("when", {}), facts):
                 level = (
                     RiskLevel(rule["risk_level"]) if "risk_level" in rule else facts["risk_level"]

@@ -110,7 +110,19 @@ def build_api(
         register_events_routes(app, pipeline, deps)
         register_audit_routes(app, pipeline, deps)
         register_eval_routes(app, settings.eval_report_path, deps)
-        register_policies_routes(app, pipeline, deps)
+        # 策略中心:可读可编辑。启动期若存在控制台改后的覆盖文档(data/runtime/policy.yml),
+        # 经鸭子类型热应用到引擎(重启后沿用编辑);非法/损坏覆盖被引擎校验拒绝则保种子(fail-closed)。
+        from ..policy_store import PolicyDocStore
+
+        policy_store = PolicyDocStore(settings.policy_override_path)
+        _override = policy_store.load()
+        _apply_override = getattr(pipeline.policy, "replace_document", None)
+        if _override is not None and callable(_apply_override):
+            try:
+                _apply_override(_override)
+            except FulcrumError:  # 覆盖文档非法(手改坏/旧 schema)→ 忽略,保种子默认策略
+                pass
+        register_policies_routes(app, pipeline, policy_store, deps)
         register_supply_routes(app, scanner, settings.supply_manifest_dir, deps)
         register_tools_routes(app, pipeline, deps)
         # 控制台实例元信息:落盘持久化,设置页可读写。

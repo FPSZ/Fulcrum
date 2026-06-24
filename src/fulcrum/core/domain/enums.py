@@ -56,3 +56,4 @@ class AuditEventType(StrEnum):
     ASSISTANT_CHAT = "assistant_chat"  # AI 操作助手(真 Agent):一次会话(意图/入口判定/产出)
     ASSISTANT_ACTED = "assistant_acted"  # 助手写提案被确认执行(tool/参数摘要/结果/undo 句柄)
     ASSISTANT_UNDONE = "assistant_undone"  # 已执行写操作被一键撤销(tool/回滚前后)
+    POLICY_UPDATED = "policy_updated"  # 安全策略在控制台被编辑(谁/改了什么/新版本号)

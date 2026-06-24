@@ -11,6 +11,8 @@ export interface PolicyRule {
   decision: Disposition
   risk_level: RiskLevel
   reason: string
+  /** 控制台可临时停用单条规则(停用即 decide 跳过,留痕可恢复) */
+  enabled: boolean
 }
 
 export interface PolicySet {
@@ -20,4 +22,12 @@ export interface PolicySet {
   workspace: string
   allow_domains: string[]
   rules: PolicyRule[]
+}
+
+/** PUT /policies 提交体:顶层默认/工作区/白名单 + 规则补丁(按 id 合回后端文档,不含 when 谓词) */
+export interface PolicySetWrite {
+  default: Disposition
+  workspace: string
+  allow_domains: string[]
+  rules: { id: string; enabled: boolean; decision: Disposition; reason: string }[]
 }

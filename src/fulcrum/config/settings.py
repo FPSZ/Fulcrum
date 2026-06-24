@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     conversation_dir: str = "data/runtime/conversations"
     # 操作助手模型接入配置落盘路径(JSON;协议/端点/密钥/模型名);设置页可改、热加载。
     assistant_model_config_path: str = "data/runtime/model.json"
+    # 控制台编辑后的安全策略覆盖文档落盘路径(YAML);存在即覆盖种子 default.yml,挂卷即持久化。
+    policy_override_path: str = "data/runtime/policy.yml"
 
     # 装配清单路径(None 用包内默认 fulcrum.yml)
     capability_config: str | None = None
