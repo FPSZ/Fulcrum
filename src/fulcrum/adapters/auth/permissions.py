@@ -42,15 +42,15 @@ PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("events.handle", "处置会话事件", "监测", "events", "会话事件", "write"),
     # 管控
     PermissionDef("policies.view", "查看策略", "管控", "policies", "策略中心", "read"),
+    # 注:policies.manage 目前仅 gate 旧规划器(/assistant/plan)的高危示例动作 policy.disable
+    # ——尚无真正改策略的写端点(策略仍走 data/policies/*.yml 文件)。真策略管理端点落地(P3)
+    # 或旧规划器退役前,本点暂留以支撑"高危需二次确认 / 越权即拒"的安全回归。见 plan/13 §4。
     PermissionDef("policies.manage", "编辑策略", "管控", "policies", "策略中心", "write"),
     PermissionDef("tools.view", "查看工具网关", "管控", "tools", "工具网关", "read"),
-    PermissionDef("tools.manage", "管控工具", "管控", "tools", "工具网关", "write"),
     PermissionDef("supply.view", "查看供应链", "管控", "supply", "供应链", "read"),
-    PermissionDef("supply.manage", "处置供应链风险", "管控", "supply", "供应链", "write"),
     # 取证
     PermissionDef("audit.view", "审计溯源", "取证", "audit", "审计溯源", "read"),
     PermissionDef("eval.view", "查看评测", "取证", "eval", "评测验证", "read"),
-    PermissionDef("eval.run", "发起评测", "取证", "eval", "评测验证", "write"),
     # 成员与权限(涉隐私 / 影响他人)
     PermissionDef("users.view", "查看成员", "成员与权限", "users", "成员", "read"),
     PermissionDef("users.manage", "管理成员", "成员与权限", "users", "成员", "write"),
@@ -135,7 +135,6 @@ BUILTIN_ROLES: tuple[RoleSeed, ...] = (
                 "supply.view",
                 "audit.view",
                 "eval.view",
-                "eval.run",
                 "users.view",
                 "account.approve",
             }
