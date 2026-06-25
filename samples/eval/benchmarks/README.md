@@ -28,3 +28,16 @@ HF_ENDPOINT=https://hf-mirror.com <py-with-torch> samples/eval/benchmarks/run_be
 - 对比限**输入子集**;工具管控/出口/供应链/审计是枢衡差异化覆盖,竞品不涉及。
 - 良性样本 17 条,FPR 置信区间偏宽,但量级差异结论稳健。
 - 竞品判定:文本分类器输出"注入/恶意"标签即记为"检出"。
+
+## Agentic 间接注入 harness(2026-06,见 docs/plan/08 §12.5)
+
+上面 `run_bench.py` 是**输入级文本分类**横评;这组是**带工具的多轮 agent** 间接注入(IPI)实测——
+注入藏进**工具返回**,量"模型自身 ASR"与"接枢衡后 ASR"。需先起本地模型代理:
+
+- `local_model_proxy.py <port>` —— 把 MiMo(创作者免费,密钥取自 `.env`/Settings)接成 `localhost/v1`
+  OpenAI 兼容后端,自动注入 `enable_thinking:false`(MiMo 是推理模型,不关思考会空返回/超时)。**无硬编码密钥**。
+- `gov_agentic_redteam.py` —— **政务领域硬集**(中文场景+我们的工具+我们的检测)。8 场景分 leak/escalate
+  两类:实测 MiMo 自身 ASR **62.5%**(leak 5/5、escalate 0/3),接枢衡 **0%**;附误报探针。
+  跑:`local_model_proxy.py 8123` 后 `uv run python samples/eval/benchmarks/gov_agentic_redteam.py`。
+- `agentdojo_fulcrum.py` —— 把枢衡检测器作为 defense 插入公认基准 **AgentDojo(NeurIPS'24)**;
+  MiMo banking + `important_instructions` 裸基线 ASR **58.3%**(与政务硬集互为印证)。需 agentdojo venv。
