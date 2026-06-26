@@ -155,9 +155,7 @@ def test_http_request_external_still_uses_specific_rule() -> None:
 
 def test_bareword_dest_not_blocked_as_egress() -> None:
     """把 target 当非 URL 字段用的工具(裸词 'section3')→ dest_is_url 围栏挡住误判,不外联拦截。"""
-    intent = ToolIntent(
-        session_id="s", tool_name="doc.read", arguments={"target": "section3"}
-    )
+    intent = ToolIntent(session_id="s", tool_name="doc.read", arguments={"target": "section3"})
     assert _decide(intent) == Disposition.ALLOW
 
 
