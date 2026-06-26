@@ -43,6 +43,12 @@ HF_ENDPOINT=https://hf-mirror.com <py-with-torch> samples/eval/benchmarks/run_be
   SKILL.md 渐进披露 + 知识库 RAG 多轮铺垫)。`GOV_SAFETY=strict/loose`、`GOV_ATTACK=dilute/crescendo`、
   `GOV_PAD_LEVELS` 可切换。核心发现:**agent 自防是"提示写法的函数"(strict 0% ↔ loose 100% 二极管)、
   出口闸门恒定 0%**;crescendo 多轮未优于单发(诚实负结果)。详见 docs/plan/08 §12.6。
+- **跨模型自防可靠性(§12.8)** —— 两脚本都直连 `LOCAL_LLM_PORT`(默认 8123)的 OpenAI 兼容端点,
+  可换任意本地 model。实测真实政务档位 **Qwen3-14B**(本地 `llama-server` ROCm/HIP):
+  `llama-server -m Qwen3-14B-Q4_K_M.gguf --port 8123 --jinja -ngl 99 -c 32768 --alias mimo` 后
+  `LOCAL_LLM_PORT=8123 uv run python ...redteam.py`。结果:自身 ASR **94.4%**、leak **100%**、
+  连明文 strict 也 **100% 无视**(MiMo 偏守端、14B 偏破端——**二极管翻转点是"模型的函数"**),
+  出口闸门跨两模型恒定 **0%/拦 100%/0 误报**。
 - `agentdojo_fulcrum.py` —— 把枢衡检测器作为 defense 插入公认基准 **AgentDojo(NeurIPS'24)**;
   MiMo banking + `important_instructions` 裸基线 ASR **58.3%**(与政务硬集互为印证)。需 agentdojo venv。
 - `invariant_bench.py` —— **同形态竞品对标**:Invariant Guardrails(invariantlabs-ai,430⭐,规则化
