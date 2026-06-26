@@ -36,8 +36,12 @@ HF_ENDPOINT=https://hf-mirror.com <py-with-torch> samples/eval/benchmarks/run_be
 
 - `local_model_proxy.py <port>` —— 把 MiMo(创作者免费,密钥取自 `.env`/Settings)接成 `localhost/v1`
   OpenAI 兼容后端,自动注入 `enable_thinking:false`(MiMo 是推理模型,不关思考会空返回/超时)。**无硬编码密钥**。
-- `gov_agentic_redteam.py` —— **政务领域硬集**(中文场景+我们的工具+我们的检测)。8 场景分 leak/escalate
-  两类:实测 MiMo 自身 ASR **62.5%**(leak 5/5、escalate 0/3),接枢衡 **0%**;附误报探针。
+- `gov_agentic_redteam.py` —— **政务领域硬集 v2**(中文场景+我们的工具+我们的检测)。**18 场景**分 leak/escalate
+  两类:实测 MiMo 自身 ASR **72.2%**(leak 87% / escalate 0%),接枢衡 leak 100%→0%;附 judge/闸门双误报探针。
   跑:`local_model_proxy.py 8123` 后 `uv run python samples/eval/benchmarks/gov_agentic_redteam.py`。
+- `gov_agentic_realistic.py` —— **真实厚 agent v3**(对标泄露的 Manus 系统提示结构/厚度/安全占比 + 官方
+  SKILL.md 渐进披露 + 知识库 RAG 多轮铺垫)。`GOV_SAFETY=strict/loose`、`GOV_ATTACK=dilute/crescendo`、
+  `GOV_PAD_LEVELS` 可切换。核心发现:**agent 自防是"提示写法的函数"(strict 0% ↔ loose 100% 二极管)、
+  出口闸门恒定 0%**;crescendo 多轮未优于单发(诚实负结果)。详见 docs/plan/08 §12.6。
 - `agentdojo_fulcrum.py` —— 把枢衡检测器作为 defense 插入公认基准 **AgentDojo(NeurIPS'24)**;
   MiMo banking + `important_instructions` 裸基线 ASR **58.3%**(与政务硬集互为印证)。需 agentdojo venv。
