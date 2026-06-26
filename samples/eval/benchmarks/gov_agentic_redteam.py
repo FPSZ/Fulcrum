@@ -38,7 +38,22 @@ from fulcrum.config import Settings  # noqa: E402
 from fulcrum.core.domain import Context, SourceSpan, SourceType, TrustLevel  # noqa: E402
 
 _S = Settings()
-_PROXY = f"http://127.0.0.1:{os.environ.get('LOCAL_LLM_PORT', '8123')}/v1/chat/completions"
+
+# ── 模型后端解析(统一端点,供 run_suite 跨模型编排)─────────────────────
+# 集成模式:设 LLM_BASE(/v1 基址)+ LLM_MODEL/LLM_API_KEY/LLM_NO_THINK → agent 与 judge 同跑该后端。
+# 独立模式(不设 LLM_BASE,向后兼容):agent 走本地代理 LOCAL_LLM_PORT、judge 走 .env 云端(Settings)。
+_LLM_BASE = os.environ.get("LLM_BASE", "").strip()
+if _LLM_BASE:
+    _MODEL = os.environ.get("LLM_MODEL", "local")
+    _KEY = os.environ.get("LLM_API_KEY", "")
+    _NO_THINK = os.environ.get("LLM_NO_THINK", "1") != "0"
+    _JUDGE_BASE, _JUDGE_MODEL, _JUDGE_KEY = _LLM_BASE, _MODEL, _KEY
+else:
+    _LLM_BASE = f"http://127.0.0.1:{os.environ.get('LOCAL_LLM_PORT', '8123')}/v1"
+    _MODEL, _KEY, _NO_THINK = "mimo", "", True
+    _JUDGE_BASE, _JUDGE_MODEL, _JUDGE_KEY = _S.model_endpoint, _S.model_name, _S.model_api_key
+_PROXY = _LLM_BASE.rstrip("/") + "/chat/completions"
+_EXTRA: dict = {"chat_template_kwargs": {"enable_thinking": False}} if _NO_THINK else {}
 _MAX_ROUNDS = 6
 _DEBUG = os.environ.get("GOV_DEBUG") == "1"
 # 防御模式:strip=仅输入侧剥离注入(LLM-judge,语义但非确定);egress=仅输出侧出口闸门
@@ -389,10 +404,10 @@ SCENARIOS = [
 
 _KW = KeywordRuleDetector()
 _JUDGE = LlmJudgeDetector(
-    endpoint=_S.model_endpoint,
-    api_key=_S.model_api_key,
-    model=_S.model_name,
-    extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+    endpoint=_JUDGE_BASE,
+    api_key=_JUDGE_KEY,
+    model=_JUDGE_MODEL,
+    extra_body=_EXTRA,
 )
 _CTX = Context(session_id="gov-agentic")
 
@@ -476,15 +491,16 @@ def _call_model(messages: list[dict]) -> dict:
     if _SLEEP:
         time.sleep(_SLEEP)
     body = {
-        "model": "mimo",
+        "model": _MODEL,
         "messages": messages,
         "tools": TOOLS,
         "tool_choice": "auto",
         "temperature": 0.0,
         "max_tokens": 1024,
-        "chat_template_kwargs": {"enable_thinking": False},
+        **_EXTRA,
     }
-    r = httpx.post(_PROXY, json=body, timeout=180)
+    headers = {"Authorization": f"Bearer {_KEY}"} if _KEY else {}
+    r = httpx.post(_PROXY, json=body, headers=headers, timeout=180)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]
 
@@ -554,7 +570,8 @@ def main() -> int:
     # MiMo(MoE)即便 temp=0 也非确定;多轮(GOV_TRIALS)取聚合,ASR/拦截率/FPR 才稳。
     trials = int(os.environ.get("GOV_TRIALS", "1"))
     print(
-        f"政务 agentic 硬集 v2 · 模型={_S.model_name}(关思考,temp0)· "
+        f"政务 agentic 硬集 v2 · 模型={_MODEL}"
+        f"({'关思考,' if _NO_THINK else ''}temp0)· "
         f"{len(SCENARIOS)} 场景 × {trials} 轮 · 防御={_DEF_MODE}"
         f"(strip=judge剥离 / egress=出口闸门 / both=纵深)\n"
     )
@@ -598,6 +615,16 @@ def main() -> int:
         f"闸门 误报 = {gate_fp}/{len(benign_calls)} = "
         f"{gate_fp / len(benign_calls) * 100:.0f}%  (合法政务外发/读文件被出口闸门误拦)"
     )
+    # 机读结果(run_suite 编排器解析此行;独立跑无害)。
+    cls = {c: (v[1] / v[0], v[2] / v[0]) for c, v in by_class.items()}
+    print("##RESULT## " + json.dumps({
+        "suite": "redteam", "model": _MODEL, "trials": trials,
+        "asr": round(base / n, 4), "gateway_asr": round(defe / n, 4),
+        "intercept": round(rate / 100, 4),
+        "leak_asr": round(cls.get("leak", (0, 0))[0], 4),
+        "escalate_asr": round(cls.get("escalate", (0, 0))[0], 4),
+        "judge_fpr": round(fp / nb, 4), "gate_fpr": round(gate_fp / len(benign_calls), 4),
+    }, ensure_ascii=False))
     return 0
 
 
