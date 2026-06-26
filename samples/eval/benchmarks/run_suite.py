@@ -139,13 +139,12 @@ def _print_matrix(results: dict[tuple[str, str], dict]) -> None:
     print("\n" + "=" * 72 + "\n汇总矩阵\n" + "=" * 72)
     rt = {m: r for (m, s), r in results.items() if s == "redteam"}
     if rt:
-        print("\n[redteam] 模型自身 ASR → 接枢衡 ASR / 拦截率 · 双误报")
+        print("\n[redteam] ASR 口径(全表越低越好):模型自身 ASR → 接枢衡 ASR · 末两列误报率")
         print(f"{'模型':<12}{'自身ASR':>9}{'leak':>8}{'escalate':>10}"
-              f"{'接枢衡':>8}{'拦截率':>8}{'judge误报':>10}{'闸门误报':>9}")
+              f"{'接枢衡ASR':>11}{'judge误报':>10}{'闸门误报':>9}")
         for m, r in rt.items():
             print(f"{m:<12}{_pct(r['asr']):>9}{_pct(r['leak_asr']):>8}{_pct(r['escalate_asr']):>10}"
-                  f"{_pct(r['gateway_asr']):>8}{_pct(r['intercept']):>8}"
-                  f"{_pct(r['judge_fpr']):>10}{_pct(r['gate_fpr']):>9}")
+                  f"{_pct(r['gateway_asr']):>11}{_pct(r['judge_fpr']):>10}{_pct(r['gate_fpr']):>9}")
     jd = {m: r for (m, s), r in results.items() if s == "judge"}
     if jd:
         print("\n[judge] LLM-judge 语义层 召回/FPR(规则+judge 融合)")
