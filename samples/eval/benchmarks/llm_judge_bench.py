@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 
@@ -28,9 +29,45 @@ _CTX = Context(session_id="bench")
 _DET = KeywordRuleDetector()
 
 
+def _wrap(det: LlmJudgeDetector, label: str):
+    """把 LlmJudgeDetector 包成 (text)->bool 的 judge,并附标签。"""
+
+    def judge(text: str) -> bool:
+        sp = SourceSpan(
+            source_type=SourceType.USER, trust_level=TrustLevel.UNTRUSTED, content_hash="x",
+            excerpt=text,
+        )
+        return bool(det.detect([sp], _CTX))
+
+    return judge, label
+
+
 def _make_judge():
-    """优先 .env 真端点(OpenAI 兼容),否则本地 Qwen;两者都包成真 LlmJudgeDetector。返回 (judge, 标签)。"""
+    """judge 后端三选一,都包成真 LlmJudgeDetector(口径一致)。返回 (judge, 标签)。
+
+    选择优先级:
+      1) `JUDGE_ENDPOINT` 显式本地自托管端点(合规闭环:judge 全离线、数据不出域)——
+         配 `JUDGE_MODEL`、`JUDGE_NO_THINK=1`(Qwen3/MiMo 等推理模型关思考直出裁决)。
+      2) `.env` 真云端点(OpenAI 兼容,如 DeepSeek/MiMo)。
+      3) 本地 Qwen2.5-1.5B(transformers,CPU 离线回退)。
+    """
     s = Settings()
+    local_ep = os.environ.get("JUDGE_ENDPOINT", "").strip()
+    if local_ep:
+        # 私有化合规路径:judge 走客户本地自托管模型(同一台 llama-server/vLLM 即可),不调云。
+        extra = (
+            {"chat_template_kwargs": {"enable_thinking": False}}
+            if os.environ.get("JUDGE_NO_THINK") == "1"
+            else {}
+        )
+        det = LlmJudgeDetector(
+            endpoint=local_ep,
+            api_key=os.environ.get("JUDGE_API_KEY", ""),
+            model=os.environ.get("JUDGE_MODEL", "local"),
+            extra_body=extra,
+        )
+        label = f"{os.environ.get('JUDGE_MODEL', 'local')} @ 本地自托管(air-gapped)"
+        return _wrap(det, label)
     real = bool(s.model_api_key) and not any(
         h in s.model_endpoint for h in ("127.0.0.1", "localhost")
     )
@@ -57,14 +94,7 @@ def _make_judge():
         det = LlmJudgeDetector(backend=qwen_backend)
         label = f"{QWEN}(本地代理)"
 
-    def judge(text: str) -> bool:
-        sp = SourceSpan(
-            source_type=SourceType.USER, trust_level=TrustLevel.UNTRUSTED, content_hash="x",
-            excerpt=text,
-        )
-        return bool(det.detect([sp], _CTX))
-
-    return judge, label
+    return _wrap(det, label)
 
 
 def _rule_held(text: str) -> bool:
