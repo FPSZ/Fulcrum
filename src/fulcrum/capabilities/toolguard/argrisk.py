@@ -249,6 +249,26 @@ def domain_allowed(arguments: dict, allow_domains: list[str]) -> bool:
     return any(host == d.lower() or host.endswith("." + d.lower()) for d in allow_domains)
 
 
+def dest_is_url(arguments: dict) -> bool:
+    """目的地参数是否为 **URL 形态**(有 scheme,或主机含点 / 是 IP 字面量 / 是公认内网名)。
+
+    给 tool-agnostic 的外联白名单规则加形态围栏:把 `target`/`dest` 当**非 URL** 字段用的工具
+    (如 `{"target": "section3"}`)主机会被 urlparse 解成裸词 `section3`,而 `domain_allowed`
+    对裸词恒 False——若直接据此做 tool-agnostic 拦截会误伤。要求目的地像个真 URL(scheme 或
+    带点域名 / IP / 内网名)才参与判定,守住「非 URL 字段不被误判为外联」的下界。
+    `url_is_internal` 只对 IP 字面量为真,天然无此问题,故仅外联白名单规则需要本围栏。
+    """
+    raw = next((str(arguments[k]) for k in _DEST_URL_KEYS if arguments.get(k)), "")
+    if not raw:
+        return False
+    if "://" in raw:
+        return True
+    host = url_host(arguments)
+    if host is None:
+        return False
+    return "." in host or host in _INTERNAL_HOSTNAMES or _host_ip(host) is not None
+
+
 def is_raw_ip(arguments: dict) -> bool:
     """URL 主机是 IP 字面量(含十进制/十六进制/八进制/缺段/IPv6 等混淆形态),而非域名。"""
     host = url_host(arguments)

@@ -90,6 +90,16 @@ rules:
     risk_level: high
     reason: 目标域名不在外联白名单内
 
+  # 4d) 任意对外工具(notify.send/webhook…)外联非白名单公网域名 —— 阻断(外泄不只走上面两类)。
+  #      dest_is_url 形态围栏排除把 target/dest 当非 URL 字段用的工具误伤;内网情形由 4b 兜住。
+  - id: block-nonwhitelist-domain-any-tool
+    when:
+      dest_is_url: true
+      domain_allowed: false
+    decision: block
+    risk_level: high
+    reason: 对外工具的目标域名不在外联白名单内,疑似数据外泄(非 http 出口)
+
   # 5) 危险系统命令 —— 阻断。
   - id: block-dangerous-command
     when:
