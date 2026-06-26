@@ -132,6 +132,35 @@ def test_http_request_internal_still_uses_specific_rule() -> None:
     assert decision.matched_policy_id == "block-ssrf-internal"
 
 
+def test_nonwhitelist_domain_blocked_on_non_http_tool() -> None:
+    """非 http.request 的对外工具(notify.send)外联公网攻击者域名 → tool-agnostic 外联规则兜住。"""
+    intent = ToolIntent(
+        session_id="s",
+        tool_name="notify.send",
+        arguments={"url": "http://archive.external.io/in"},
+    )
+    decision = asyncio.run(_POLICY.decide(intent, Context(session_id="s")))
+    assert decision.decision == Disposition.BLOCK
+    assert decision.matched_policy_id == "block-nonwhitelist-domain-any-tool"
+
+
+def test_http_request_external_still_uses_specific_rule() -> None:
+    """http.request 外联非白名单域名仍优先命中专属 block-nonwhitelist-domain(any-tool 不夺归属)。"""
+    intent = ToolIntent(
+        session_id="s", tool_name="http.request", arguments={"url": "http://evil.example/x"}
+    )
+    decision = asyncio.run(_POLICY.decide(intent, Context(session_id="s")))
+    assert decision.matched_policy_id == "block-nonwhitelist-domain"
+
+
+def test_bareword_dest_not_blocked_as_egress() -> None:
+    """把 target 当非 URL 字段用的工具(裸词 'section3')→ dest_is_url 围栏挡住误判,不外联拦截。"""
+    intent = ToolIntent(
+        session_id="s", tool_name="doc.read", arguments={"target": "section3"}
+    )
+    assert _decide(intent) == Disposition.ALLOW
+
+
 def _chain_ctx(intent: ToolIntent, kind: str, score: float) -> Context:
     """构造一个带某条链 finding(归属当前 intent)的上下文,驱动链类条件命中。"""
     finding = Finding(kind=kind, score=score, evidence={"intent_id": intent.intent_id})
