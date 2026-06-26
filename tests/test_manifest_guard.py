@@ -121,6 +121,10 @@ def test_corpus_supplychain_routed_through_gate() -> None:
         "sc-03": "block",  # 工具描述投毒藏读 ~/.ssh/id_rsa → 敏感凭据访问,主动恶意
         "sc-04": "approve",  # 过宽权限 → 仅声明可疑,送审(不过拦)
         "sc-05": "approve",  # 可疑端点(裸 IP)→ 送审
+        "sc-06": "approve",  # 依赖混淆(内部命名/版本畸高,字典形依赖)→ 送审
+        "sc-07": "approve",  # typosquatting 仿冒近似名 → 送审
+        "sc-08": "approve",  # 字典形依赖从 URL/git+ 直装 → 送审
+        "sc-09": "block",  # rug pull:外泄指令藏进嵌套工具描述 → 主动恶意
         "sc-10": "block",  # 凭据窃取:.env/AWS_/~/.aws 枚举外发 → 主动恶意
         "sc-12": "allow",  # 干净清单 → 放行(无 FP)
     }

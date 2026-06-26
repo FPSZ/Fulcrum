@@ -46,6 +46,31 @@ _MANIFEST_SIGNAL_KEYS: frozenset[str] = frozenset(
         "prompt",
         "system_prompt",
         "system",
+        "tools",
+        "commands",
+        "actions",
+        "functions",
+    }
+)
+# 结构性强信号键:即便缺 name 也足以认定是组件清单(真实依赖/工具清单常以 deps 字典或
+# tools 数组直接呈现、不带顶层 name)。语料核验:无任何非供应链良性输入含这些键 → 放宽安全。
+_STRONG_SIGNAL_KEYS: frozenset[str] = frozenset(
+    {
+        "permissions",
+        "scopes",
+        "capabilities",
+        "hooks",
+        "scripts",
+        "lifecycle",
+        "dependencies",
+        "deps",
+        "requires",
+        "endpoints",
+        "outbound",
+        "tools",
+        "commands",
+        "actions",
+        "functions",
     }
 )
 
@@ -55,7 +80,13 @@ _MANIFEST_SIGNAL_KEYS: frozenset[str] = frozenset(
 #   仅"声明"可疑(过宽权限 / 可疑端点 / 从 URL 装依赖 / 生命周期钩子)→ 尚未发作,送人工复核。
 # 这与 corpus 校准一致:声明吓人 ≠ 已作恶,前者 approve、后者 block。
 _ACTIVE_MALICE_KINDS: frozenset[str] = frozenset(
-    {"hook.install_exec", "desc.suspicious", "manifest.prompt_injection", "sensitive_file_access"}
+    {
+        "hook.install_exec",
+        "desc.suspicious",
+        "manifest.prompt_injection",
+        "sensitive_file_access",
+        "manifest.tool_poisoning",
+    }
 )
 _BLOCK_SCORE = 0.9  # → 入口闸门 block(BLOCK_AT=0.8)
 _REVIEW_SCORE = 0.7  # → 入口闸门 approve(REVIEW_AT=0.6)
@@ -100,7 +131,10 @@ def _jsonify(blob: str) -> str:
 
 
 def _looks_like_manifest(obj: dict) -> bool:
-    return "name" in obj and any(k in obj for k in _MANIFEST_SIGNAL_KEYS)
+    # name + 任一信号字段;或缺 name 但含结构性强信号键(依赖字典 / 工具数组等)。
+    if "name" in obj and any(k in obj for k in _MANIFEST_SIGNAL_KEYS):
+        return True
+    return any(k in obj for k in _STRONG_SIGNAL_KEYS)
 
 
 @capability("detector", "manifest_guard")
