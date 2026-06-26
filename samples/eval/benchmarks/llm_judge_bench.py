@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -46,27 +47,26 @@ def _make_judge():
     """judge 后端三选一,都包成真 LlmJudgeDetector(口径一致)。返回 (judge, 标签)。
 
     选择优先级:
+      0) `LLM_BASE`(/v1 基址)统一后端 —— 供 run_suite 跨模型编排,与 redteam 同口径。
       1) `JUDGE_ENDPOINT` 显式本地自托管端点(合规闭环:judge 全离线、数据不出域)——
          配 `JUDGE_MODEL`、`JUDGE_NO_THINK=1`(Qwen3/MiMo 等推理模型关思考直出裁决)。
       2) `.env` 真云端点(OpenAI 兼容,如 DeepSeek/MiMo)。
       3) 本地 Qwen2.5-1.5B(transformers,CPU 离线回退)。
     """
     s = Settings()
-    local_ep = os.environ.get("JUDGE_ENDPOINT", "").strip()
+    unified = os.environ.get("LLM_BASE", "").strip()
+    local_ep = os.environ.get("JUDGE_ENDPOINT", "").strip() or unified
     if local_ep:
         # 私有化合规路径:judge 走客户本地自托管模型(同一台 llama-server/vLLM 即可),不调云。
-        extra = (
-            {"chat_template_kwargs": {"enable_thinking": False}}
-            if os.environ.get("JUDGE_NO_THINK") == "1"
-            else {}
+        # JUDGE_* 优先,缺省回落到统一的 LLM_*(供 run_suite 编排)。
+        model = os.environ.get("JUDGE_MODEL") or os.environ.get("LLM_MODEL", "local")
+        api_key = os.environ.get("JUDGE_API_KEY") or os.environ.get("LLM_API_KEY", "")
+        no_think = (
+            os.environ.get("JUDGE_NO_THINK", os.environ.get("LLM_NO_THINK", "0")) == "1"
         )
-        det = LlmJudgeDetector(
-            endpoint=local_ep,
-            api_key=os.environ.get("JUDGE_API_KEY", ""),
-            model=os.environ.get("JUDGE_MODEL", "local"),
-            extra_body=extra,
-        )
-        label = f"{os.environ.get('JUDGE_MODEL', 'local')} @ 本地自托管(air-gapped)"
+        extra = {"chat_template_kwargs": {"enable_thinking": False}} if no_think else {}
+        det = LlmJudgeDetector(endpoint=local_ep, api_key=api_key, model=model, extra_body=extra)
+        label = f"{model} @ 本地自托管(air-gapped)"
         return _wrap(det, label)
     real = bool(s.model_api_key) and not any(
         h in s.model_endpoint for h in ("127.0.0.1", "localhost")
@@ -137,6 +137,15 @@ def main() -> int:
         f"{rate(mal, lambda r: r['j'] or r['r']):>8.1f}%{rate(ben, lambda r: r['j'] or r['r']):>8.1f}%"
     )
     print("\n[参照 benchmarks/p6-fusion-tuning.md] protectai 单跑 79.8%/47.1% · 规则+protectai 91.0%/52.9%")
+    # 机读结果(run_suite 编排器解析)。
+    print("##RESULT## " + json.dumps({
+        "suite": "judge", "model": label,
+        "judge_recall": round(rate(mal, lambda r: r["j"]) / 100, 4),
+        "judge_fpr": round(rate(ben, lambda r: r["j"]) / 100, 4),
+        "fused_recall": round(rate(mal, lambda r: r["j"] or r["r"]) / 100, 4),
+        "fused_fpr": round(rate(ben, lambda r: r["j"] or r["r"]) / 100, 4),
+        "sec_per_item": round(dt / len(rows), 2),
+    }, ensure_ascii=False))
     return 0
 
 

@@ -2,7 +2,28 @@
 
 > 用冻结的攻击样例库给**同类系统**打分,拿横向对比——类比 AV-TEST/AV-Comparatives 用统一样本集横评杀软。
 
-## 怎么用
+## 一键回归测试台 `run_suite.py`(改了代码先跑这个)
+
+选「模型 × 测试套件」组合、子进程隔离跑、汇总矩阵。改了检测器/策略/judge/样例后,一条命令回归
+多模型多套件,随时看有没有掉点。模型注册见 `bench_backends.py`(本地 llama-server / MiMo / DeepSeek,
+**密钥不硬编码**:MiMo 读 `.env`、DeepSeek 读环境变量 `DEEPSEEK_API_KEY`,缺则优雅跳过)。
+
+```bash
+uv run python samples/eval/benchmarks/run_suite.py --list                 # 列可选模型/套件
+# 所有可用模型 × 所有结构化套件(本地自启/停 llama-server):
+uv run python samples/eval/benchmarks/run_suite.py --models all --suites all --serve
+# 只测本地 8B 的 redteam+judge(llama-server 已在 8123,或加 --serve 自启):
+uv run python samples/eval/benchmarks/run_suite.py --models qwen3-8b --suites redteam,judge
+uv run python samples/eval/benchmarks/run_suite.py --models mimo --suites judge   # 测 MiMo
+```
+
+- **模型**:`qwen3-8b/14b/35b`(本地)、`mimo`(.env 云端)、`deepseek`(环境变量密钥)。`--serve` 自启 llama-server
+  (Qwen3 默认关思考);否则需端点已在。`bench_backends.py` 加一行登记新模型。
+- **套件**:`redteam`(18 场景 ASR+接枢衡+双误报)、`judge`(语义层召回/FPR)、`realistic`(crescendo,回显)。
+  各套件仍可独立跑;统一经 `LLM_BASE/LLM_MODEL/LLM_API_KEY/LLM_NO_THINK` 注入端点,末尾输出 `##RESULT##` 机读行。
+
+## 怎么用(竞品横评 run_bench.py)
+
 `run_bench.py` 取库内**输入级**样本(竞品多为纯输入侧注入分类器,只这批可比),同一批文本喂给各检测器,
 按金标准算 **检出率(召回)/ FPR / 分桶召回**。检测器即插即用:依赖/模型不可达则跳过并记录。
 
