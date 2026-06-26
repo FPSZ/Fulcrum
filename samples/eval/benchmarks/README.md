@@ -54,3 +54,10 @@ HF_ENDPOINT=https://hf-mirror.com <py-with-torch> samples/eval/benchmarks/run_be
 - `invariant_bench.py` —— **同形态竞品对标**:Invariant Guardrails(invariantlabs-ai,430⭐,规则化
   agent 网关)vs 枢衡出口闸门,在 18 场景 leak 外发地址上**检出/误报等价(16/16、0/3)**;差异化在
   政务特化+judge 语义+样例库。跑:`uv run --with invariant-ai python samples/eval/benchmarks/invariant_bench.py`。
+- `llm_judge_bench.py` —— **LLM-judge 语义层召回/FPR**(冻结语料输入子集,89 恶意/17 良性)。新增
+  **本地自托管(air-gapped)合规路径**:judge 走客户**本地模型**、数据不出域、零云调用——满足政务
+  "输入不外发"红线。实测本地 `llama-server`:**Qwen3-8B 规则+judge 融合召回 88.8% / FPR 0% / 0.6s 条**、
+  Qwen3-14B 86.5% 单跑 / 同 88.8% 融合(融合后 8B 即够,judge 复用客户已部署模型零额外成本);
+  对照英文分类器 protectai 单跑 79.8% 但 **FPR 47%**(政务不可用)。跑(先起本地端点):
+  `JUDGE_ENDPOINT=http://127.0.0.1:8123/v1 JUDGE_MODEL=qwen3-8b JUDGE_NO_THINK=1 uv run python samples/eval/benchmarks/llm_judge_bench.py`。
+  生产启用见 `src/fulcrum/config/fulcrum.yml` 的 `options.llm_judge`(同一通道,即插即用)。
