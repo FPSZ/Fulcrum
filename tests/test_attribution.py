@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from fulcrum.capabilities.attribution.evidence import EvidenceAttributor
 from fulcrum.core.domain import Context, SourceSpan, SourceType, ToolIntent, TrustLevel
 
@@ -207,3 +209,30 @@ def test_seed_fragments_only_extracts_structured_tokens() -> None:
         assert generic not in frags
     # 无结构特征的纯通用词串 → 空
     assert _seed_fragments("生成本月数据报表与汇总") == []
+
+
+# ---- 复审回归固化:host 正则不得把带扩展名的裸文件名误抽成域名种子(防伪造归因边)----
+
+
+@pytest.mark.parametrize(
+    ("filename", "long_path", "doc_text"),
+    [
+        ("server.log", "/var/log/app/server.log", "服务异常,请查看 server.log 末尾的报错"),
+        ("report.txt", "/data/reports/2026/report.txt", "本月报表已生成 report.txt,请下载核对"),
+        ("config.yaml", "/etc/app/config.yaml", "部署说明:修改 config.yaml 后重启服务即可"),
+    ],
+)
+def test_bare_filename_not_attributed_as_host_seed(
+    filename: str, long_path: str, doc_text: str
+) -> None:
+    """无关 untrusted 文档偶然提到同名文件、参数为对应长路径 → 不得凭空建不可信归因边。
+
+    回归点:_HOST_RX 曾把 server.log/report.txt/config.yaml 误当域名抽成种子,使文档里的裸
+    文件名命中、建 conf=1.0 假边、污染 source_trust。修复后裸文件名被收紧丢弃,长路径种子
+    (带分隔符 distinctive)不命中短文件名 → 无边。
+    """
+    doc = _span(doc_text, source=SourceType.DOCUMENT, trust=TrustLevel.UNTRUSTED)
+    intent = ToolIntent(session_id="s", tool_name="file.read", arguments={"path": long_path})
+    attr = _attribute(intent, [doc], Context(session_id="s"))
+    assert attr.derived_from_sources == [], filename
+    assert attr.confidence == 0.0, filename

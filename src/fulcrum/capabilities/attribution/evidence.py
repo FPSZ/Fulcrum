@@ -43,6 +43,33 @@ _UNIX_PATH_RX = re.compile(r"~?(?:/[\w.\-]+)+|(?:[\w.\-]+/)+[\w.\-]+")  # /etc/p
 _WIN_PATH_RX = re.compile(r"(?:[a-z]:)?[\w.\-]*(?:\\[\w.\-]+)+")  # C:\Users\x\.ssh
 _SEED_RXS = (_IPV4_RX, _HOST_RX, _UNIX_PATH_RX, _WIN_PATH_RX)
 _WORD_RX = re.compile(r"[\w.\-]+")
+# 常见文件扩展名:`_HOST_RX` 会把带扩展名的裸文件名(server.log、report.txt、config.yaml)
+# 误当域名抽成种子片段——无关 untrusted 文档偶然提到同名文件即凭空建不可信归因边。故对**不含
+# 路径分隔符**的裸匹配做后置过滤:末段 label 命中本集合 → 判文件名、丢弃。含 /path 的 host
+# (evil.example.com/steal)与完整文件路径(/var/log/app/server.log,由 _UNIX_PATH_RX 抽出,
+# 带分隔符 distinctive)不受影响,仍命中。
+_FILE_EXTS: frozenset[str] = frozenset(
+    {
+        "txt", "log", "yaml", "yml", "json", "conf", "ini", "cfg", "csv",
+        "md", "html", "htm", "xml", "docx", "xlsx", "xls", "doc", "ppt",
+        "pptx", "pdf", "py", "js", "ts", "sh", "bak", "tmp", "dat", "db",
+        "sqlite", "png", "jpg", "jpeg", "gif", "svg",
+    }
+)  # fmt: skip
+
+
+def _is_filename_not_host(frag: str) -> bool:
+    """裸匹配(不含 / 或 \\ 路径分隔符)且末段是常见文件扩展名 → 实为文件名,不当 host 种子。
+
+    只收紧 `_HOST_RX` 单独切出来的短文件名(server.log);带分隔符的完整路径
+    (/var/log/app/server.log、C:\\logs\\server.log)distinctive,一律保留。
+    """
+    if "/" in frag or "\\" in frag:
+        return False
+    parts = frag.rsplit(".", 1)
+    return len(parts) == 2 and parts[1] in _FILE_EXTS
+
+
 # 不含路径/域名结构、但本身即高敏感信号的令牌名/秘钥文件名(仅作为可识别"整 token"命中)。
 # 取带结构特征(`_`/前导 `.`)或唯一密钥文件名者,避免把普通业务词当敏感令牌而误关联。
 _SENSITIVE_TOKENS: frozenset[str] = frozenset(
@@ -73,6 +100,8 @@ def _seed_fragments(value: str) -> list[str]:
 
     def _add(frag: str) -> None:
         frag = frag.strip("\"'`").rstrip("/")
+        if _is_filename_not_host(frag):  # 收紧:排除被 host 正则误抽的裸文件名(防伪造归因边)
+            return
         if len(frag) >= _MIN_TOKEN and frag not in out:
             out.append(frag)
 
