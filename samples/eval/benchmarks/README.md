@@ -45,3 +45,6 @@ HF_ENDPOINT=https://hf-mirror.com <py-with-torch> samples/eval/benchmarks/run_be
   出口闸门恒定 0%**;crescendo 多轮未优于单发(诚实负结果)。详见 docs/plan/08 §12.6。
 - `agentdojo_fulcrum.py` —— 把枢衡检测器作为 defense 插入公认基准 **AgentDojo(NeurIPS'24)**;
   MiMo banking + `important_instructions` 裸基线 ASR **58.3%**(与政务硬集互为印证)。需 agentdojo venv。
+- `invariant_bench.py` —— **同形态竞品对标**:Invariant Guardrails(invariantlabs-ai,430⭐,规则化
+  agent 网关)vs 枢衡出口闸门,在 18 场景 leak 外发地址上**检出/误报等价(16/16、0/3)**;差异化在
+  政务特化+judge 语义+样例库。跑:`uv run --with invariant-ai python samples/eval/benchmarks/invariant_bench.py`。
