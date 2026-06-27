@@ -113,6 +113,10 @@ def match_variants(text: str) -> list[str]:
 # ---- 递归解码:把藏进 base64 / hex / URL 编码 / ROT13 / HTML 数字实体的指令解出来供复扫 ----
 _B64 = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 _HEX = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
+# base32(RFC4648 字母表 A-Z2-7):把指令 base32 编码绕过关键词匹配,与 base64/hex 同属"解码后复扫"。
+_B32 = re.compile(r"[A-Z2-7]{16,}={0,6}")
+# URL-safe base64 字符替换(-_ → +/),用于兜底解 urlsafe 变体。
+_URLSAFE_B64 = str.maketrans("-_", "+/")
 # HTML 数字字符引用:&#105; / &#x69;。把字母编码成数字实体(`&#105;gnore previous…`)是网页/
 # 文档绕过关键词匹配的常见手法。**只解数字引用**——具名实体(&lt; &amp; &nbsp;)正常文档遍地都是,
 # 解了反而误伤;字母的数字引用几乎只见于刻意规避,判别力强、低误报。
@@ -132,6 +136,16 @@ def _hexd(blob: str) -> str:
     try:
         return bytes.fromhex(blob).decode("utf-8", "ignore")
     except ValueError:
+        return ""
+
+
+def _b32(blob: str) -> str:
+    """base32 解码;补足 '=' 到 8 的倍数。非 base32/解不出 → 返回 ''(由上层'解出物≠原文'丢弃)。"""
+    body = blob.rstrip("=")
+    try:
+        padded = body + "=" * (-len(body) % 8)
+        return base64.b32decode(padded, casefold=False).decode("utf-8", "ignore")
+    except (binascii.Error, ValueError):
         return ""
 
 
@@ -162,6 +176,10 @@ def decode_variants(text: str, depth: int = 2) -> list[str]:
         for s in frontier:
             cands: list[str] = [_b64(m.group(0)) for m in _B64.finditer(s)]
             cands += [_hexd(m.group(0)) for m in _HEX.finditer(s)]
+            cands += [_b32(m.group(0)) for m in _B32.finditer(s)]
+            if "-" in s or "_" in s:  # URL-safe base64 兜底:-_→+/ 后按标准 base64 再抽
+                su = s.translate(_URLSAFE_B64)
+                cands += [_b64(m.group(0)) for m in _B64.finditer(su)]
             if "%" in s:
                 cands.append(unquote(s))
             if "&#" in s:
