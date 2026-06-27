@@ -8,6 +8,7 @@ detectors:
   - secret_egress        # 出口凭据/系统提示泄露检测(连接串/云密钥/私钥/Bearer + LLM07)
   - manifest_guard       # 请求路径 manifest 哨兵:组件清单评估请求 → 抽取 → 扫描器分级处置
   - disclosure_egress    # 出口自披露:策略原文 / 工具清单泄露(双条件高精度)
+  - exfil_channel        # 出站外泄信道:带外汇点册 / 即时通讯 webhook / DNS 隧道(高精度)
   # 语义兜底(P6,可选,私有化合规推荐):抓无触发词的中文社工注入。二选一:
   #   · injection_cascade —— keyword+judge 级联(**推荐**:规则已拦的不重判,judge 调用减半),启用时把上面 `- keyword_rules` 删掉(级联已内含),见 options.injection_cascade
   #   · llm_judge         —— 纯 judge 全量(每条都判),与 keyword_rules 并列,见 options.llm_judge

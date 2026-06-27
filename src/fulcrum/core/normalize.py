@@ -76,6 +76,17 @@ _CONFUSABLES = str.maketrans(
         "Α": "A",
         "Ε": "E",
         "Ρ": "P",
+        # Armenian 小写(UTS#39 confusables.txt MA 行,亚美尼亚小写 → 单个拉丁 ASCII)
+        "օ": "o",  # U+0585 OH → o(攻击常用:ignօre）
+        "հ": "h",  # U+0570 HO → h
+        "ռ": "n",  # U+057C RA → n（同形 ո/U+0578 VO 已在表中,此处不重复）
+        "ս": "u",  # U+057D SEH → u
+        "ա": "w",  # U+0561 AYB → w
+        "ւ": "i",  # U+0582 YIWN → i
+        "ց": "g",  # U+0581 CO → g
+        "ք": "f",  # U+0584 KEH → f
+        "գ": "q",  # U+0563 GIM → q
+        "զ": "q",  # U+0566 ZA → q
     }
 )
 
