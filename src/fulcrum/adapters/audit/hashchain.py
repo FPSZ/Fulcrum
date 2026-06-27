@@ -37,6 +37,7 @@ def configure_hmac_key(key: str | None) -> None:
     global _HMAC_KEY
     _HMAC_KEY = key.encode("utf-8") if key else None
 
+
 # 各 schema_version 下"受哈希保护"的字段集(event_hash 自身永远除外)。
 # 顺序无关(canonical 用 sort_keys)。改动某版本的集合 = 改哈希口径,禁止;
 # 需要变更时新增一个版本号条目,并为既有链提供迁移。
