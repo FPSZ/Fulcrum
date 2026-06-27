@@ -64,11 +64,23 @@ _WRITE_RE = re.compile(
 )
 # 承载写入内容的参数键:持久化写入须带内容才有"投毒"意义。
 _CONTENT_KEYS = frozenset({"content", "value", "text", "data", "body", "fact", "note", "memory"})
+# 执行收口:工具名命中执行类动词,或带承载命令/脚本的参数键。收紧到"执行"语义 ——
+# query/fetch/read 是链的「获取」段而非「执行」段,绝不纳入(eval/run/code 用词边界框死,
+# 不误吃 evaluate/pruner/decode 之类)。仅判 sink 性质,是否报由跨步关联(下方)硬门控。
+_EXECUTE_RE = re.compile(
+    r"(exec|\brun\b|\beval\b|spawn|subprocess|shell|interpret|\bcode\b|执行|运行)",
+    re.IGNORECASE,
+)
+# 承载待执行命令/脚本的参数键(与 shell.exec={command}、code.run={code} 等工具形态对齐)。
+_EXEC_ARG_KEYS = ("command", "cmd", "script", "code")
 # 回看窗口(步数近似)。当前调用之前的 _WINDOW 步内出现敏感/普通读取即构成链。
 _WINDOW = 12
 # 跨步污点:外发参数里出现长度 ≥ 此阈值、源自某一步工具返回的连续片段 → 判定污点。
 # 阈值取得够长以避免短公共串(如 "true"/url 协议头)误报。
 _TAINT_MIN = 12
+# write→execute 路径关联的最小路径长度:路径须含分隔符且达此量级,避免裸文件名 / 短串
+# (如 "/" 或 "a.sh")在命令里偶然命中。比 _TAINT_MIN 略松 —— 带分隔符的路径本身已具判别力。
+_PATH_MIN = 6
 
 # 编码外发规避:把上一步读到的敏感量先 Base64/Hex 编码再外发,可绕过原样子串比对。
 # 故对外发参数里的编码块就地解码,得到的明文一并参与污点比对。阈值取够长以避免噪声:
@@ -184,6 +196,72 @@ def _is_persist_write(intent: ToolIntent) -> bool:
     return bool(_WRITE_RE.search(name) and _PERSIST_RE.search(_persist_target(intent)))
 
 
+def _exec_text(intent: ToolIntent) -> str:
+    """取执行动作里承载命令/脚本的文本(按 _EXEC_ARG_KEYS 优先级);无则空串。"""
+    for k in _EXEC_ARG_KEYS:
+        v = intent.arguments.get(k)
+        if v:
+            return str(v)
+    return ""
+
+
+def _is_execute(intent: ToolIntent) -> bool:
+    """是否为「执行」收口动作(shell.exec / code.run / subprocess… 或带 command/script 参数)。
+
+    第三类收口动作:把抓取/落盘得到的载荷真正跑起来(RCE 暂存链的最后一跳)。收紧到执行语义,
+    取数类(query/fetch/read)不纳入。是否产 Finding 仍由 analyze 里的跨步关联硬门控。
+    """
+    if _EXECUTE_RE.search(intent.tool_name):
+        return True
+    return any(k in intent.arguments for k in _EXEC_ARG_KEYS)
+
+
+def _is_file_write(intent: ToolIntent) -> bool:
+    """是否为带目标路径的文件写动作(staged 链的「落盘」段)。"""
+    return bool(_WRITE_RE.search(intent.tool_name)) and "path" in intent.arguments
+
+
+def _path_in_command(path: str, exec_norm: str) -> bool:
+    """落盘路径是否原文出现在(已归一化的)执行命令文本里。
+
+    路径须含分隔符且达 _PATH_MIN 量级才比对,避免裸文件名 / 短串偶然命中(FP 护栏)。
+    这是"是否被引用"的外层门,真正"是否被执行"还需 `_path_executed` 收紧位置。
+    """
+    if "/" not in path and "\\" not in path:
+        return False
+    norm = _normalize_taint(path)
+    return len(norm) >= _PATH_MIN and norm in exec_norm
+
+
+def _path_executed(path: str, command: str) -> bool:
+    """落盘路径在命令里是否处于**执行位**(被当作程序运行),而非仅作数据参数喂给既有程序。
+
+    暂存链的判别核心:被执行的是"刚落盘的那个文件"。两类执行位:
+    - 解释器/加载器后紧跟该路径:`bash /tmp/p.sh`、`python3 /tmp/x.py`、`source ./a.sh`;
+    - 该路径作为命令首 token 直接执行(可前置 sudo/env/exec 等):`/tmp/p.sh`、`./run.sh`。
+    `python /opt/render.py --in /tmp/data.csv` 里 data.csv 只是 `--in` 的数据值、不在执行位 →
+    False,据此堵掉「抓数据→落盘→既有程序读该数据」这类 ETL/绘图良性误报(含其被污点升级)。
+    `base64 -d X | sh` 这类"间接执行"不靠本判定,由 argrisk.command_dangerous 单独认定。
+    """
+    if not path:
+        return False
+    p = re.escape(path)
+    tail = r"(?![\w./\\-])"  # 路径后不接路径字符,避免 /tmp/p 误配 /tmp/print.log
+    interp = re.compile(
+        r"\b(?:(?:ba|z|da|k|a)?sh|python[0-9.]*|perl|ruby|php|node(?:js)?|pwsh|powershell"
+        r"|deno|bun|source)\b\s+(?:-\S+\s+)*[\"']?(?:\.[\\/])?" + p + tail,
+        re.IGNORECASE,
+    )
+    direct = re.compile(
+        r"(?:^|[;&|`(]|&&|\|\|)\s*"
+        r"(?:(?:sudo|nohup|time|exec|source|command)\s+)*"
+        r"(?:env\s+\w+=\S+\s+)*"
+        r"[\"']?(?:\.[\\/])?" + p + tail,
+        re.IGNORECASE,
+    )
+    return bool(interp.search(command) or direct.search(command))
+
+
 @capability("chain_analyzer", "sequence")
 class SequenceChainAnalyzer:
     """有序动作链检测。注册名 `sequence`,在 fulcrum.yml 启用。"""
@@ -193,10 +271,13 @@ class SequenceChainAnalyzer:
             return []
         current = trace[-1]
         outbound = _is_outbound(current)
-        # 收口动作有两类:对外发送(外泄链)、写入长期记忆/知识库(记忆投毒链)。
+        # 收口动作有三类:对外发送(外泄链)、写入长期记忆/知识库(记忆投毒链)、
+        # 执行落盘/抓取的载荷(获取→落盘→执行的 RCE 暂存链)。三类互不改动、并列判定。
         if not outbound:
             if _is_persist_write(current):
                 return self._persistence_findings(current, ctx)
+            if _is_execute(current):
+                return self._staged_execution_findings(current, trace, ctx)
             return []
 
         findings: list[Finding] = []
@@ -274,3 +355,85 @@ class SequenceChainAnalyzer:
                 },
             )
         ]
+
+    @staticmethod
+    def _staged_execution_findings(
+        current: ToolIntent, trace: list[ToolIntent], ctx: Context
+    ) -> list[Finding]:
+        """获取→落盘→执行(RCE 暂存链)的执行收口判定。
+
+        核心铁律:**没有具体跨步关联就绝不报**。两条硬证据,任一成立才收口:
+        - 内联:当前 exec 的命令/脚本文本污点源自上一步工具返回(模型把抓到的脚本直接内联进
+          shell.exec)→ tool_return->execute、critical;
+        - 路径关联:窗口内某 file.write 步的目标路径被当前命令引用,**且处于执行位**(被当作程序
+          运行,见 `_path_executed`)→ write->execute、high。升级 critical 二选一:(a) 该 write 的
+          内容污点源自工具返回 → 完整 fetch->write->execute;(b) 当前命令本身危险(curl|bash、
+          base64 -d|sh…,此时间接执行,放宽执行位要求)。
+        裸 exec("ls")、执行本请求未落盘的既有路径、只写不执行、写与执行路径不相干、落盘文件仅作
+        数据参数喂给既有程序(`render.py --in x.csv`)—— 一律 [] 不报。评分落在既有 0.4/0.8 分档
+        语义内,经 _chain_risk 泛化自动接策略,policy 零改动。
+        """
+        exec_text = _exec_text(current)
+        if not exec_text:
+            return []
+
+        def _build(pattern: str, score: float, **extra: object) -> Finding:
+            return Finding(
+                kind="chain.staged_execution",
+                score=score,
+                evidence={
+                    "intent_id": current.intent_id,
+                    "pattern": pattern,
+                    "severity": "critical" if score >= 0.8 else "high",
+                    "exec_tool": current.tool_name,
+                    **extra,
+                },
+            )
+
+        # ① 内联:当前命令文本本身污点源自上一步工具返回 → 抓到的脚本被内联进执行(最强信号)。
+        inline = _taint_source(current, ctx.tool_returns)
+        if inline is not None:
+            tainted, encoded = inline
+            return [_build("tool_return->execute", 0.9, tainted_from=tainted, encoded=encoded)]
+
+        # ② 路径关联:窗口内某 write 步的目标路径被当前命令引用(外层门)。
+        exec_norm = _normalize_taint(exec_text)
+        window = trace[-(_WINDOW + 1) : -1]
+        referenced = [
+            w
+            for w in window
+            if _is_file_write(w) and _path_in_command(str(w.arguments.get("path") or ""), exec_norm)
+        ]
+        if not referenced:
+            return []
+
+        # 铁律收紧:落盘文件须真处于**执行位**(被当作程序运行),否则仅在命令本身危险时才认。
+        # 仅作数据参数喂给既有程序(`render.py --in data.csv`)且命令不危险 → 不报(ETL/绘图良性,
+        # 含其内容来自工具返回也不误升 critical)。`base64 -d X|sh` 这类间接执行靠 dangerous 兜。
+        dangerous = argrisk.command_dangerous(current.arguments)
+        executed = [
+            w for w in referenced if _path_executed(str(w.arguments.get("path") or ""), exec_text)
+        ]
+        if not executed and not dangerous:
+            return []
+        candidates = executed or referenced
+
+        # 升级 critical(a):任一候选 write 的内容污点源自工具返回 → 完整 fetch->write->execute。
+        for w in candidates:
+            wtaint = _taint_source(w, ctx.tool_returns)
+            if wtaint is not None:
+                return [
+                    _build(
+                        "fetch->write->execute",
+                        0.9,
+                        write_path=str(w.arguments.get("path") or ""),
+                        tainted_from=wtaint[0],
+                        encoded=wtaint[1],
+                    )
+                ]
+
+        path0 = str(candidates[0].arguments.get("path") or "")
+        # 升级 critical(b):当前命令本身危险(复用 argrisk,不改其口径)且写关联成立。
+        if dangerous:
+            return [_build("write->execute", 0.9, write_path=path0, dangerous_command=True)]
+        return [_build("write->execute", 0.7, write_path=path0)]
