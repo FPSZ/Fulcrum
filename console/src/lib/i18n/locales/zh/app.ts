@@ -44,4 +44,17 @@ export const app = {
   'app.shell.console': '控制台',
   'app.placeholder.title': '{title} · 建设中',
   'app.placeholder.hint': '该模块将在后续版本接入',
+
+  // 导航(各功能页显示名,与 module.tsx 的 labelKey 对应)
+  'app.nav.overview': '安全总览',
+  'app.nav.gateway': '网关实测',
+  'app.nav.events': '实时事件',
+  'app.nav.assistant': '操作助手',
+  'app.nav.policies': '策略中心',
+  'app.nav.tools': '工具网关',
+  'app.nav.supply': '供应链',
+  'app.nav.audit': '审计溯源',
+  'app.nav.eval': '评测验证',
+  'app.nav.members': '组织与成员',
+  'app.nav.settings': '系统设置',
 } as const

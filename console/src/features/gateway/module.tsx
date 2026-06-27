@@ -5,6 +5,7 @@ import { lazy } from 'react'
 export const gatewayModule = defineFeature({
   id: 'gateway',
   label: '网关实测',
+  labelKey: 'app.nav.gateway',
   icon: ShieldCheck,
   group: '监测',
   order: 15, // 紧随安全总览,作为「看网关如何防护」的入口
