@@ -28,6 +28,9 @@ data/raw
 data/interim
 *.log
 
+# 政务沙盘 demo 工作区(含脱敏蜜罐凭据等靶机素材;仅联调/演示,绝不进生产镜像)
+data/gov_workspace
+
 # 机密:绝不进镜像(仅保留 .env.example 占位)
 .env
 .env.*

