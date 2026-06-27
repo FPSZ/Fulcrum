@@ -26,7 +26,13 @@ _LOCAL_GGUF: dict[str, str] = {
 }
 
 # 全部已知模型(--models all 用);本地在前、云端在后。
-ALL_MODELS: list[str] = [*_LOCAL_GGUF, "mimo", "deepseek"]
+ALL_MODELS: list[str] = [*_LOCAL_GGUF, "mimo", "deepseek", "deepseek-flash"]
+
+# DeepSeek 云端各档:别名→真实 model 名(deepseek-chat 为非推理别名,flash/pro 为 v4 档)。
+_DEEPSEEK_MODELS: dict[str, str] = {
+    "deepseek": "deepseek-chat",
+    "deepseek-flash": "deepseek-v4-flash",
+}
 
 
 def is_local(name: str) -> bool:
@@ -53,13 +59,13 @@ def env_for(name: str) -> dict[str, str] | None:
             "LLM_API_KEY": s.model_api_key, "LLM_NO_THINK": "1",
             "GOV_SLEEP": os.environ.get("BENCH_MIMO_SLEEP", "1.0"),
         }
-    if name == "deepseek":
+    if name in _DEEPSEEK_MODELS:
         key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
         if not key:
             return None
-        # deepseek-chat 非推理模型,不关思考。
+        # deepseek-chat 别名非推理;flash/pro 走 v4 档,统一不关思考(由服务端控制)。
         return {
-            "LLM_BASE": "https://api.deepseek.com/v1", "LLM_MODEL": "deepseek-chat",
+            "LLM_BASE": "https://api.deepseek.com/v1", "LLM_MODEL": _DEEPSEEK_MODELS[name],
             "LLM_API_KEY": key, "LLM_NO_THINK": "0",
         }
     return None
@@ -68,6 +74,6 @@ def env_for(name: str) -> dict[str, str] | None:
 def skip_reason(name: str) -> str:
     if name == "mimo":
         return "未配置 .env 的 FULCRUM_MODEL_*(云端点+密钥)"
-    if name == "deepseek":
+    if name in _DEEPSEEK_MODELS:
         return "未设环境变量 DEEPSEEK_API_KEY"
     return "未知模型"
