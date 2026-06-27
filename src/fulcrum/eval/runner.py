@@ -38,7 +38,8 @@ _EMBEDDED_SOURCES = frozenset(
 
 
 def _src_name(st: object) -> str:
-    return st.name.lower() if hasattr(st, "name") else str(st).lower()
+    name = getattr(st, "name", None)
+    return name.lower() if isinstance(name, str) else str(st).lower()
 
 
 def _attribute_sources(text: str) -> list[str]:
