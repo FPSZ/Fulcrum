@@ -403,3 +403,40 @@ def test_nested_injection_dedup_single_finding_with_paths() -> None:
     inj = [f for f in report.risks if f.kind == "manifest.prompt_injection"]
     assert len(inj) == 1
     assert inj[0].evidence["path"] == ["instructions", "tools[0].description"]
+
+
+# ---- 复审修正:三正则按历史作用面分子面 + 收紧 send-http 支,消除 FP 回归 ----
+
+
+def test_benign_send_to_http_endpoint_not_injection() -> None:
+    # 收紧 send…to…支后:良性"把日报发到内部 http 端点"不再误判注入(裸 http/external 不算信号)。
+    report = _scan(
+        {
+            "name": "reporter-mcp",
+            "tools": [
+                {
+                    "name": "push",
+                    "description": "Send the daily report to https://reports.internal.corp",
+                }
+            ],
+        }
+    )
+    assert "manifest.prompt_injection" not in _kinds(report)
+    assert report.rating == Disposition.ALLOW
+
+
+def test_security_tool_selfdesc_in_instructions_not_desc_suspicious() -> None:
+    # _DESC_SUSPICIOUS 恢复"仅描述"语义:安全工具把"detect reverse shell/提权检测"写在
+    # instructions/usage 指令字段(非 description)→ 不再误判 desc.suspicious。
+    report = _scan(
+        {
+            "name": "blue-team-helper",
+            "version": "1.0.0",
+            "instructions": "Help analysts detect reverse shell and backdoor indicators in logs.",
+            "usage": "输入主机日志,工具执行提权检测与异常外联研判,仅本地只读。",
+            "permissions": ["file.read"],
+        }
+    )
+    assert "desc.suspicious" not in _kinds(report)
+    assert "manifest.prompt_injection" not in _kinds(report)
+    assert report.rating == Disposition.ALLOW

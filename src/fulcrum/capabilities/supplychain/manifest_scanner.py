@@ -91,17 +91,21 @@ _INSTRUCTION_FIELDS: tuple[str, ...] = (
 # tools[].description、tools[].parameters[].description、functions[] 等嵌套字段,顶层正则照旧
 # 放过(MCP "tool poisoning / line jumping" 面)→ 这里递归触达,只增召回(目标③)。
 _DESC_FIELDS: tuple[str, ...] = ("description", "desc")
+_DESC_FIELDS_SET: frozenset[str] = frozenset(f.lower() for f in _DESC_FIELDS)
 _CARRIER_FIELDS: frozenset[str] = frozenset(
     f.lower() for f in (*_INSTRUCTION_FIELDS, *_DESC_FIELDS)
 )
 # 护栏:递归深度与归集文本总量上限,防病态/超大 manifest 拖垮扫描(只收紧,不影响正常体量)。
 _MAX_DEPTH = 8
 _MAX_BYTES = 64 * 1024
+# 英文 send…to…(目标)支只认 attacker|evil:裸 http|external 会把良性"send/post X to <http 端点>"
+# 误判注入(复审 FP 回归)。三个头号注入用例(忽略上述 / disregard above / exfiltrat)不依赖该支,
+# 去掉零召回损失。
 _MANIFEST_INJECTION = re.compile(
     r"(ignore\s+(the\s+)?(previous|above|prior|preceding)\s+(instructions?|rules?|prompts?)|"
     r"disregard\s+(the\s+)?(instructions?|rules?|above)|"
     r"reveal\s+(the\s+)?(system\s+)?prompt|"
-    r"exfiltrat\w*|send\s+.{0,24}\s+to\s+.{0,24}(external|http|attacker|evil)|"
+    r"exfiltrat\w*|send\s+.{0,24}\s+to\s+.{0,24}(attacker|evil)|"
     r"忽略(以上|之前|上述|前面|前文)(的)?(指令|规则|提示词?|设定)|"
     r"无视(系统|安全|上述|之前)(的)?(设定|规则|指令)|"
     r"覆盖(系统|上层|之前的?)(指令|设定|规则)|"
@@ -212,15 +216,19 @@ def _gather(manifest: dict, *keys: str) -> list[str]:
     return out
 
 
-def _gather_carrier(manifest: dict) -> list[tuple[str, str]]:
-    """递归遍历 manifest(dict/list 任意深度),归集**键名 ∈ 承载集**的字符串值。
+def _gather_carrier(
+    manifest: dict, fields: frozenset[str] = _CARRIER_FIELDS
+) -> list[tuple[str, str]]:
+    """递归遍历 manifest(dict/list 任意深度),归集**键名 ∈ fields**的字符串值。
 
     返回 (JSON 路径, 文本) 列表,路径如 ``tools[0].parameters[1].description``,供审计定位
-    (目标④)。**只按键名归集**:某字符串是否采集,取决于其**直接所在的 dict 键**是否为承载键
-    (经非承载键下行即重置为不采集),列表下标仅透传不改变采集态——故 instructions 为字符串或
-    字符串列表均收、tools[].description 这类深层嵌套能递归触达,而 name/author 等非承载键
-    (即便其值字面像敏感词)一律不收。深度超 ``_MAX_DEPTH`` 或累计文本超 ``_MAX_BYTES`` 即停,
-    防病态/超大 manifest。
+    (目标④)。**只按键名归集**:某字符串是否采集,取决于其**直接所在的 dict 键**是否在 fields
+    (经不在 fields 的键下行即重置为不采集),列表下标仅透传不改变采集态——故 instructions 为
+    字符串或字符串列表均收、tools[].description 这类深层嵌套能递归触达,而 name/author 等
+    (即便其值字面像敏感词)一律不收。``fields`` 默认全承载集(指令+描述,供注入/敏感扫描);
+    传 ``_DESC_FIELDS_SET`` 则只归集 description/desc 子面(供 _DESC_SUSPICIOUS 恢复"仅描述"
+    历史语义,不扫 instructions/usage/role 等指令字段)。深度超 ``_MAX_DEPTH`` 或累计文本超
+    ``_MAX_BYTES`` 即停,防病态/超大 manifest。
     """
     out: list[tuple[str, str]] = []
     total = 0
@@ -242,7 +250,7 @@ def _gather_carrier(manifest: dict) -> list[tuple[str, str]]:
             for k, v in node.items():
                 key = str(k)
                 child = f"{path}.{key}" if path else key
-                _walk(v, child, depth + 1, key.lower() in _CARRIER_FIELDS)
+                _walk(v, child, depth + 1, key.lower() in fields)
         elif isinstance(node, list):
             for i, v in enumerate(node):
                 _walk(v, f"{path}[{i}]", depth + 1, collect)
@@ -294,14 +302,19 @@ class ManifestScanner:
                     seen_kinds.add(kind)
                     risks.append(_finding(kind, severity, f"声明高危权限:{perm}", permission=perm))
 
-        # 2) 描述 / 指令承载字段统一**递归归集**(含 tools[].description、
-        #    tools[].parameters[].description、functions[] 等任意深度嵌套),再喂给现有三条内容
-        #    正则。顶层本是深度0特例,被这一遍覆盖,故 instr_parts/description 不再单列。只增召回
-        #    (嵌套投毒不再漏过),复用既有 kind/severity,不新增评级桶、不动 _rating/排序。
+        # 2) 描述 / 指令承载字段**递归归集**(含 tools[].description、parameters[].description、
+        #    functions[] 等任意深度嵌套),再喂给现有三条内容正则。顶层本是深度0特例,被这一遍
+        #    覆盖。**三条正则按各自历史作用面分子面**(复审修正,消除 FP 回归):
+        #      · _DESC_SUSPICIOUS —— 仅 description/desc 子面(恢复"仅描述"语义,不扫
+        #        instructions/usage/role 等指令字段,避免安全工具自述"detect reverse shell"误判);
+        #      · _MANIFEST_INJECTION —— 指令+描述全承载面(注入须扫到 tools[].description 头号面);
+        #      · _SENSITIVE_ACCESS —— 描述+指令+声明权限(维持现状)。
+        #    只增召回(嵌套投毒不再漏过),复用既有 kind/severity,不新增评级桶、不动 _rating/排序。
         #    evidence.path 记 JSON 路径供目标④审计;matched 用集合去重,顶层与嵌套命中不重复记。
         carrier = _gather_carrier(manifest)
+        desc_carrier = _gather_carrier(manifest, _DESC_FIELDS_SET)
 
-        hits, hit_paths = _scan_surface(_DESC_SUSPICIOUS, carrier)
+        hits, hit_paths = _scan_surface(_DESC_SUSPICIOUS, desc_carrier)
         if hits:
             risks.append(
                 _finding(
