@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { requestAccount, useAuth } from '@/lib/auth'
+import { useTranslation } from '@/lib/i18n'
 
 type Mode = 'login' | 'apply'
 
@@ -68,6 +69,7 @@ function PasswordField({
   show: boolean
   setShow: (fn: (v: boolean) => boolean) => void
 }) {
+  const { t } = useTranslation()
   return (
     <Field
       icon={Lock}
@@ -76,7 +78,7 @@ function PasswordField({
         <button
           type="button"
           onClick={() => setShow((v) => !v)}
-          aria-label={show ? '隐藏口令' : '显示口令'}
+          aria-label={show ? t('auth.pwd.hide') : t('auth.pwd.show')}
           className="focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-[9px] text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink-2"
         >
           {show ? (
@@ -142,21 +144,24 @@ function SubmitButton({
 
 /** 申请提交成功提示 */
 function ApplySuccess({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation()
   return (
     <div className="text-center">
       <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-ok/12 text-ok">
         <CheckCircle2 className="h-8 w-8" strokeWidth={1.8} />
       </span>
-      <h1 className="mt-5 text-[24px] font-bold tracking-[-0.02em] text-ink">申请已提交</h1>
+      <h1 className="mt-5 text-[24px] font-bold tracking-[-0.02em] text-ink">
+        {t('auth.apply.submitted')}
+      </h1>
       <p className="mx-auto mt-2 max-w-[300px] text-[14px] leading-relaxed text-ink-3">
-        请等待管理员审批,通过后即可使用该账号登录。
+        {t('auth.apply.submitted_hint')}
       </p>
       <button
         type="button"
         onClick={onBack}
         className="focus-ring mt-6 rounded text-[14px] font-semibold text-accent-ink transition-colors hover:text-accent-hover"
       >
-        返回登录
+        {t('auth.back_to_login')}
       </button>
     </div>
   )
@@ -164,6 +169,7 @@ function ApplySuccess({ onBack }: { onBack: () => void }) {
 
 export function LoginPage() {
   const { login } = useAuth()
+  const { t } = useTranslation()
   const [mode, setMode] = useState<Mode>('login')
   const [account, setAccount] = useState('')
   const [name, setName] = useState('')
@@ -191,7 +197,7 @@ export function LoginPage() {
       await login(account, password)
       // 成功后不复位 loading:登录页马上向上滑走
     } catch (err) {
-      setError(err instanceof Error ? err.message : '登录失败')
+      setError(err instanceof Error ? err.message : t('auth.error.login_failed'))
       setLoading(false)
     }
   }
@@ -199,15 +205,15 @@ export function LoginPage() {
   const submitApply = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (!name.trim() || !account.trim()) return setError('请填写姓名与账号')
-    if (password.length < 8) return setError('口令至少需要 8 位')
-    if (password !== confirm) return setError('两次输入的口令不一致')
+    if (!name.trim() || !account.trim()) return setError(t('auth.error.name_account_required'))
+    if (password.length < 8) return setError(t('auth.error.pwd_min'))
+    if (password !== confirm) return setError(t('auth.error.pwd_mismatch'))
     setLoading(true)
     try {
       await requestAccount(account, password, name)
       setApplied(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '申请失败')
+      setError(err instanceof Error ? err.message : t('auth.error.apply_failed'))
     } finally {
       setLoading(false)
     }
@@ -241,9 +247,9 @@ export function LoginPage() {
             </span>
             <span className="leading-tight">
               <span className="block text-[16px] font-bold tracking-[-0.01em]">
-                枢衡 <span className="font-medium text-ink-3">Fulcrum</span>
+                {t('common.app.name')} <span className="font-medium text-ink-3">Fulcrum</span>
               </span>
-              <span className="block text-[12.5px] text-ink-mute">智能体安全中台</span>
+              <span className="block text-[12.5px] text-ink-mute">{t('common.app.tagline')}</span>
             </span>
           </div>
 
@@ -254,25 +260,25 @@ export function LoginPage() {
             ) : mode === 'login' ? (
               <form onSubmit={submitLogin}>
                 <h1 className="text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">
-                  欢迎回来
+                  {t('auth.welcome')}
                 </h1>
                 <div className="mt-8 space-y-4">
-                  <Field icon={User} label="账号">
+                  <Field icon={User} label={t('auth.field.account')}>
                     <input
                       type="text"
                       autoFocus
                       autoComplete="username"
                       value={account}
                       onChange={(e) => setAccount(e.target.value)}
-                      placeholder="请输入账号"
+                      placeholder={t('auth.field.account_ph')}
                       className="h-full w-full bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-mute"
                     />
                   </Field>
                   <PasswordField
-                    label="口令"
+                    label={t('auth.field.password')}
                     value={password}
                     onChange={setPassword}
-                    placeholder="请输入口令"
+                    placeholder={t('auth.field.password_ph')}
                     autoComplete="current-password"
                     show={show}
                     setShow={setShow}
@@ -298,85 +304,91 @@ export function LoginPage() {
                     >
                       {remember && <Check className="h-3 w-3" strokeWidth={3.2} />}
                     </span>
-                    记住登录
+                    {t('auth.remember')}
                   </button>
                   <button
                     type="button"
                     className="focus-ring rounded text-[13.5px] font-medium text-accent-ink transition-colors hover:text-accent-hover"
                   >
-                    忘记口令?
+                    {t('auth.forgot')}
                   </button>
                 </div>
 
                 <p className="mt-3.5 min-h-[18px] text-[13px] text-crit">{error}</p>
-                <SubmitButton loading={loading} loadingText="正在登录…" text="登录" />
+                <SubmitButton
+                  loading={loading}
+                  loadingText={t('auth.logging_in')}
+                  text={t('auth.login')}
+                />
               </form>
             ) : (
               <form onSubmit={submitApply}>
                 <h1 className="text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">
-                  申请账号
+                  {t('auth.apply_account')}
                 </h1>
-                <p className="mt-2 text-[13.5px] text-ink-3">
-                  提交后由管理员审批,通过后即可登录。
-                </p>
+                <p className="mt-2 text-[13.5px] text-ink-3">{t('auth.apply_hint')}</p>
                 <div className="mt-6 space-y-3.5">
-                  <Field icon={IdCard} label="姓名">
+                  <Field icon={IdCard} label={t('auth.field.name')}>
                     <input
                       type="text"
                       autoFocus
                       autoComplete="name"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="请输入真实姓名"
+                      placeholder={t('auth.field.name_ph')}
                       className="h-full w-full bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-mute"
                     />
                   </Field>
-                  <Field icon={User} label="账号">
+                  <Field icon={User} label={t('auth.field.account')}>
                     <input
                       type="text"
                       autoComplete="username"
                       value={account}
                       onChange={(e) => setAccount(e.target.value)}
-                      placeholder="用于登录的账号"
+                      placeholder={t('auth.field.account_apply_ph')}
                       className="h-full w-full bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-mute"
                     />
                   </Field>
                   <PasswordField
-                    label="口令"
+                    label={t('auth.field.password')}
                     value={password}
                     onChange={setPassword}
-                    placeholder="至少 8 位"
+                    placeholder={t('auth.field.pwd_min_ph')}
                     autoComplete="new-password"
                     show={show}
                     setShow={setShow}
                   />
-                  <Field icon={Lock} label="确认口令">
+                  <Field icon={Lock} label={t('auth.field.confirm_pwd')}>
                     <input
                       type={show ? 'text' : 'password'}
                       autoComplete="new-password"
                       value={confirm}
                       onChange={(e) => setConfirm(e.target.value)}
-                      placeholder="再次输入口令"
+                      placeholder={t('auth.field.confirm_pwd_ph')}
                       className="h-full w-full bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-mute"
                     />
                   </Field>
                 </div>
 
                 <p className="mt-3.5 min-h-[18px] text-[13px] text-crit">{error}</p>
-                <SubmitButton loading={loading} loadingText="提交中…" text="提交申请" />
+                <SubmitButton
+                  loading={loading}
+                  loadingText={t('auth.submitting')}
+                  text={t('auth.apply_submit')}
+                />
               </form>
             )}
 
             {/* 登录 / 申请切换 */}
             {!applied && (
               <p className="mt-5 text-center text-[13.5px] text-ink-3">
-                {mode === 'login' ? '没有账号?' : '已有账号?'}
+                {mode === 'login' ? t('auth.no_account') : t('auth.have_account')}
                 <button
                   type="button"
                   onClick={() => switchMode(mode === 'login' ? 'apply' : 'login')}
                   className="focus-ring ml-1 rounded font-semibold text-accent-ink transition-colors hover:text-accent-hover"
                 >
-                  {mode === 'login' ? '申请账号' : '返回登录'}
+                  {mode === 'login' ? t('auth.apply_account') : t('auth.back_to_login')}
                 </button>
               </p>
             )}
