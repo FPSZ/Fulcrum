@@ -56,7 +56,11 @@ export function Sidebar({
                 const isActive = active === f.id
                 const Icon = f.icon
                 return (
-                  <Tooltip key={f.id} content={collapsed ? f.label : ''} side="right">
+                  <Tooltip
+                    key={f.id}
+                    content={collapsed ? (f.labelKey ? t(f.labelKey) : f.label) : ''}
+                    side="right"
+                  >
                     <button
                       type="button"
                       onClick={() => onNavigate(f.id)}
@@ -78,7 +82,9 @@ export function Sidebar({
                         )}
                         strokeWidth={1.8}
                       />
-                      <span className={fade('min-w-0 flex-1 truncate text-left')}>{f.label}</span>
+                      <span className={fade('min-w-0 flex-1 truncate text-left')}>
+                        {f.labelKey ? t(f.labelKey) : f.label}
+                      </span>
                       {typeof f.badge === 'number' && (
                         <span
                           className={fade(

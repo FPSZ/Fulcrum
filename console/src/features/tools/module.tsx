@@ -6,6 +6,7 @@ import { toolCallResourceSpec } from './backup'
 export const toolsModule = defineFeature({
   id: 'tools',
   label: '工具网关',
+  labelKey: 'app.nav.tools',
   icon: Plug,
   group: '管控',
   order: 40,

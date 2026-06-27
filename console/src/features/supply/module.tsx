@@ -6,6 +6,7 @@ import { scanResourceSpec } from './backup'
 export const supplyModule = defineFeature({
   id: 'supply',
   label: '供应链',
+  labelKey: 'app.nav.supply',
   icon: Package,
   group: '管控',
   order: 50,

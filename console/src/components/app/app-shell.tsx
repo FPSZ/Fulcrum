@@ -18,7 +18,12 @@ export function AppShell({
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const { t } = useTranslation()
-  const title = getFeature(active)?.label ?? t('app.shell.console')
+  const activeFeature = getFeature(active)
+  const title = activeFeature
+    ? activeFeature.labelKey
+      ? t(activeFeature.labelKey)
+      : activeFeature.label
+    : t('app.shell.console')
 
   /** 移动端点导航后顺手关抽屉 */
   const navigateMobile = (id: string) => {
