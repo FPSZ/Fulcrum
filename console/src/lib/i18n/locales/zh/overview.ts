@@ -25,4 +25,13 @@ export const overview = {
   'overview.col.tool': '工具',
   'overview.col.risk': '风险分',
   'overview.no_summary': '(无摘要)',
+  'overview.kpi.controlled': '受控调用',
+  'overview.kpi.blocked': '高危拦截',
+  'overview.kpi.pending': '待人工研判',
+  'overview.kpi.audit': '审计完整率',
+  'overview.ago.now': '现在',
+  'overview.ago.sec': '-{n}秒',
+  'overview.ago.min': '-{n}分',
+  'overview.ago.hour': '-{n}时',
+  'overview.ago.day': '-{n}天',
 } as const

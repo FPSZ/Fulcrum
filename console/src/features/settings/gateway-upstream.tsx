@@ -14,22 +14,13 @@ import {
   type GatewayProtocol,
 } from '@/lib/admin'
 import { useAuth } from '@/lib/auth'
+import { useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 type Form = Omit<GatewayConfig, 'auth_value_masked' | 'auth_value_set'>
 
 const NO_TEAM = '0' // Select 哨兵:未归属(全局可见)
 
-const PROTOCOLS: { value: GatewayProtocol; label: string }[] = [
-  { value: 'openai', label: 'OpenAI 兼容(推荐 · 覆盖市面多数)' },
-  { value: 'rest', label: '通用 REST(自研接口)' },
-  { value: 'native', label: '枢衡 /chat(内置示例体)' },
-]
-const AUTH_TYPES: { value: GatewayAuthType; label: string }[] = [
-  { value: 'none', label: '无' },
-  { value: 'bearer', label: 'Bearer 令牌' },
-  { value: 'header', label: '自定义 Header' },
-]
 const PATH_HINT: Record<GatewayProtocol, string> = {
   openai: '/chat/completions',
   rest: '/',
@@ -38,7 +29,18 @@ const PATH_HINT: Record<GatewayProtocol, string> = {
 
 /** 上游接入配置 —— 真实对接后端 /admin/gateway-config(读/存/测试连接)。 */
 export function GatewayUpstreamPanel() {
+  const { t } = useTranslation()
   const canManage = useAuth().has('settings.manage')
+  const PROTOCOLS: { value: GatewayProtocol; label: string }[] = [
+    { value: 'openai', label: t('settings.up.proto.openai') },
+    { value: 'rest', label: t('settings.up.proto.rest') },
+    { value: 'native', label: t('settings.up.proto.native') },
+  ]
+  const AUTH_TYPES: { value: GatewayAuthType; label: string }[] = [
+    { value: 'none', label: t('settings.up.auth.none') },
+    { value: 'bearer', label: t('settings.up.auth.bearer') },
+    { value: 'header', label: t('settings.up.auth.header') },
+  ]
   const [form, setForm] = useState<Form | null>(null)
   const [meta, setMeta] = useState({ set: false, masked: '' })
   const [pwd, setPwd] = useState('')
@@ -68,17 +70,17 @@ export function GatewayUpstreamPanel() {
 
   if (loadErr) {
     return (
-      <SettingSection title="上游接入">
-        <SettingRow label="加载失败" hint={loadErr}>
-          <Badge tone="high">不可用</Badge>
+      <SettingSection title={t('settings.up.title')}>
+        <SettingRow label={t('settings.up.load_failed')} hint={loadErr}>
+          <Badge tone="high">{t('settings.up.unavailable')}</Badge>
         </SettingRow>
       </SettingSection>
     )
   }
   if (!form) {
     return (
-      <SettingSection title="上游接入">
-        <SettingRow label="读取配置中…">
+      <SettingSection title={t('settings.up.title')}>
+        <SettingRow label={t('settings.up.loading')}>
           <Loader2 className="h-4 w-4 animate-spin text-ink-3" />
         </SettingRow>
       </SettingSection>
@@ -100,7 +102,9 @@ export function GatewayUpstreamPanel() {
     try {
       const r = await testGatewayConfig(buildWrite())
       setProbe(r)
-      r.ok ? toast.success(`连接正常 · ${r.latency_ms}ms`) : toast.error(`连接失败:${r.detail}`)
+      r.ok
+        ? toast.success(t('settings.up.test_ok', { ms: r.latency_ms }))
+        : toast.error(t('settings.up.test_fail', { detail: r.detail }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -112,7 +116,7 @@ export function GatewayUpstreamPanel() {
     try {
       const saved = await saveGatewayConfig(buildWrite())
       apply(saved)
-      toast.success('已保存,立即生效(无需重启)')
+      toast.success(t('settings.up.saved'))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -121,11 +125,13 @@ export function GatewayUpstreamPanel() {
   }
 
   const ro = !canManage
-  const pwdPlaceholder = meta.set ? `已设置 ${meta.masked}(留空不改)` : '未设置'
+  const pwdPlaceholder = meta.set
+    ? t('settings.up.secret_set', { masked: meta.masked })
+    : t('settings.up.secret_unset')
 
   return (
-    <SettingSection title="上游接入" desc="密钥仅存后端,不回前端。">
-      <SettingRow label="启用接入" hint="关闭后只判定不转发">
+    <SettingSection title={t('settings.up.title')} desc={t('settings.up.desc')}>
+      <SettingRow label={t('settings.up.enable')} hint={t('settings.up.enable_hint')}>
         <Switch
           checked={form.enabled}
           onCheckedChange={(v) => set('enabled', v)}
@@ -133,7 +139,7 @@ export function GatewayUpstreamPanel() {
         />
       </SettingRow>
 
-      <SettingRow label="名称">
+      <SettingRow label={t('settings.up.name')}>
         <Input
           value={form.name}
           onChange={(e) => set('name', e.target.value)}
@@ -142,23 +148,20 @@ export function GatewayUpstreamPanel() {
         />
       </SettingRow>
 
-      <SettingRow
-        label="归属团队"
-        hint="被保护智能体属于哪个团队;其流量与事件按此隔离,仅该团队成员与管理员可见"
-      >
+      <SettingRow label={t('settings.up.team')} hint={t('settings.up.team_hint')}>
         <Select
           value={form.team_id == null ? NO_TEAM : String(form.team_id)}
           onValueChange={(v) => set('team_id', v === NO_TEAM ? null : Number(v))}
           options={[
-            { value: NO_TEAM, label: '未归属(全局可见)' },
-            ...teams.map((t) => ({ value: String(t.id), label: t.name })),
+            { value: NO_TEAM, label: t('settings.up.team_none') },
+            ...teams.map((tm) => ({ value: String(tm.id), label: tm.name })),
           ]}
           disabled={ro}
           className="w-full"
         />
       </SettingRow>
 
-      <SettingRow label="接入协议" hint="多数智能体 / LLM 网关为 OpenAI 兼容">
+      <SettingRow label={t('settings.up.protocol')} hint={t('settings.up.protocol_hint')}>
         <Select
           value={form.protocol}
           onValueChange={(v) => set('protocol', v as GatewayProtocol)}
@@ -168,7 +171,7 @@ export function GatewayUpstreamPanel() {
         />
       </SettingRow>
 
-      <SettingRow label="上游地址" hint="企业智能体基址,如 http://10.0.0.5:8000/v1">
+      <SettingRow label={t('settings.up.endpoint')} hint={t('settings.up.endpoint_hint')}>
         <Input
           value={form.endpoint}
           onChange={(e) => set('endpoint', e.target.value)}
@@ -178,7 +181,10 @@ export function GatewayUpstreamPanel() {
         />
       </SettingRow>
 
-      <SettingRow label="请求路径" hint={`留空按协议默认(${PATH_HINT[form.protocol]})`}>
+      <SettingRow
+        label={t('settings.up.path')}
+        hint={t('settings.up.path_hint', { default: PATH_HINT[form.protocol] })}
+      >
         <Input
           value={form.path}
           onChange={(e) => set('path', e.target.value)}
@@ -189,12 +195,12 @@ export function GatewayUpstreamPanel() {
       </SettingRow>
 
       {form.protocol === 'openai' && (
-        <SettingRow label="模型名" hint="转发给上游的 model 字段">
+        <SettingRow label={t('settings.up.model')} hint={t('settings.up.model_hint')}>
           <Input
             value={form.model}
             onChange={(e) => set('model', e.target.value)}
             disabled={ro}
-            placeholder="如 gpt-4o-mini / mimo-v2.5-pro"
+            placeholder="gpt-4o-mini / mimo-v2.5-pro"
             className="w-full"
           />
         </SettingRow>
@@ -202,7 +208,7 @@ export function GatewayUpstreamPanel() {
 
       {form.protocol === 'rest' && (
         <>
-          <SettingRow label="请求字段名" hint="把用户消息放进请求体的哪个字段">
+          <SettingRow label={t('settings.up.rest_field')} hint={t('settings.up.rest_field_hint')}>
             <Input
               value={form.rest_message_field}
               onChange={(e) => set('rest_message_field', e.target.value)}
@@ -210,7 +216,7 @@ export function GatewayUpstreamPanel() {
               className="w-full"
             />
           </SettingRow>
-          <SettingRow label="响应取值路径" hint="点路径从响应取回复,如 data.answer">
+          <SettingRow label={t('settings.up.rest_path')} hint={t('settings.up.rest_path_hint')}>
             <Input
               value={form.rest_response_path}
               onChange={(e) => set('rest_response_path', e.target.value)}
@@ -221,7 +227,7 @@ export function GatewayUpstreamPanel() {
         </>
       )}
 
-      <SettingRow label="认证方式">
+      <SettingRow label={t('settings.up.auth_type')}>
         <Select
           value={form.auth_type}
           onValueChange={(v) => set('auth_type', v as GatewayAuthType)}
@@ -231,7 +237,7 @@ export function GatewayUpstreamPanel() {
       </SettingRow>
 
       {form.auth_type === 'header' && (
-        <SettingRow label="Header 名称">
+        <SettingRow label={t('settings.up.header_name')}>
           <Input
             value={form.auth_header}
             onChange={(e) => set('auth_header', e.target.value)}
@@ -243,7 +249,7 @@ export function GatewayUpstreamPanel() {
       )}
 
       {form.auth_type !== 'none' && (
-        <SettingRow label="密钥 / 令牌" hint="只写不回:保存后前端只见掩码">
+        <SettingRow label={t('settings.up.secret')} hint={t('settings.up.secret_hint')}>
           <Input
             type="password"
             value={pwd}
@@ -259,7 +265,7 @@ export function GatewayUpstreamPanel() {
         </SettingRow>
       )}
 
-      <SettingRow label="超时(秒)">
+      <SettingRow label={t('settings.up.timeout')}>
         <Input
           type="number"
           value={String(form.timeout_seconds)}
@@ -269,7 +275,7 @@ export function GatewayUpstreamPanel() {
         />
       </SettingRow>
 
-      <SettingRow label="校验 TLS 证书" hint="自签名内网证书可关闭(谨慎)">
+      <SettingRow label={t('settings.up.verify_tls')} hint={t('settings.up.verify_tls_hint')}>
         <Switch
           checked={form.verify_tls}
           onCheckedChange={(v) => set('verify_tls', v)}
@@ -279,8 +285,8 @@ export function GatewayUpstreamPanel() {
 
       {/* 操作条:测试连接 + 保存,带结果反馈 */}
       <SettingRow
-        label="连接与保存"
-        hint={canManage ? '先测试连通与认证,再保存生效' : '只读:需「修改设置」权限'}
+        label={t('settings.up.action')}
+        hint={canManage ? t('settings.up.action_hint') : t('settings.up.action_ro')}
       >
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
@@ -290,7 +296,7 @@ export function GatewayUpstreamPanel() {
               ) : (
                 <PlugZap className="h-3.5 w-3.5" />
               )}
-              测试连接
+              {t('settings.up.test')}
             </Button>
             <Button
               size="sm"
@@ -299,7 +305,7 @@ export function GatewayUpstreamPanel() {
               disabled={ro || saving || !form.endpoint}
             >
               {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              保存
+              {t('common.save')}
             </Button>
           </div>
           {probe && (

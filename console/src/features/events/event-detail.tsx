@@ -14,6 +14,7 @@ import {
 import { Badge, Button, IconButton, KeyValue, StatusDot } from '@/components/ui'
 import { Markdown } from '@/components/markdown'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/i18n'
 import { useConversationDisplay } from '@/lib/conversation-pref'
 import { detailSwap } from '@/lib/motion'
 import { EvidenceChain } from './evidence-chain'
@@ -34,6 +35,7 @@ import type { SecurityEvent } from './types'
  * (见 `lib/conversation-pref`)。默认显最新 2 条,「查看完整对话」展开全部;工具治理类事件无对话上下文。
  */
 function ConversationPanel({ event, sessionEvents }: { event: SecurityEvent; sessionEvents: SecurityEvent[] }) {
+  const { t } = useTranslation()
   const [show] = useConversationDisplay()
   const [expanded, setExpanded] = useState(false)
   if (!show) return null
@@ -51,10 +53,10 @@ function ConversationPanel({ event, sessionEvents }: { event: SecurityEvent; ses
 
   const header = (
     <div className="flex items-center gap-2 px-[18px] pb-3.5 pt-5">
-      <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-mute">对话</span>
+      <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-mute">{t('events.conv.title')}</span>
       <span className="inline-flex items-center gap-1 rounded-full bg-ok/12 px-1.5 py-0.5 text-[11px] font-medium text-ok">
         <ShieldCheck className="h-3 w-3" />
-        已脱敏
+        {t('events.conv.masked')}
       </span>
     </div>
   )
@@ -64,7 +66,7 @@ function ConversationPanel({ event, sessionEvents }: { event: SecurityEvent; ses
       <div className="pb-5">
         {header}
         <p className="px-[18px] text-[13px] leading-relaxed text-ink-3">
-          本事件为工具调用治理,无对话上下文(工具意图与参数见下方证据归因链)。
+          {t('events.conv.empty')}
         </p>
       </div>
     )
@@ -83,8 +85,8 @@ function ConversationPanel({ event, sessionEvents }: { event: SecurityEvent; ses
             <div key={m.id} className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}>
               <div className="flex items-center gap-1.5 text-[11.5px] text-ink-mute">
                 <Icon className={cn('h-3.5 w-3.5', isUser ? 'text-ink-3' : 'text-accent')} />
-                <span className="font-medium text-ink-3">{isUser ? '用户' : 'AI 智能体'}</span>
-                {m.current && <span className="text-accent-ink">· 当前</span>}
+                <span className="font-medium text-ink-3">{isUser ? t('events.conv.user') : t('events.conv.ai')}</span>
+                {m.current && <span className="text-accent-ink">· {t('events.conv.current')}</span>}
                 <span className="font-data">· {m.time}</span>
               </div>
               <div
@@ -108,7 +110,7 @@ function ConversationPanel({ event, sessionEvents }: { event: SecurityEvent; ses
           onClick={() => setExpanded((v) => !v)}
           className="focus-ring ml-[18px] mt-4 inline-flex items-center gap-1 text-[13px] font-medium text-accent-ink hover:underline"
         >
-          {expanded ? '收起对话' : `查看完整对话(共 ${turns.length} 条)`}
+          {expanded ? t('events.conv.collapse') : t('events.conv.expand', { count: turns.length })}
           <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
         </button>
       )}
@@ -142,6 +144,7 @@ export function EventDetail({
   /** 是否有 events.handle 处置权;无则按钮禁用 */
   canHandle?: boolean
 }) {
+  const { t } = useTranslation()
   const busy = !!resolving
   return (
     <aside
@@ -155,7 +158,7 @@ export function EventDetail({
       {/* 头:操作按钮 + 页码 + 上下条(同一行,高度与左侧工具条 h-12 对齐) */}
       <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
         {onBack && (
-          <IconButton label="返回列表" variant="ghost" className="-ml-1.5 h-9 w-9 shrink-0" onClick={onBack}>
+          <IconButton label={t('events.detail.back')} variant="ghost" className="-ml-1.5 h-9 w-9 shrink-0" onClick={onBack}>
             <ArrowLeft className="h-[18px] w-[18px]" />
           </IconButton>
         )}
@@ -166,7 +169,7 @@ export function EventDetail({
               size="sm"
               className="flex-1"
               disabled={!canHandle || busy}
-              title={canHandle ? undefined : '需要「处置会话事件」权限'}
+              title={canHandle ? undefined : t('events.detail.need_handle')}
               onClick={() => onResolve?.('allow')}
             >
               {resolving === 'allow' ? (
@@ -174,35 +177,35 @@ export function EventDetail({
               ) : (
                 <Check className="h-3.5 w-3.5" />
               )}{' '}
-              批准放行
+              {t('events.detail.approve')}
             </Button>
             <Button
               size="sm"
               className="flex-1"
               disabled={!canHandle || busy}
-              title={canHandle ? undefined : '需要「处置会话事件」权限'}
+              title={canHandle ? undefined : t('events.detail.need_handle')}
               onClick={() => onResolve?.('block')}
             >
-              {resolving === 'block' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} 维持阻断
+              {resolving === 'block' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} {t('events.detail.block')}
             </Button>
           </>
         ) : (
           <>
             <Button size="sm" className="flex-1">
-              <FileSearch className="h-3.5 w-3.5" /> 查看完整链路
+              <FileSearch className="h-3.5 w-3.5" /> {t('events.detail.full_chain')}
             </Button>
             <Button size="sm" className="flex-1" disabled>
-              批量处置
+              {t('events.detail.batch')}
             </Button>
           </>
         )}
         <span className="font-data ml-1.5 mr-0.5 shrink-0 text-[14px] text-ink-mute">
           {index + 1}/{total}
         </span>
-        <IconButton label="上一条" onClick={onPrev} disabled={!onPrev}>
+        <IconButton label={t('events.detail.prev')} onClick={onPrev} disabled={!onPrev}>
           <ChevronUp className="h-4 w-4" />
         </IconButton>
-        <IconButton label="下一条" onClick={onNext} disabled={!onNext}>
+        <IconButton label={t('events.detail.next')} onClick={onNext} disabled={!onNext}>
           <ChevronDown className="h-4 w-4" />
         </IconButton>
       </div>
@@ -223,9 +226,9 @@ export function EventDetail({
                   {e.risk}
                 </h1>
                 <span className="mt-1 shrink-0 text-right text-[13px] leading-snug text-ink-3">
-                  会话 <span className="font-data text-ink-2">{e.sess}</span>
+                  {t('events.detail.session')} <span className="font-data text-ink-2">{e.sess}</span>
                   <span className="mx-1.5 text-ink-mute">·</span>
-                  事件 <span className="font-data text-ink-2">{e.id}</span>
+                  {t('events.detail.event')} <span className="font-data text-ink-2">{e.id}</span>
                 </span>
               </div>
               <div className="mt-2.5">
@@ -240,23 +243,23 @@ export function EventDetail({
 
             {/* 属性区 */}
             <div className="border-b border-line px-[18px] pb-3.5 pt-1.5">
-              <KeyValue label="来源">
+              <KeyValue label={t('events.field.source')}>
                 <StatusDot tone={TRUST_TONE[e.trust]} shape="square" />
                 {e.srcType}
                 <span className="text-[13px] text-ink-3">{TRUST_LABEL[e.trust]}</span>
               </KeyValue>
-              <KeyValue label="工具/动作">
+              <KeyValue label={t('events.field.tool')}>
                 <span className="font-data">{e.tool}</span>
               </KeyValue>
-              <KeyValue label="命中策略">
+              <KeyValue label={t('events.field.policy')}>
                 <span className="font-data rounded-xs bg-inset px-[7px] py-0.5 text-[13px]">
                   {e.policy}
                 </span>
               </KeyValue>
-              <KeyValue label="置信度">
+              <KeyValue label={t('events.field.conf')}>
                 <span className="font-data">{e.conf.toFixed(2)}</span>
               </KeyValue>
-              <KeyValue label="时间">
+              <KeyValue label={t('events.field.time')}>
                 <span className="font-data">{e.time}</span>
               </KeyValue>
             </div>
@@ -265,7 +268,7 @@ export function EventDetail({
             <ConversationPanel event={e} sessionEvents={conversation ?? []} />
 
             <div className="border-t border-line px-[18px] pb-0.5 pt-3.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-mute">
-              证据归因链
+              {t('events.chain.title')}
             </div>
             <EvidenceChain event={e} />
           </motion.div>

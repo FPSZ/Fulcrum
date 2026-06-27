@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { ArrowUp, Loader2, Settings2 } from 'lucide-react'
+import { useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // ─────────────────────────── 输入框(GPT/Claude 风格)───────────────────────────
@@ -20,6 +21,7 @@ export function Composer({
   canConfigure: boolean
   onOpenSettings: () => void
 }) {
+  const { t } = useTranslation()
   const [value, setValue] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -54,7 +56,7 @@ export function Composer({
             submit()
           }
         }}
-        placeholder="给助手下达任务…"
+        placeholder={t('assistant.composer.placeholder')}
         className="block min-h-[60px] max-h-[200px] w-full resize-none bg-transparent px-1 text-[16px] leading-7 text-ink outline-none placeholder:text-ink-mute"
       />
       <div className="mt-1 flex items-center justify-between px-0.5">
@@ -62,16 +64,16 @@ export function Composer({
           <SettingsButton ready={modelReady} canConfigure={canConfigure} onClick={onOpenSettings} />
           <span className="text-[13px] text-ink-mute">
             {modelReady
-              ? 'Enter 发送 · Shift+Enter 换行'
+              ? t('assistant.composer.hint.ready')
               : canConfigure
-                ? '模型未配置 · 点左侧设置'
-                : '模型未配置 · 请联系管理员'}
+                ? t('assistant.composer.hint.unconfigured')
+                : t('assistant.composer.hint.contact_admin')}
           </span>
         </div>
         <motion.button
           onClick={submit}
           disabled={busy || !value.trim()}
-          aria-label="发送"
+          aria-label={t('assistant.composer.send')}
           whileTap={{ scale: 0.88 }}
           transition={{ duration: 0.12 }}
           className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-ink text-white transition-colors hover:bg-ink-2 disabled:bg-line-3 disabled:text-white"
@@ -97,14 +99,15 @@ function SettingsButton({
   canConfigure: boolean
   onClick: () => void
 }) {
+  const { t } = useTranslation()
   // 无权限:灰色禁用,不闪呼吸灯,点不动(提示找管理员)。
   if (!canConfigure) {
     return (
       <button
         type="button"
         disabled
-        aria-label="模型设置(需权限)"
-        title="配置 AI 模型需「AI 模型配置」权限,请联系管理员"
+        aria-label={t('assistant.composer.settings.no_perm')}
+        title={t('assistant.composer.settings.no_perm_title')}
         className="grid h-8 w-8 cursor-not-allowed place-items-center rounded-full text-ink-mute/40"
       >
         <Settings2 className="h-[18px] w-[18px]" strokeWidth={1.9} />
@@ -115,8 +118,8 @@ function SettingsButton({
     <button
       type="button"
       onClick={onClick}
-      aria-label="模型设置"
-      title={ready ? '模型设置' : '模型未配置 —— 点击配置'}
+      aria-label={t('assistant.composer.settings')}
+      title={ready ? t('assistant.composer.settings') : t('assistant.composer.settings.configure')}
       className={cn(
         'focus-ring relative grid h-8 w-8 place-items-center rounded-full transition-colors',
         ready ? 'text-ink-mute hover:bg-surface-2 hover:text-ink-2' : 'text-accent hover:bg-accent/10',

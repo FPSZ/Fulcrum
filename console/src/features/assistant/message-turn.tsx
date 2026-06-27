@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, ChevronDown, Sparkles, X } from 'lucide-react'
+import { useTranslation } from '@/lib/i18n'
 import { Markdown } from './markdown'
 import { ProposalCard } from './proposal-card'
 import { ApprovalCard } from './approval-card'
@@ -41,6 +42,7 @@ export function AssistantTurn({
   onEdit,
   onFileApproval,
 }: AssistantTurnProps) {
+  const { t } = useTranslation()
   return (
     <div className="flex gap-3.5">
       <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent/10 text-accent">
@@ -53,7 +55,7 @@ export function AssistantTurn({
           <>
             {msg.blocked && (
               <div className="inline-flex items-center gap-1.5 rounded-full bg-crit/10 px-2.5 py-1 text-[13px] font-medium text-crit">
-                <X className="h-3 w-3" /> 已被安全网关拦截
+                <X className="h-3 w-3" /> {t('assistant.turn.blocked')}
               </div>
             )}
             {msg.text && (
@@ -96,6 +98,7 @@ function Thinking() {
 }
 
 function Trace({ steps }: { steps: AssistantStep[] }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
     <div>
@@ -104,7 +107,7 @@ function Trace({ steps }: { steps: AssistantStep[] }) {
         className="focus-ring inline-flex items-center gap-1 rounded-md px-1 text-[13px] text-ink-mute transition-colors hover:text-ink-3"
       >
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />
-        执行过程 · {steps.length} 步
+        {t('assistant.turn.trace', { n: steps.length })}
       </button>
       <AnimatePresence initial={false}>
         {open && (

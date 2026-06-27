@@ -1,2 +1,2 @@
-// ui —— 待迁移(由 i18n 迁移补全)。
+// ui —— 共享 UI 组件均通过 props 接收文案,无内联面向用户的中文。
 export const ui = {} as const

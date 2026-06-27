@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Sparkles } from 'lucide-react'
 import { toast } from '@/components/ui'
 import { useAuth } from '@/lib/auth'
+import { t, useTranslation } from '@/lib/i18n'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { useNavigateFeature } from '@/lib/nav'
 import {
@@ -29,16 +30,21 @@ import { Composer } from './composer'
 import { ModelSettingsModal } from './model-settings-modal'
 import { AssistantTurn, UserTurn } from './message-turn'
 
-// 起步意图(空态建议)—— 覆盖查/办/跳,克制不堆砌。
-const SUGGESTIONS = [
-  '看一下安全总览',
-  '最近有哪些被拦截的事件?',
-  '列出待审批的账号',
-  '把上游网关名称改一下',
+// 起步意图(空态建议)—— 覆盖查/办/跳,克制不堆砌。在调用时解析当前语言(故为函数)。
+const suggestions = (): string[] => [
+  t('assistant.suggest.overview'),
+  t('assistant.suggest.events'),
+  t('assistant.suggest.approvals'),
+  t('assistant.suggest.gateway'),
 ]
 
 // 能力速记(空态副标题,克制不啰嗦)。
-const CAPS = ['数据查询', '业务办理', '页面跳转', '更改设置']
+const caps = (): string[] => [
+  t('assistant.cap.query'),
+  t('assistant.cap.handle'),
+  t('assistant.cap.navigate'),
+  t('assistant.cap.settings'),
+]
 
 const newId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -63,6 +69,7 @@ function toApprovalState(r: ApprovalRequest): ApprovalState {
 }
 
 export function AssistantPage() {
+  const { t } = useTranslation()
   const navigate = useNavigateFeature()
   const { has } = useAuth()
   const canConfigure = has('ai.configure') // 仅超管/系统管理员(或被显式授权角色)可改模型接入
@@ -138,12 +145,12 @@ export function AssistantPage() {
       try {
         await requestApproval({ ...a.request, reason }, activeId)
         patchApproval(a.id, { status: 'filed' })
-        toast.success('已发起审批申请', {
-          description: '已进入「实时事件 · 待审批」,管理员将在那里处理。',
+        toast.success(t('assistant.approval.toast.filed'), {
+          description: t('assistant.approval.toast.filed_desc'),
         })
       } catch (e) {
         patchApproval(a.id, { status: 'failed' })
-        toast.error('发起失败', { description: (e as Error).message })
+        toast.error(t('assistant.approval.toast.failed'), { description: (e as Error).message })
       }
     },
     [patchApproval, activeId],
@@ -153,21 +160,21 @@ export function AssistantPage() {
     (d: UiDirective) => {
       if (d.tool === 'filter_events') {
         navigate('events')
-        toast.success('已切到实时事件')
+        toast.success(t('assistant.nav.events'))
         return
       }
       if (d.tool === 'open_settings_panel') {
         navigate('settings')
-        toast.success('已打开系统设置')
+        toast.success(t('assistant.nav.settings'))
         return
       }
       const feat = PAGE_TO_FEATURE[String(d.args.page ?? '')]
       if (feat) {
         navigate(feat)
-        toast.success(`已为你打开「${d.label}」`)
+        toast.success(t('assistant.nav.opened', { label: d.label }))
       }
     },
-    [navigate],
+    [navigate, t],
   )
 
   // 流式更新:把某条 SSE 事件并入会话 cid 里 id=aid 的助手消息(按捕获的 cid 定向,切换会话不串)。
@@ -178,8 +185,8 @@ export function AssistantPage() {
         return
       }
       if (ev.type === 'done' && ev.compressed) {
-        toast('已自动压缩较早的上下文', {
-          description: '对话较长,枢衡已把更早的内容压成摘要以延续上下文。',
+        toast(t('assistant.compress.title'), {
+          description: t('assistant.compress.desc'),
         })
       }
       setMessagesOf(cid, (ms) =>
@@ -207,7 +214,7 @@ export function AssistantPage() {
         }),
       )
     },
-    [runDirective, setMessagesOf],
+    [runDirective, setMessagesOf, t],
   )
 
   const send = useCallback(
@@ -216,10 +223,10 @@ export function AssistantPage() {
       if (!text || busy) return
       // 模型未配置:不发,提示并打开设置(有权配则可立即填,无权配则提示找管理员)。
       if (!modelReady) {
-        toast.error('模型尚未配置', {
+        toast.error(t('assistant.model.unconfigured'), {
           description: canConfigure
-            ? '请先在设置里配置模型协议、端点与密钥。'
-            : '请联系管理员配置 AI 模型接入后再使用。',
+            ? t('assistant.model.unconfigured.configure')
+            : t('assistant.model.unconfigured.contact'),
         })
         if (canConfigure) setSettingsOpen(true)
         return
@@ -247,7 +254,12 @@ export function AssistantPage() {
         setMessagesOf(cid, (m) =>
           m.map((x) =>
             x.id === aid && x.role === 'assistant'
-              ? { ...x, pending: false, streaming: false, text: `出错:${(e as Error).message}` }
+              ? {
+                  ...x,
+                  pending: false,
+                  streaming: false,
+                  text: t('assistant.turn.error', { msg: (e as Error).message }),
+                }
               : x,
           ),
         )
@@ -260,7 +272,7 @@ export function AssistantPage() {
         )
       }
     },
-    [busy, activeId, applyEvent, setMessagesOf, modelReady, canConfigure],
+    [busy, activeId, applyEvent, setMessagesOf, modelReady, canConfigure, t],
   )
 
   // 新建会话:开一条新草稿(空态)。旧会话记忆保留,侧栏点回去上下文还在。
@@ -291,17 +303,17 @@ export function AssistantPage() {
             reversible: r.reversible,
             undoPreview: r.undo_preview,
           })
-          toast.success('已执行', { description: r.summary })
+          toast.success(t('assistant.toast.executed'), { description: r.summary })
         } else {
           patchProposal(p.id, { status: 'editing' })
-          toast.error('执行未成功', { description: r.summary })
+          toast.error(t('assistant.toast.execute_failed'), { description: r.summary })
         }
       } catch (e) {
         patchProposal(p.id, { status: 'editing' })
         toast.error((e as Error).message)
       }
     },
-    [patchProposal, activeId],
+    [patchProposal, activeId, t],
   )
 
   const undo = useCallback(
@@ -312,17 +324,17 @@ export function AssistantPage() {
         const r = await undoAction(p.actionId, activeId)
         if (r.ok) {
           patchProposal(p.id, { status: 'undone', resultSummary: r.summary })
-          toast.success('已撤销', { description: r.summary })
+          toast.success(t('assistant.toast.undone'), { description: r.summary })
         } else {
           patchProposal(p.id, { status: 'done' })
-          toast.error('撤销未成功', { description: r.summary })
+          toast.error(t('assistant.toast.undo_failed'), { description: r.summary })
         }
       } catch (e) {
         patchProposal(p.id, { status: 'done' })
         toast.error((e as Error).message)
       }
     },
-    [patchProposal, activeId],
+    [patchProposal, activeId, t],
   )
 
   const empty = messages.length === 0
@@ -367,10 +379,10 @@ export function AssistantPage() {
                   <Sparkles className="h-6 w-6" />
                 </div>
                 <h1 className="text-[28px] font-semibold tracking-tight text-ink">
-                  需要我帮你做点什么?
+                  {t('assistant.hero.title')}
                 </h1>
                 <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[15px] text-ink-3">
-                  {CAPS.map((c, i) => (
+                  {caps().map((c, i) => (
                     <span key={c} className="flex items-center gap-2.5">
                       {i > 0 && <span className="text-line-3">·</span>}
                       {c}
@@ -393,7 +405,7 @@ export function AssistantPage() {
                 />
               </motion.div>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((s, i) => (
+                {suggestions().map((s, i) => (
                   <motion.button
                     key={s}
                     initial={{ opacity: 0, y: 8 }}
@@ -457,7 +469,9 @@ export function AssistantPage() {
                   canConfigure={canConfigure}
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
-                <p className="mt-2 text-center text-[13.5px] text-ink-mute">AI 可能出错,请核对结果</p>
+                <p className="mt-2 text-center text-[13.5px] text-ink-mute">
+                  {t('assistant.disclaimer')}
+                </p>
               </div>
             </div>
           </motion.div>

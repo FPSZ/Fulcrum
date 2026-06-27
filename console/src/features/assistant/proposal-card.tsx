@@ -1,5 +1,6 @@
 import { motion } from 'motion/react'
 import { Check, Loader2, RotateCcw } from 'lucide-react'
+import { t, useTranslation } from '@/lib/i18n'
 import { EASE, type ProposalState } from './data'
 
 // ─────────────────────────── 写操作:可编辑提案卡片(VSCode 式差异)───────────────────────────
@@ -19,6 +20,7 @@ interface ProposalCardProps {
 }
 
 export function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: ProposalCardProps) {
+  const { t } = useTranslation()
   const editing = p.status === 'editing'
   const entries = Object.entries(p.editedArgs)
   const before = p.action.before ?? {}
@@ -73,22 +75,24 @@ export function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: Proposa
               onClick={onConfirm}
               className="focus-ring rounded-lg bg-accent px-3.5 py-2 text-[14px] font-medium text-white transition-colors hover:bg-accent-hover"
             >
-              确认执行
+              {t('assistant.proposal.confirm')}
             </motion.button>
             <button
               onClick={onCancel}
               className="focus-ring rounded-lg px-3.5 py-2 text-[14px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink-2"
             >
-              取消
+              {t('common.cancel')}
             </button>
           </>
         )}
         {p.status === 'confirming' && (
           <span className="flex items-center gap-1.5 text-[13.5px] text-ink-3">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> 执行中…
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('assistant.proposal.executing')}
           </span>
         )}
-        {p.status === 'cancelled' && <span className="text-[13.5px] text-ink-mute">已取消</span>}
+        {p.status === 'cancelled' && (
+          <span className="text-[13.5px] text-ink-mute">{t('assistant.proposal.cancelled')}</span>
+        )}
         {p.status === 'done' && p.reversible && p.actionId && (
           <motion.button
             whileTap={{ scale: 0.95 }}
@@ -96,22 +100,24 @@ export function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: Proposa
             className="focus-ring inline-flex items-center gap-1 rounded-lg border border-line-2 px-3.5 py-2 text-[14px] text-ink-2 transition-colors hover:border-line-3 hover:bg-surface-2"
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            撤销{p.undoPreview ? `(${p.undoPreview})` : ''}
+            {p.undoPreview
+              ? t('assistant.proposal.undo_with', { preview: p.undoPreview })
+              : t('assistant.proposal.undo')}
           </motion.button>
         )}
         {p.status === 'done' && !(p.reversible && p.actionId) && (
           <span className="inline-flex items-center gap-1 text-[13.5px] text-ok">
-            <Check className="h-3.5 w-3.5" /> 已执行
+            <Check className="h-3.5 w-3.5" /> {t('assistant.proposal.done')}
           </span>
         )}
         {p.status === 'undoing' && (
           <span className="flex items-center gap-1.5 text-[13.5px] text-ink-3">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" /> 撤销中…
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('assistant.proposal.undoing')}
           </span>
         )}
         {p.status === 'undone' && (
           <span className="inline-flex items-center gap-1 text-[13.5px] text-ink-mute">
-            <RotateCcw className="h-3.5 w-3.5" /> 已撤销
+            <RotateCcw className="h-3.5 w-3.5" /> {t('assistant.proposal.undone')}
           </span>
         )}
       </div>
@@ -120,7 +126,8 @@ export function ProposalCard({ p, onConfirm, onCancel, onUndo, onEdit }: Proposa
 }
 
 function asText(v: unknown): string {
-  if (typeof v === 'boolean') return v ? '是' : '否'
+  if (typeof v === 'boolean')
+    return v ? t('assistant.proposal.bool.yes') : t('assistant.proposal.bool.no')
   return String(v ?? '')
 }
 
