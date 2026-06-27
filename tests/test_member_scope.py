@@ -162,3 +162,27 @@ def test_me_exposes_managed_teams(tmp_path: Path) -> None:
     _login(client, "lead", _LEAD_PW)
     me = client.get("/auth/me").json()
     assert ids["soc"] in me["managed_teams"]  # 负责人范围下发前端,据此放管理界面
+
+
+def test_lead_can_read_own_team_roster(tmp_path: Path) -> None:
+    client, ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)
+    assert client.get(f"/admin/teams/{ids['soc']}/members").status_code == 200
+
+
+def test_lead_cannot_enumerate_other_team_roster(tmp_path: Path) -> None:
+    """A4:纯负责人不得跨队枚举花名册(team_members 端点此前无 can_manage_team 复校)。"""
+    client, ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)
+    assert client.get(f"/admin/teams/{ids['grc']}/members").status_code == 403
+
+
+def test_lead_cannot_appoint_lead(tmp_path: Path) -> None:
+    """A3:纯负责人可在本团队加人,但不得任命负责人(放权动作须组织级 users.manage)。"""
+    client, ids = _build(tmp_path)
+    _login(client, "lead", _LEAD_PW)
+    r = client.post(
+        f"/admin/teams/{ids['soc']}/members",
+        json={"user_id": ids["outsider"], "is_lead": True},
+    )
+    assert r.status_code == 403

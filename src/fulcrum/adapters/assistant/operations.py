@@ -1440,6 +1440,11 @@ async def _add_team_member(args: dict, principal: Any, services: Any) -> Operati
     prior = _prior_membership(services, team_id, user_id)
     team_role = str(args.get("team_role") or "member").strip() or "member"
     is_lead = bool(args.get("is_lead", False))
+    # 任命负责人是放权动作:纯团队负责人不得增设负责人(防领导权在子树内扩散),须 users.manage。
+    if is_lead and not _is_org_member_admin(principal):
+        return OperationResult(
+            summary="仅组织级成员管理员可任命团队负责人。", ok=False, error="forbidden"
+        )
     try:
         m = d.add_team_member(team_id, user_id, team_role, is_lead)
     except Exception as exc:  # noqa: BLE001 —— 团队/成员不存在等护栏如实回报

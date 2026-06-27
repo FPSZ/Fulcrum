@@ -388,7 +388,14 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
 
     # ── 团队成员关系(负责人管本团队;plan/13 P1b.3)──────────────────
     @app.get("/admin/teams/{team_id}/members", response_model=list[MembershipDTO])
-    async def team_members(team_id: int, _: Principal = Depends(can_view)) -> list[MembershipDTO]:
+    async def team_members(
+        team_id: int, principal: Principal = Depends(can_view)
+    ) -> list[MembershipDTO]:
+        # 纯团队负责人(无组织级 users.view)只能看自己负责团队的花名册,不得跨队枚举。
+        if not principal.has("users.view") and not principal.can_manage_team(team_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="只能查看你负责团队的成员"
+            )
         return [
             MembershipDTO(
                 user_id=m.user_id, team_id=m.team_id, team_role=m.team_role, is_lead=m.is_lead
@@ -403,6 +410,12 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
         if not principal.can_manage_team(team_id):  # 只能往自己负责的团队加人
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="只能管理你负责的团队成员"
+            )
+        # 任命团队负责人是放权动作:纯团队负责人不得自行增设负责人(防在子树内无限扩散领导权),
+        # 须组织级 users.manage。普通加人(is_lead=False)仍允许负责人在本团队内进行。
+        if body.is_lead and not principal.has("users.manage"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="仅组织级成员管理员可任命团队负责人"
             )
         try:
             m = directory.add_team_member(team_id, body.user_id, body.team_role, body.is_lead)
