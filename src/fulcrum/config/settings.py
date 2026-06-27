@@ -61,6 +61,9 @@ class Settings(BaseSettings):
 
     # 审计/运行目录
     audit_db_path: str = "data/runtime/fulcrum.sqlite"
+    # 审计链封缄密钥(可选):设了则 hash-chain 走 HMAC-SHA256,拿到库写权限者无密钥也无法
+    # 伪造合法链(防内部人篡改/截断)。留空=裸 SHA256(防误改不防蓄意)。**生产建议设**高熵串。
+    audit_hmac_key: str = ""
 
     # ── 登录鉴权(账号口令 + 服务端会话)─────────────────────────────
     # 用户/会话库(SQLite,与审计库分离,便于单独备份/审计)
