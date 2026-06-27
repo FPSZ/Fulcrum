@@ -5,6 +5,7 @@
 // seed/回退目录与"动作 id→可执行映射"均由各 FeatureModule 的 `actions` 聚合而来
 // (getModuleActions),不再集中硬编码 —— 与后端 @capability 注册动作对称:谁的页谁声明动作。
 
+import { type MessageKey, t } from '@/lib/i18n'
 import { getModuleActions, type ModuleActionRisk } from '@/lib/module'
 
 /** 助手页统一动效缓动(各拆分组件共用,避免各处重复定义)。 */
@@ -50,10 +51,14 @@ export function actionNav(): Record<string, string> {
 export const isExecutable = (actionId: string | null): boolean =>
   !!actionId && actionId in actionNav()
 
-export const RISK_LABEL: Record<ActionRisk, string> = {
-  read_only: '只读',
-  normal: '一般',
-  high: '高危',
+// 标签经 t() 在调用时解析当前语言(故为函数而非模块级常量——常量会冻结导入时的语言)。
+const RISK_KEY: Record<ActionRisk, MessageKey> = {
+  read_only: 'assistant.risk.read_only',
+  normal: 'assistant.risk.normal',
+  high: 'assistant.risk.high',
+}
+export function riskLabel(r: ActionRisk): string {
+  return t(RISK_KEY[r])
 }
 
 /**
@@ -71,11 +76,11 @@ export function seedActions(): AssistantAction[] {
   }))
 }
 
-/** 快捷示例意图(点选即填入输入框)。 */
-export const SAMPLE_INTENTS = [
-  '帮我打开安全总览',
-  '只看被阻断的实时事件',
-  '临时停用策略 POL-014',
+/** 快捷示例意图(点选即填入输入框)。在调用时解析当前语言(故为函数)。 */
+export const sampleIntents = (): string[] => [
+  t('assistant.intent.overview'),
+  t('assistant.intent.blocked_events'),
+  t('assistant.intent.disable_policy'),
 ]
 
 // ─────────────────────────── 真 Agent(plan/11)·镜像后端 DTO ───────────────────────────
@@ -218,11 +223,14 @@ export const PAGE_TO_FEATURE: Record<string, string> = {
   users: 'users',
 }
 
-/** 工具类别中文短名(侧栏分组 + 轨迹标签)。 */
-export const KIND_LABEL: Record<ToolKind, string> = {
-  ui: '界面',
-  read: '查询',
-  write: '操作',
+/** 工具类别短名(侧栏分组 + 轨迹标签)。在调用时解析当前语言(故为函数)。 */
+const KIND_KEY: Record<ToolKind, MessageKey> = {
+  ui: 'assistant.kind.ui',
+  read: 'assistant.kind.read',
+  write: 'assistant.kind.write',
+}
+export function kindLabel(k: ToolKind): string {
+  return t(KIND_KEY[k])
 }
 
 /** 对话气泡里的一条消息(本地会话态)。 */

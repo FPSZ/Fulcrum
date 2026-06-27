@@ -12,6 +12,8 @@ import {
   toast,
 } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { type MessageKey, t, useTranslation } from '@/lib/i18n'
+import type { BadgeTone } from '@/components/ui'
 import {
   createRole,
   deleteRole,
@@ -23,12 +25,20 @@ import {
 } from '@/lib/admin'
 import { StatusBadge } from './shared'
 
-/** 角色范围(plan/13 §4):组织级全局生效;团队级是团队内模板。 */
-const SCOPE_META = {
-  org: { label: '组织级', short: '组织', tone: 'accent' as const, hint: '全局生效:平台管理类角色' },
-  team: { label: '团队级', short: '团队', tone: 'info' as const, hint: '团队内模板:在所属团队范围生效' },
+/** 角色范围(plan/13 §4):组织级全局生效;团队级是团队内模板。色调为常量,文案经 t() 在调用时解析。 */
+type Scope = 'org' | 'team'
+const SCOPE_TONE: Record<Scope, BadgeTone> = { org: 'accent', team: 'info' }
+const SCOPE_LABEL_KEY: Record<Scope, MessageKey> = {
+  org: 'admin.roles.scope.org',
+  team: 'admin.roles.scope.team',
 }
-const scopeOf = (r: Role): 'org' | 'team' => (r.scope === 'org' ? 'org' : 'team')
+const SCOPE_HINT_KEY: Record<Scope, MessageKey> = {
+  org: 'admin.roles.scope.org_hint',
+  team: 'admin.roles.scope.team_hint',
+}
+const scopeLabel = (s: Scope): string => t(SCOPE_LABEL_KEY[s])
+const scopeHint = (s: Scope): string => t(SCOPE_HINT_KEY[s])
+const scopeOf = (r: Role): Scope => (r.scope === 'org' ? 'org' : 'team')
 
 interface Props {
   roles: Role[]
@@ -119,6 +129,7 @@ function cycleCap(cap: Cap, granted: Set<string>): Set<string> {
 }
 
 export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
+  const { t } = useTranslation()
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [memberId, setMemberId] = useState<number | null>(null)
   const [members, setMembers] = useState<Member[]>([])
@@ -144,9 +155,9 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
     setLoadingMembers(true)
     listMembers({ role_id: selected.id })
       .then(setMembers)
-      .catch((e) => toast.error(e instanceof Error ? e.message : '加载成员失败'))
+      .catch((e) => toast.error(e instanceof Error ? e.message : t('admin.roles.load_members_failed')))
       .finally(() => setLoadingMembers(false))
-  }, [selected])
+  }, [t, selected])
 
   // 切换角色 → 重新拉成员并清掉成员选择
   useEffect(() => {
@@ -164,11 +175,11 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
   const remove = async (r: Role) => {
     try {
       await deleteRole(r.id)
-      toast.success('已删除角色')
+      toast.success(t('admin.roles.deleted'))
       if (selectedId === r.id) setSelectedId(null)
       onChanged()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
+      toast.error(e instanceof Error ? e.message : t('admin.dept.delete_failed'))
     }
   }
 
@@ -186,7 +197,7 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-accent/10 text-accent">
                 <Plus className="h-[18px] w-[18px]" strokeWidth={2.1} />
               </span>
-              <span className="text-[14.5px] font-semibold">新建角色</span>
+              <span className="text-[14.5px] font-semibold">{t('admin.roles.new')}</span>
             </button>
           )}
           {(['org', 'team'] as const).map((sc) => {
@@ -195,9 +206,9 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
             return (
               <div key={sc} className="space-y-1">
                 <div className="flex items-center gap-1.5 px-1 pb-0.5 pt-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-mute">
-                  {SCOPE_META[sc].label}
+                  {scopeLabel(sc)}
                   <span className="font-normal normal-case tracking-normal text-ink-mute/70">
-                    {SCOPE_META[sc].hint}
+                    {scopeHint(sc)}
                   </span>
                 </div>
                 {group.map((r) => (
@@ -212,7 +223,11 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
             )
           })}
           {roles.length === 0 && (
-            <EmptyState icon={Shield} title="暂无角色" hint="新建或恢复一个角色。" />
+            <EmptyState
+              icon={Shield}
+              title={t('admin.roles.empty.title')}
+              hint={t('admin.roles.empty.hint')}
+            />
           )}
         </div>
       </aside>
@@ -223,7 +238,7 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
           <>
             <div className="flex items-center gap-1.5 border-b border-line px-3 py-2.5 text-[12px] text-ink-mute">
               <Users className="h-[14px] w-[14px]" />
-              成员 <span className="font-data font-semibold text-ink-2">{members.length}</span>
+              {t('admin.roles.members')} <span className="font-data font-semibold text-ink-2">{members.length}</span>
             </div>
 
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
@@ -251,13 +266,21 @@ export function RolesTab({ roles, permissions, canManage, onChanged }: Props) {
                 )
               })}
               {!loadingMembers && members.length === 0 && (
-                <EmptyState icon={Users} title="暂无成员" hint="还没有成员分配到该角色。" />
+                <EmptyState
+                  icon={Users}
+                  title={t('admin.roles.members_empty.title')}
+                  hint={t('admin.roles.members_empty.hint')}
+                />
               )}
             </div>
           </>
         ) : (
           <div className="grid flex-1 place-items-center">
-            <EmptyState icon={Shield} title="未选择角色" hint="从左侧选择一个角色。" />
+            <EmptyState
+              icon={Shield}
+              title={t('admin.roles.none_selected.title')}
+              hint={t('admin.roles.none_selected.hint')}
+            />
           </div>
         )}
       </aside>
@@ -300,6 +323,7 @@ function RoleListItem({
   active: boolean
   onClick: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <button
       type="button"
@@ -331,14 +355,14 @@ function RoleListItem({
           </span>
           {role.is_system && (
             <span className="shrink-0 rounded-full bg-subtle px-1.5 py-0.5 text-[11px] font-medium text-ink-mute">
-              内置
+              {t('admin.roles.builtin')}
             </span>
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[12px] text-ink-mute">
-          <span>{role.permissions.length} 权限</span>
+          <span>{t('admin.roles.perm_count', { count: role.permissions.length })}</span>
           <span>·</span>
-          <span>{role.member_count} 人</span>
+          <span>{t('admin.roles.member_count', { count: role.member_count })}</span>
         </div>
       </div>
     </button>
@@ -363,6 +387,7 @@ function RolePermissions({
   onEditMeta: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation()
   const [draft, setDraft] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
 
@@ -373,7 +398,11 @@ function RolePermissions({
   if (!role) {
     return (
       <div className="grid flex-1 place-items-center rounded-[12px] border border-line bg-surface">
-        <EmptyState icon={Shield} title="未选择角色" hint="从左侧选择一个角色查看权限。" />
+        <EmptyState
+          icon={Shield}
+          title={t('admin.roles.none_selected.title')}
+          hint={t('admin.roles.none_selected.hint_perm')}
+        />
       </div>
     )
   }
@@ -393,10 +422,10 @@ function RolePermissions({
     setBusy(true)
     try {
       await updateRole(role.id, { permissions: [...draft] })
-      toast.success('权限已保存')
+      toast.success(t('admin.roles.perm_saved'))
       onChanged()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : t('admin.member_form.save_failed'))
     } finally {
       setBusy(false)
     }
@@ -406,24 +435,28 @@ function RolePermissions({
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-line bg-surface max-lg:min-h-[460px]">
       <header className="flex items-center gap-2 border-b border-line px-4 py-3">
         <h3 className="text-[15px] font-semibold text-ink">
-          {viewingMember ? `${member.display_name} 的权限` : '角色权限'}
+          {viewingMember
+            ? t('admin.roles.member_perms', { name: member.display_name })
+            : t('admin.roles.role_perms')}
         </h3>
         {!viewingMember && (
-          <Badge tone={SCOPE_META[scopeOf(role)].tone}>{SCOPE_META[scopeOf(role)].label}</Badge>
+          <Badge tone={SCOPE_TONE[scopeOf(role)]}>{scopeLabel(scopeOf(role))}</Badge>
         )}
-        <span className="font-data text-[13px] text-ink-mute">{granted.size} 项</span>
+        <span className="font-data text-[13px] text-ink-mute">
+          {t('admin.roles.item_count', { count: granted.size })}
+        </span>
         {dirty && (
           <Button size="sm" variant="primary" className="ml-auto" onClick={save} disabled={busy}>
             <Save className="h-3.5 w-3.5" />
-            保存
+            {t('common.save')}
           </Button>
         )}
         {!viewingMember && canManage && (
           <div className={cn('flex items-center gap-1', !dirty && 'ml-auto')}>
-            <IconButton label="编辑信息" onClick={onEditMeta}>
+            <IconButton label={t('admin.roles.edit_meta')} onClick={onEditMeta}>
               <Pencil className="h-[15px] w-[15px]" />
             </IconButton>
-            <IconButton label="删除角色" className="hover:text-crit" onClick={onDelete}>
+            <IconButton label={t('admin.roles.delete')} className="hover:text-crit" onClick={onDelete}>
               <Trash2 className="h-[15px] w-[15px]" />
             </IconButton>
           </div>
@@ -432,15 +465,15 @@ function RolePermissions({
 
       {editable ? (
         <p className="border-b border-line bg-subtle px-4 py-2 text-[12.5px] text-ink-mute">
-          点击切换:<span className="text-ink-3">无</span> →{' '}
-          <span className="font-medium text-accent-ink">只读</span> →{' '}
-          <span className="font-medium text-accent-ink">读写</span>
+          {t('admin.roles.cycle_hint')}:<span className="text-ink-3">{t('admin.roles.level.none')}</span> →{' '}
+          <span className="font-medium text-accent-ink">{t('admin.roles.level.read')}</span> →{' '}
+          <span className="font-medium text-accent-ink">{t('admin.roles.level.write')}</span>
         </p>
       ) : (
         <p className="border-b border-line bg-subtle px-4 py-2 text-[12.5px] text-ink-mute">
           {viewingMember
-            ? `继承自角色「${role.name}」`
-            : '无管理权限,仅可查看。'}
+            ? t('admin.roles.inherited', { name: role.name })
+            : t('admin.roles.readonly')}
         </p>
       )}
 
@@ -483,10 +516,17 @@ function CapCell({
   dimmed: boolean
   onClick: () => void
 }) {
+  const { t } = useTranslation()
   const on = level > 0
   const isAction = !!cap.actionKey
   // 未授权一律不显示徽标(单点能力此前漏判 on,未勾也显示「已授权」)。
-  const badge = !on ? '' : isAction ? '已授权' : level === 2 ? '读写' : '只读'
+  const badge = !on
+    ? ''
+    : isAction
+      ? t('admin.roles.granted')
+      : level === 2
+        ? t('admin.roles.level.write')
+        : t('admin.roles.level.read')
   // 极简三态指示器:无=空框;只读=描边 + 居中圆点;读写/已授权=实心 + 对勾。
   return (
     <button
@@ -535,19 +575,20 @@ function RoleMetaDialog({
   onClose: () => void
   onSaved: (newId?: number) => void
 }) {
+  const { t } = useTranslation()
   const isEdit = role !== null
   const [name, setName] = useState(role?.name ?? '')
   const [description, setDescription] = useState(role?.description ?? '')
-  const [scope, setScope] = useState<'org' | 'team'>(role ? scopeOf(role) : 'team')
+  const [scope, setScope] = useState<Scope>(role ? scopeOf(role) : 'team')
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
-    if (!name.trim()) return toast.error('请填写角色名称')
+    if (!name.trim()) return toast.error(t('admin.role_form.require_name'))
     setBusy(true)
     try {
       if (isEdit) {
         await updateRole(role.id, { name: name.trim(), description: description.trim() })
-        toast.success('已保存')
+        toast.success(t('admin.role_form.saved'))
         onSaved()
       } else {
         const created = await createRole({
@@ -556,12 +597,12 @@ function RoleMetaDialog({
           permissions: [],
           scope,
         })
-        toast.success('角色已创建,请在右侧勾选权限')
+        toast.success(t('admin.role_form.created'))
         onSaved(created.id)
       }
       onClose()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : t('admin.role_form.save_failed'))
     } finally {
       setBusy(false)
     }
@@ -571,49 +612,49 @@ function RoleMetaDialog({
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title={isEdit ? '编辑角色信息' : '新建角色'}
-      description={isEdit ? undefined : '先创建角色,再到右侧勾选权限点。'}
+      title={isEdit ? t('admin.role_form.edit') : t('admin.roles.new')}
+      description={isEdit ? undefined : t('admin.role_form.new_desc')}
       widthClassName="max-w-md"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>取消</Button>
+          <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" onClick={submit} disabled={busy}>
-            {isEdit ? '保存' : '创建'}
+            {isEdit ? t('common.save') : t('admin.role_form.create')}
           </Button>
         </>
       }
     >
       <div className="space-y-3">
         <label className="block">
-          <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">角色名称</span>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如 值班长" />
+          <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">{t('admin.role_form.name')}</span>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('admin.role_form.name_ph')} />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">描述</span>
+          <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">{t('admin.role_form.desc')}</span>
           <Input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="该角色的职责"
+            placeholder={t('admin.role_form.desc_ph')}
           />
         </label>
         {!isEdit ? (
           <label className="block">
-            <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">范围</span>
+            <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">{t('admin.role_form.scope')}</span>
             <Select
               value={scope}
-              onValueChange={(v) => setScope(v as 'org' | 'team')}
+              onValueChange={(v) => setScope(v as Scope)}
               options={[
-                { value: 'team', label: '团队级 —— 团队内模板,在所属团队范围生效' },
-                { value: 'org', label: '组织级 —— 全局生效(平台管理类)' },
+                { value: 'team', label: t('admin.role_form.scope.team_opt') },
+                { value: 'org', label: t('admin.role_form.scope.org_opt') },
               ]}
               className="w-full"
             />
           </label>
         ) : (
           <div className="flex items-center gap-2 text-[12.5px] text-ink-mute">
-            范围
-            <Badge tone={SCOPE_META[scope].tone}>{SCOPE_META[scope].label}</Badge>
-            <span>(范围在创建时确定,不可改)</span>
+            {t('admin.role_form.scope')}
+            <Badge tone={SCOPE_TONE[scope]}>{scopeLabel(scope)}</Badge>
+            <span>({t('admin.role_form.scope_fixed')})</span>
           </div>
         )}
       </div>

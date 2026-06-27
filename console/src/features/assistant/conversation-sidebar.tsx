@@ -1,5 +1,6 @@
 import { motion } from 'motion/react'
 import { PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from 'lucide-react'
+import { useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { EASE } from './data'
 import type { Conversation } from './use-conversations'
@@ -25,6 +26,7 @@ export function ConversationSidebar({
   onSelect: (id: string) => void
   onDelete: (id: string) => void
 }) {
+  const { t } = useTranslation()
   return (
     <motion.aside
       animate={{ width: collapsed ? 56 : 264 }}
@@ -37,7 +39,7 @@ export function ConversationSidebar({
           <button
             type="button"
             onClick={onToggle}
-            aria-label="展开会话栏"
+            aria-label={t('assistant.sidebar.expand')}
             className="focus-ring grid h-9 w-9 place-items-center rounded-[11px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={1.8} />
@@ -46,7 +48,7 @@ export function ConversationSidebar({
             type="button"
             onClick={onNew}
             disabled={busy}
-            aria-label="新建会话"
+            aria-label={t('assistant.sidebar.new')}
             className="focus-ring grid h-9 w-9 place-items-center rounded-[11px] border border-line-2 bg-surface text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
           >
             <Plus className="h-[18px] w-[18px]" strokeWidth={2} />
@@ -55,11 +57,13 @@ export function ConversationSidebar({
       ) : (
         <div className="flex h-full w-[264px] flex-col">
           <div className="flex items-center justify-between px-3.5 pb-1 pt-3">
-            <span className="text-[13px] font-semibold text-ink-mute">会话</span>
+            <span className="text-[13px] font-semibold text-ink-mute">
+              {t('assistant.sidebar.title')}
+            </span>
             <button
               type="button"
               onClick={onToggle}
-              aria-label="收起会话栏"
+              aria-label={t('assistant.sidebar.collapse')}
               className="focus-ring grid h-7 w-7 place-items-center rounded-md text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink-2"
             >
               <PanelLeftClose className="h-4 w-4" strokeWidth={1.8} />
@@ -72,18 +76,18 @@ export function ConversationSidebar({
               disabled={busy}
               className="focus-ring flex w-full items-center gap-2 rounded-xl border border-line-2 bg-surface px-3.5 py-3 text-[14.5px] font-medium text-ink transition-colors hover:border-line-3 hover:bg-surface-2 disabled:opacity-50"
             >
-              <Plus className="h-[18px] w-[18px]" strokeWidth={2} /> 新建会话
+              <Plus className="h-[18px] w-[18px]" strokeWidth={2} /> {t('assistant.sidebar.new')}
             </button>
           </div>
           <div className="px-4 pb-2 pt-2.5 text-[12.5px] font-semibold tracking-wide text-ink-mute">
-            历史会话
+            {t('assistant.sidebar.history')}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-3">
             {history.length === 0 ? (
               <p className="px-2 py-8 text-center text-[13px] leading-relaxed text-ink-mute">
-                暂无历史会话
+                {t('assistant.sidebar.empty')}
                 <br />
-                开始对话即在此留存
+                {t('assistant.sidebar.empty.hint')}
               </p>
             ) : (
               history.map((c) => {
@@ -107,12 +111,12 @@ export function ConversationSidebar({
                           active ? 'font-medium text-accent-ink' : 'text-ink-2',
                         )}
                       >
-                        {c.title || '新对话'}
+                        {c.title || t('assistant.sidebar.untitled')}
                       </span>
                     </button>
                     <button
                       type="button"
-                      aria-label="删除会话"
+                      aria-label={t('assistant.sidebar.delete')}
                       onClick={() => onDelete(c.id)}
                       className="focus-ring grid h-6 w-6 shrink-0 place-items-center rounded-md text-ink-mute opacity-0 transition-opacity hover:bg-line/40 hover:text-ink-2 group-hover:opacity-100"
                     >

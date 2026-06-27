@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { t } from '@/lib/i18n'
 
 /**
  * 控制台登录态 —— 对接后端服务端会话(HttpOnly Cookie)+ RBAC 权限点。
@@ -82,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (username: string, password: string) => {
-    if (!username.trim() || !password) throw new Error('请输入账号和口令')
+    if (!username.trim() || !password) throw new Error(t('lib.auth.need_credentials'))
     let res: Response
     try {
       res = await fetch('/auth/login', {
@@ -92,19 +93,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ username: username.trim(), password }),
       })
     } catch {
-      throw new Error('无法连接服务,请稍后再试')
+      throw new Error(t('lib.api.offline'))
     }
     if (res.ok) {
       setUser(await readPrincipal(res))
       return
     }
-    if (res.status === 429) throw new Error('尝试过于频繁,账号已被临时锁定,请稍后再试')
+    if (res.status === 429) throw new Error(t('lib.auth.locked'))
     if (res.status === 403) {
       const d = await res.json().catch(() => null)
-      throw new Error(typeof d?.detail === 'string' ? d.detail : '账号不可用')
+      throw new Error(typeof d?.detail === 'string' ? d.detail : t('lib.auth.unavailable'))
     }
-    if (res.status === 401) throw new Error('账号或口令错误')
-    throw new Error('登录失败,请稍后再试')
+    if (res.status === 401) throw new Error(t('lib.auth.invalid'))
+    throw new Error(t('lib.auth.login_failed'))
   }
 
   const logout = async () => {
@@ -158,9 +159,9 @@ export async function requestAccount(
       }),
     })
   } catch {
-    throw new Error('无法连接服务,请稍后再试')
+    throw new Error(t('lib.api.offline'))
   }
   if (res.ok) return
   const d = await res.json().catch(() => null)
-  throw new Error(typeof d?.detail === 'string' ? d.detail : '申请失败,请稍后再试')
+  throw new Error(typeof d?.detail === 'string' ? d.detail : t('lib.auth.register_failed'))
 }

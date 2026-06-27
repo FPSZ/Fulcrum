@@ -1,18 +1,20 @@
 import { ShieldCheck, ShieldAlert, Clock, FileCheck2, type LucideIcon } from 'lucide-react'
 import type { BadgeTone } from '@/components/ui'
 import type { OverviewStats } from '@/lib/api/overview'
+import { type MessageKey, t } from '@/lib/i18n'
 import { dispositionLabel, DISPOSITION_TONE, SOURCE_ICON } from '../events/meta'
 import type { SecurityEvent } from '../events/types'
 import type { OverviewStat } from './backup'
 
 export type StatTone = OverviewStat['tone']
 
-/** 接真后端时各 KPI 卡的默认文案/色调(无备份时也能成卡;有备份则沿用其 label/unit) */
-const REAL_KPI_META: Record<OverviewStat['key'], { label: string; unit?: string; tone: StatTone }> = {
-  controlled: { label: '受控调用', tone: 'accent' },
-  blocked: { label: '高危拦截', tone: 'crit' },
-  pending: { label: '待人工研判', tone: 'high' },
-  audit: { label: '审计完整率', unit: '%', tone: 'ok' },
+/** 接真后端时各 KPI 卡的默认文案/色调(无备份时也能成卡;有备份则沿用其 label/unit)。
+ *  label 经 t() 在调用时解析当前语言(故存 key,不存定值)。 */
+const REAL_KPI_META: Record<OverviewStat['key'], { labelKey: MessageKey; unit?: string; tone: StatTone }> = {
+  controlled: { labelKey: 'overview.kpi.controlled', tone: 'accent' },
+  blocked: { labelKey: 'overview.kpi.blocked', tone: 'crit' },
+  pending: { labelKey: 'overview.kpi.pending', tone: 'high' },
+  audit: { labelKey: 'overview.kpi.audit', unit: '%', tone: 'ok' },
 }
 
 const fmtInt = (n: number) => n.toLocaleString('en-US')
@@ -36,7 +38,7 @@ export function realKpiCards(stats: OverviewStats, base?: OverviewStat[]): Overv
     const seed = base?.find((s) => s.key === key)
     return {
       key,
-      label: seed?.label ?? meta.label,
+      label: seed?.label ?? t(meta.labelKey),
       value: value[key],
       unit: key === 'audit' ? (seed?.unit ?? meta.unit) : undefined,
       delta: '',

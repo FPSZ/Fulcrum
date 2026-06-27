@@ -1,18 +1,27 @@
 import { Copy } from 'lucide-react'
 import { Badge, Button, Dialog, toast, type BadgeTone } from '@/components/ui'
+import { type MessageKey, t, useTranslation } from '@/lib/i18n'
 import type { Department, Role, UserStatus } from '@/lib/admin'
 
-/** 账号状态 → 文案 + 色调 */
-export const STATUS_META: Record<UserStatus, { label: string; tone: BadgeTone }> = {
-  active: { label: '在职', tone: 'ok' },
-  disabled: { label: '停用', tone: 'neutral' },
-  pending: { label: '待审批', tone: 'med' },
-  left: { label: '离职', tone: 'neutral' },
+/** 账号状态 → 色调。文案见 statusLabel()(经 t() 在调用时解析当前语言)。 */
+export const STATUS_TONE: Record<UserStatus, BadgeTone> = {
+  active: 'ok',
+  disabled: 'neutral',
+  pending: 'med',
+  left: 'neutral',
+}
+const STATUS_KEY: Record<UserStatus, MessageKey> = {
+  active: 'admin.status.active',
+  disabled: 'admin.status.disabled',
+  pending: 'admin.status.pending',
+  left: 'admin.status.left',
+}
+export function statusLabel(status: UserStatus): string {
+  return t(STATUS_KEY[status])
 }
 
 export function StatusBadge({ status }: { status: UserStatus }) {
-  const m = STATUS_META[status]
-  return <Badge tone={m.tone}>{m.label}</Badge>
+  return <Badge tone={STATUS_TONE[status]}>{statusLabel(status)}</Badge>
 }
 
 /** epoch 秒 → 本地日期时间;0/空 → 占位 */
@@ -24,13 +33,13 @@ export function fmtTime(epoch: number | null | undefined): string {
 }
 
 export function deptName(departments: Department[], id: number | null): string {
-  if (id == null) return '未分配'
-  return departments.find((d) => d.id === id)?.name ?? '未知部门'
+  if (id == null) return t('admin.unassigned_dept')
+  return departments.find((d) => d.id === id)?.name ?? t('admin.unknown_dept')
 }
 
 export function roleName(roles: Role[], id: number | null): string {
-  if (id == null) return '未分配角色'
-  return roles.find((r) => r.id === id)?.name ?? '未知角色'
+  if (id == null) return t('admin.unassigned_role')
+  return roles.find((r) => r.id === id)?.name ?? t('admin.unknown_role')
 }
 
 export interface DeptNode extends Department {
@@ -86,26 +95,27 @@ export function TempPasswordDialog({
   username: string
   password: string
 }) {
+  const { t } = useTranslation()
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(password)
-      toast.success('已复制临时口令')
+      toast.success(t('admin.temp_pw.copied'))
     } catch {
-      toast.error('复制失败,请手动选择复制')
+      toast.error(t('admin.temp_pw.copy_failed'))
     }
   }
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title="临时口令已生成"
-      description="仅显示这一次,请安全转交该成员,并提醒其首次登录后尽快修改。"
+      title={t('admin.temp_pw.title')}
+      description={t('admin.temp_pw.desc')}
       widthClassName="max-w-md"
-      footer={<Button variant="primary" onClick={onClose}>我已记录</Button>}
+      footer={<Button variant="primary" onClick={onClose}>{t('admin.temp_pw.ack')}</Button>}
     >
       <div className="space-y-3">
         <div className="text-[13px] text-ink-3">
-          账号 <span className="font-data text-ink-2">{username}</span>
+          {t('admin.temp_pw.account')} <span className="font-data text-ink-2">{username}</span>
         </div>
         <div className="flex items-center gap-2 rounded-[10px] border border-line-2 bg-subtle px-3 py-2.5">
           <code className="flex-1 select-all break-all font-data text-[15px] text-ink">
@@ -113,7 +123,7 @@ export function TempPasswordDialog({
           </code>
           <Button size="sm" variant="secondary" onClick={copy}>
             <Copy className="h-3.5 w-3.5" />
-            复制
+            {t('admin.temp_pw.copy_btn')}
           </Button>
         </div>
       </div>
