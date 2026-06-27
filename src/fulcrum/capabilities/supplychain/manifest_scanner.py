@@ -85,6 +85,18 @@ _INSTRUCTION_FIELDS: tuple[str, ...] = (
     "usage",
     "guide",
 )
+# 指令/描述"承载字段"集合 = 指令字段 ∪ {description, desc}。递归归集时**只对键名命中本集合**
+# 的字符串值取文本,绝不 slurp 任意字符串(name/version/author/license/url/code 等一律不收),
+# 把嵌套召回的 FP 画像锁死成与顶层完全同构。MCP/插件投毒把注入与凭据窃取指挥语藏进
+# tools[].description、tools[].parameters[].description、functions[] 等嵌套字段,顶层正则照旧
+# 放过(MCP "tool poisoning / line jumping" 面)→ 这里递归触达,只增召回(目标③)。
+_DESC_FIELDS: tuple[str, ...] = ("description", "desc")
+_CARRIER_FIELDS: frozenset[str] = frozenset(
+    f.lower() for f in (*_INSTRUCTION_FIELDS, *_DESC_FIELDS)
+)
+# 护栏:递归深度与归集文本总量上限,防病态/超大 manifest 拖垮扫描(只收紧,不影响正常体量)。
+_MAX_DEPTH = 8
+_MAX_BYTES = 64 * 1024
 _MANIFEST_INJECTION = re.compile(
     r"(ignore\s+(the\s+)?(previous|above|prior|preceding)\s+(instructions?|rules?|prompts?)|"
     r"disregard\s+(the\s+)?(instructions?|rules?|above)|"
@@ -200,6 +212,62 @@ def _gather(manifest: dict, *keys: str) -> list[str]:
     return out
 
 
+def _gather_carrier(manifest: dict) -> list[tuple[str, str]]:
+    """递归遍历 manifest(dict/list 任意深度),归集**键名 ∈ 承载集**的字符串值。
+
+    返回 (JSON 路径, 文本) 列表,路径如 ``tools[0].parameters[1].description``,供审计定位
+    (目标④)。**只按键名归集**:某字符串是否采集,取决于其**直接所在的 dict 键**是否为承载键
+    (经非承载键下行即重置为不采集),列表下标仅透传不改变采集态——故 instructions 为字符串或
+    字符串列表均收、tools[].description 这类深层嵌套能递归触达,而 name/author 等非承载键
+    (即便其值字面像敏感词)一律不收。深度超 ``_MAX_DEPTH`` 或累计文本超 ``_MAX_BYTES`` 即停,
+    防病态/超大 manifest。
+    """
+    out: list[tuple[str, str]] = []
+    total = 0
+
+    def _take(path: str, text: str) -> None:
+        nonlocal total
+        if total >= _MAX_BYTES:
+            return
+        out.append((path, text))
+        total += len(text.encode("utf-8", "ignore"))
+
+    def _walk(node: object, path: str, depth: int, collect: bool) -> None:
+        if depth > _MAX_DEPTH or total >= _MAX_BYTES:
+            return
+        if isinstance(node, str):
+            if collect:
+                _take(path, node)
+        elif isinstance(node, dict):
+            for k, v in node.items():
+                key = str(k)
+                child = f"{path}.{key}" if path else key
+                _walk(v, child, depth + 1, key.lower() in _CARRIER_FIELDS)
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                _walk(v, f"{path}[{i}]", depth + 1, collect)
+
+    _walk(manifest, "", 0, False)
+    return out
+
+
+def _scan_surface(
+    rx: re.Pattern[str], surface: list[tuple[str, str]]
+) -> tuple[list[str], list[str]]:
+    """对 (路径, 文本) 面套正则取命中:返回去重排序的 matched 串集合与命中路径集合。
+
+    matched 用集合天然去重——同一命中串即便出现在顶层与多处嵌套也只记一次,故深度0顶层
+    与嵌套命中不会把同一命中记两遍;path 记所有命中位置供审计溯源。
+    """
+    matched: set[str] = set()
+    paths: set[str] = set()
+    for path, text in surface:
+        for m in rx.finditer(text):
+            matched.add(m.group(0))
+            paths.add(path)
+    return sorted(matched), sorted(paths)
+
+
 def _finding(kind: str, severity: str, detail: str, **extra: object) -> Finding:
     return Finding(
         kind=kind,
@@ -226,37 +294,48 @@ class ManifestScanner:
                     seen_kinds.add(kind)
                     risks.append(_finding(kind, severity, f"声明高危权限:{perm}", permission=perm))
 
-        # 2) 描述可疑关键词
-        description = str(manifest.get("description") or manifest.get("desc") or "")
-        hits = sorted({m.group(0) for m in _DESC_SUSPICIOUS.finditer(description)})
+        # 2) 描述 / 指令承载字段统一**递归归集**(含 tools[].description、
+        #    tools[].parameters[].description、functions[] 等任意深度嵌套),再喂给现有三条内容
+        #    正则。顶层本是深度0特例,被这一遍覆盖,故 instr_parts/description 不再单列。只增召回
+        #    (嵌套投毒不再漏过),复用既有 kind/severity,不新增评级桶、不动 _rating/排序。
+        #    evidence.path 记 JSON 路径供目标④审计;matched 用集合去重,顶层与嵌套命中不重复记。
+        carrier = _gather_carrier(manifest)
+
+        hits, hit_paths = _scan_surface(_DESC_SUSPICIOUS, carrier)
         if hits:
             risks.append(
                 _finding(
-                    "desc.suspicious", "critical", f"描述含可疑意图关键词:{hits}", matched=hits
+                    "desc.suspicious",
+                    "critical",
+                    f"描述/承载字段含可疑意图关键词:{hits}",
+                    matched=hits,
+                    path=hit_paths,
                 )
             )
 
-        # 2.5) 指令字段注入(Manifest 注入面):被投毒组件把注入/外泄指挥语藏进
-        #      instructions/prompt/system 等字段,装载即污染 agent 上下文。
-        instr_parts: list[str] = []
-        for field in _INSTRUCTION_FIELDS:
-            instr_parts.extend(_as_list(manifest.get(field)))
-        inj = sorted({m.group(0) for m in _MANIFEST_INJECTION.finditer("\n".join(instr_parts))})
+        # Manifest 注入面:被投毒组件把注入/外泄指挥语藏进 instructions/prompt/system 及嵌套
+        # tools[].description 等承载字段,装载即污染 agent 上下文。
+        inj, inj_paths = _scan_surface(_MANIFEST_INJECTION, carrier)
         if inj:
             risks.append(
                 _finding(
                     "manifest.prompt_injection",
                     "critical",
-                    f"指令字段含注入/外泄指挥语:{inj}",
+                    f"指令/承载字段含注入/外泄指挥语:{inj}",
                     matched=inj,
+                    path=inj_paths,
                 )
             )
 
-        # 2.6) 敏感凭据文件 / 密钥访问意图:扫描 描述 + 指令字段 + 声明权限 三处,认出
-        #      指名要碰 SSH/云密钥、服务令牌、系统凭据库的载体(工具描述投毒 / 凭据窃取面)。
-        perm_text = _gather(manifest, "permissions", "scopes", "capabilities")
-        sens_surface = "\n".join([description, *instr_parts, *perm_text])
-        sens = sorted({m.group(0) for m in _SENSITIVE_ACCESS.finditer(sens_surface)})
+        # 敏感凭据文件 / 密钥访问意图:扫描 承载字段(含嵌套)+ 声明权限两处面,认出指名要碰
+        # SSH/云密钥、服务令牌、系统凭据库的载体(工具描述投毒 / 凭据窃取面)。权限非承载键,
+        # 单独并入并标注路径。
+        perm_surface = [
+            (f"{key}[{i}]", val)
+            for key in ("permissions", "scopes", "capabilities")
+            for i, val in enumerate(_as_list(manifest.get(key)))
+        ]
+        sens, sens_paths = _scan_surface(_SENSITIVE_ACCESS, carrier + perm_surface)
         if sens:
             risks.append(
                 _finding(
@@ -264,6 +343,7 @@ class ManifestScanner:
                     "critical",
                     f"指向敏感凭据文件/密钥:{sens}",
                     matched=sens,
+                    path=sens_paths,
                 )
             )
 
