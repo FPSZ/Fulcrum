@@ -81,6 +81,20 @@ _TAINT_MIN = 12
 # write→execute 路径关联的最小路径长度:路径须含分隔符且达此量级,避免裸文件名 / 短串
 # (如 "/" 或 "a.sh")在命令里偶然命中。比 _TAINT_MIN 略松 —— 带分隔符的路径本身已具判别力。
 _PATH_MIN = 6
+# 内联代码执行位引导符:其后的文本被解释器**当代码执行**(而非数据参数)——
+# `python -c <src>`、`bash -c`、`perl -e`、`php -r`、`pwsh -Command`、`eval`/`exec`/`source <src>`。
+# 用于把内联污点的执行位判别从"命令里任意出现"收窄到"确实落在被执行的源码段"。
+_INLINE_CODE_INTRO = re.compile(
+    r"\b(?:eval|exec|source)\b\s"
+    r"|\b(?:python[0-9.]*|perl|ruby|php|node(?:js)?|deno|bun|(?:ba|z|da|k|a)?sh|pwsh|powershell)\b"
+    r"[^|;&\n]*?\s-(?:c|e|r|command|encodedcommand)\b\s",
+    re.IGNORECASE,
+)
+# 管道喂解释器:`<payload> | sh`/`| bash`/`| python` —— 管道左侧内容被 shell/解释器执行。
+_PIPE_TO_SHELL = re.compile(
+    r"\|\s*(?:(?:ba|z|da|k|a)?sh|python[0-9.]*|perl|ruby|node(?:js)?|pwsh|powershell)\b",
+    re.IGNORECASE,
+)
 
 # 编码外发规避:把上一步读到的敏感量先 Base64/Hex 编码再外发,可绕过原样子串比对。
 # 故对外发参数里的编码块就地解码,得到的明文一并参与污点比对。阈值取够长以避免噪声:
@@ -139,10 +153,16 @@ def _taint_source(intent: ToolIntent, tool_returns: list[str]) -> tuple[str, boo
     一并作为比对干草堆,堵「编码后外发」规避。返回 (命中的原始返回内容摘要, 是否经编码),
     无则 None。原样命中优先于编码命中。确定性子串匹配,不猜测。
     """
-    args_raw = _args_text(intent)
-    # (干草堆, 是否经解码);原样在前,确保原样命中优先报告。
-    haystacks: list[tuple[str, bool]] = [(_normalize_taint(args_raw), False)]
-    haystacks += [(_normalize_taint(dec), True) for dec in _decoded_variants(args_raw)]
+    return _taint_in_text(_args_text(intent), tool_returns)
+
+
+def _taint_in_text(haystack_raw: str, tool_returns: list[str]) -> tuple[str, bool] | None:
+    """`_taint_source` 的干草堆无关核:判 `haystack_raw`(原样 + 解码块)是否含某一步工具
+    返回的连续片段。抽出来供内联污点把比对面**收窄到命令的执行位区域**(见 `_inline_exec_taint`),
+    `_taint_source` 仍以"全部参数值文本"为干草堆,行为逐位不变。
+    """
+    haystacks: list[tuple[str, bool]] = [(_normalize_taint(haystack_raw), False)]
+    haystacks += [(_normalize_taint(dec), True) for dec in _decoded_variants(haystack_raw)]
     for ret in tool_returns:
         norm = _normalize_taint(ret)
         if len(norm) < _TAINT_MIN:
@@ -262,6 +282,46 @@ def _path_executed(path: str, command: str) -> bool:
     return bool(interp.search(command) or direct.search(command))
 
 
+def _inline_exec_taint(current: ToolIntent, tool_returns: list[str]) -> tuple[str, bool] | None:
+    """内联污点**且处于执行位**才认:把抓到的内容判 critical 的前提是它确实被当**代码执行**,
+    而非仅作 `--flag value` / 位置数据参数喂给既有程序。
+
+    对齐分支②的"执行位 vs 数据参数"判别(复审修正):工具返回的长路径/配置串原样出现在
+    `python3 /opt/etl/aggregate.py --input <该串>` 里时,旧逻辑无条件判 critical = 误报。
+    三类执行位(任一,污点须落在其中)才算:
+    - 命令本身危险(`argrisk.command_dangerous`:`python -c`、`|sh`、`base64 -d|sh`、`curl|bash`…)
+      → 内联污点必在执行语境,沿用原判定;
+    - 污点落在内联解释器源码段(`-c/-e/-r/eval/exec/source` 之后)或管道喂 shell 的左侧;
+    - 命令以抓取内容打头(整条命令 / 首 token 即被执行的程序本身)。
+    真内联脚本执行(`python3 -c "<抓取脚本>"`、整条命令即抓取脚本)仍 critical;数据参数不报。
+    """
+    cmd = _exec_text(current)
+    if not cmd or not tool_returns:
+        return None
+    # ① 命令本身危险:内联污点处于执行语境,沿用原 _taint_source 判定与摘要。
+    if argrisk.command_dangerous(current.arguments):
+        return _taint_source(current, tool_returns)
+    # ② 污点落在执行位区域:内联解释器源码尾 + 管道入 shell 的左侧。
+    regions: list[str] = []
+    intro = _INLINE_CODE_INTRO.search(cmd)
+    if intro:
+        regions.append(cmd[intro.end() :])
+    pipe = _PIPE_TO_SHELL.search(cmd)
+    if pipe:
+        regions.append(cmd[: pipe.start()])
+    if regions:
+        hit = _taint_in_text(" ".join(regions), tool_returns)
+        if hit is not None:
+            return hit
+    # ③ 命令以抓取内容打头:被执行的程序本身即抓取内容(首 token / 整条命令)。
+    norm_cmd = _normalize_taint(cmd)
+    for ret in tool_returns:
+        norm_ret = _normalize_taint(ret)
+        if len(norm_ret) >= _TAINT_MIN and norm_cmd.startswith(norm_ret):
+            return ret.strip()[:80], False
+    return None
+
+
 @capability("chain_analyzer", "sequence")
 class SequenceChainAnalyzer:
     """有序动作链检测。注册名 `sequence`,在 fulcrum.yml 启用。"""
@@ -363,8 +423,9 @@ class SequenceChainAnalyzer:
         """获取→落盘→执行(RCE 暂存链)的执行收口判定。
 
         核心铁律:**没有具体跨步关联就绝不报**。两条硬证据,任一成立才收口:
-        - 内联:当前 exec 的命令/脚本文本污点源自上一步工具返回(模型把抓到的脚本直接内联进
-          shell.exec)→ tool_return->execute、critical;
+        - 内联:当前 exec 的命令/脚本文本污点源自上一步工具返回**且处于执行位**(模型把抓到的
+          脚本直接内联进 shell.exec,见 `_inline_exec_taint`;仅作 --flag 数据参数不算)→
+          tool_return->execute、critical;
         - 路径关联:窗口内某 file.write 步的目标路径被当前命令引用,**且处于执行位**(被当作程序
           运行,见 `_path_executed`)→ write->execute、high。升级 critical 二选一:(a) 该 write 的
           内容污点源自工具返回 → 完整 fetch->write->execute;(b) 当前命令本身危险(curl|bash、
@@ -390,8 +451,9 @@ class SequenceChainAnalyzer:
                 },
             )
 
-        # ① 内联:当前命令文本本身污点源自上一步工具返回 → 抓到的脚本被内联进执行(最强信号)。
-        inline = _taint_source(current, ctx.tool_returns)
+        # ① 内联:当前命令文本污点源自上一步工具返回**且处于执行位** → 抓到的脚本被内联进执行
+        # (最强信号)。执行位判别堵"工具返回长路径/配置当数据参数喂既有程序"的 critical 误报。
+        inline = _inline_exec_taint(current, ctx.tool_returns)
         if inline is not None:
             tainted, encoded = inline
             return [_build("tool_return->execute", 0.9, tainted_from=tainted, encoded=encoded)]
