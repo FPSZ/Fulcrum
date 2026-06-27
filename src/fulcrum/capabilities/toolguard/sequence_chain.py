@@ -70,29 +70,63 @@ _WINDOW = 12
 # 阈值取得够长以避免短公共串(如 "true"/url 协议头)误报。
 _TAINT_MIN = 12
 
-# 编码外发规避:把上一步读到的敏感量先 Base64/Hex 编码再外发,可绕过原样子串比对。
-# 故对外发参数里的编码块就地解码,得到的明文一并参与污点比对。阈值取够长以避免噪声:
-# Base64 ≥16 字符(≥12 字节明文)、Hex ≥24 字符(≥12 字节明文),均对齐 _TAINT_MIN。
-_B64_BLOB = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
+# 编码外发规避:把上一步读到的敏感量先编码再外发,可绕过原样子串比对。故对外发参数里的
+# 编码块就地解码,得到的明文一并参与污点比对。覆盖四类编码,堵全常见外泄信道:
+#   · 标准 Base64(+/)         —— 通用编码外发
+#   · URL-safe Base64(-_)     —— 塞进 URL query / 路径段不用转义
+#   · Base32(A-Z2-7,大小写不敏感)—— DNS 外泄的标准编码(DNS 标签大小写不敏感,故用 base32)
+#   · Hex
+# 阈值取够长以避免噪声:Base64/Base32 ≥16 字符、Hex ≥24 字符,均对齐 _TAINT_MIN。精度由下游
+# 「解码明文须与某步工具返回有 ≥_TAINT_MIN 连续重叠」兜底:解错的垃圾不会命中真实返回。
+_B64_BLOB = re.compile(r"[A-Za-z0-9+/_-]{16,}={0,2}")
+_B32_BLOB = re.compile(r"(?<![A-Za-z2-7])[A-Za-z2-7]{16,}={0,6}")
 _HEX_BLOB = re.compile(r"(?:[0-9a-fA-F]{2}){12,}")
 
 
-def _decoded_variants(text: str) -> list[str]:
-    """抽取外发文本里的 Base64/Hex 块并解码为明文(utf-8,无法解码的丢弃)。
+def _try_b64(blob: str) -> list[str]:
+    """标准与 URL-safe Base64 各试一次,能落地为非空 utf-8 的留下。
 
-    用于堵「编码后外发」规避:`send(data=base64(secret))` 时原文不含 secret 子串,但解码块含。
-    确定性:仅解码格式合法且能落地为 utf-8 的块,失败静默跳过,不猜测。
+    同一块不可能同时合两套字母表(+/ 与 -_ 互斥),validate=True 会拒掉非本表字符,
+    故只有正确的那一套解出明文,另一套静默跳过,不会引入垃圾干草堆。
     """
+    pad = blob + "=" * (-len(blob) % 4)
     out: list[str] = []
-    for m in _B64_BLOB.finditer(text):
-        blob = m.group()
+    for alt in (None, b"-_"):
         try:
-            dec = base64.b64decode(blob + "=" * (-len(blob) % 4), validate=True)
+            dec = base64.b64decode(pad, altchars=alt, validate=True)
         except (binascii.Error, ValueError):
             continue
         text_dec = dec.decode("utf-8", "ignore")
         if text_dec:
             out.append(text_dec)
+    return out
+
+
+def _try_b32(blob: str) -> str | None:
+    """Base32 解码为 utf-8 明文(大小写不敏感,补齐到 8 的整数倍后解);失败返回 None。"""
+    core = blob.upper().rstrip("=")
+    padded = core + "=" * (-len(core) % 8)
+    try:
+        dec = base64.b32decode(padded, casefold=True)
+    except (binascii.Error, ValueError):
+        return None
+    text_dec = dec.decode("utf-8", "ignore")
+    return text_dec or None
+
+
+def _decoded_variants(text: str) -> list[str]:
+    """抽取外发文本里的 Base64/Base32/Hex 块并解码为明文(utf-8,无法解码的丢弃)。
+
+    用于堵「编码后外发」规避:`send(data=base32(secret))` 时原文不含 secret 子串,但解码块含。
+    确定性:仅解码格式合法且能落地为 utf-8 的块,失败静默跳过,不猜测。
+    """
+    out: list[str] = []
+    for m in _B64_BLOB.finditer(text):
+        out.extend(_try_b64(m.group()))
+    for m in _B32_BLOB.finditer(text):
+        dec = _try_b32(m.group())
+        if dec:
+            out.append(dec)
     for m in _HEX_BLOB.finditer(text):
         try:
             dec = bytes.fromhex(m.group())
