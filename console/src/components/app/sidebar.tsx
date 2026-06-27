@@ -2,6 +2,7 @@ import { motion } from 'motion/react'
 import { LogOut, Sparkles } from 'lucide-react'
 import { Avatar, IconButton, Tooltip } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { useAuth } from '@/lib/auth'
 import { useDevMode } from '@/lib/dev-mode'
 import { ease } from '@/lib/motion'
@@ -23,8 +24,9 @@ export function Sidebar({
 }) {
   const { user, has, isLead, logout } = useAuth()
   const [devMode] = useDevMode()
+  const { t } = useTranslation()
   const features = getFeaturesFor(has, devMode, isLead)
-  const displayName = user?.displayName || '未登录'
+  const displayName = user?.displayName || t('app.sidebar.signed_out')
   const sections = FEATURE_GROUPS.map((group) => ({
     group,
     items: features.filter((f) => f.group === group),
@@ -48,13 +50,17 @@ export function Sidebar({
             <div key={sec.group}>
               {/* 分类名:收起时也保留(监测/管控… 2 字,窄条放得下) */}
               <div className="whitespace-nowrap px-2.5 pb-1.5 pt-3.5 text-[13px] font-semibold text-ink-mute">
-                {sec.group}
+                {t(`app.sidebar.group.${sec.group}` as MessageKey)}
               </div>
               {sec.items.map((f) => {
                 const isActive = active === f.id
                 const Icon = f.icon
                 return (
-                  <Tooltip key={f.id} content={collapsed ? f.label : ''} side="right">
+                  <Tooltip
+                    key={f.id}
+                    content={collapsed ? (f.labelKey ? t(f.labelKey) : f.label) : ''}
+                    side="right"
+                  >
                     <button
                       type="button"
                       onClick={() => onNavigate(f.id)}
@@ -76,7 +82,9 @@ export function Sidebar({
                         )}
                         strokeWidth={1.8}
                       />
-                      <span className={fade('min-w-0 flex-1 truncate text-left')}>{f.label}</span>
+                      <span className={fade('min-w-0 flex-1 truncate text-left')}>
+                        {f.labelKey ? t(f.labelKey) : f.label}
+                      </span>
                       {typeof f.badge === 'number' && (
                         <span
                           className={fade(
@@ -107,13 +115,13 @@ export function Sidebar({
           <div className="rounded-[14px] border border-line bg-white/65 p-3.5 shadow-card">
             <div className="flex items-center gap-1.5 whitespace-nowrap text-[14.5px] font-bold text-ink">
               <Sparkles className="h-[15px] w-[15px] text-accent" strokeWidth={1.9} />
-              AI 安全研判
+              {t('app.sidebar.assist.title')}
             </div>
             <button
               type="button"
               className="focus-ring mt-2.5 h-7 w-full whitespace-nowrap rounded-[8px] bg-accent text-[14px] font-semibold text-white transition-colors hover:bg-accent-hover"
             >
-              打开研判台
+              {t('app.sidebar.assist.open')}
             </button>
           </div>
         </div>
@@ -126,9 +134,9 @@ export function Sidebar({
               <span className="block truncate text-[14.5px] font-semibold">{displayName}</span>
               <span className="block text-[13px] text-ink-3">{user?.username ?? '—'}</span>
             </span>
-            <Tooltip content="退出登录" side="top">
+            <Tooltip content={t('app.sidebar.logout')} side="top">
               <IconButton
-                label="退出登录"
+                label={t('app.sidebar.logout')}
                 onClick={logout}
                 className={fade('h-7 w-7 shrink-0', collapsed ? 'pointer-events-none' : '')}
               >

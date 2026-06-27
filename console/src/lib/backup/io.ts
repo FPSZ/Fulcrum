@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { t } from '@/lib/i18n'
 import { getResourceSpec } from './registry'
 import type { BackupFile, BackupMeta, ResourceData } from './types'
 
@@ -36,12 +37,12 @@ export function parseBackup(text: string): { data: ResourceData; report: ImportR
   try {
     json = JSON.parse(text)
   } catch {
-    return fail('文件不是合法的 JSON')
+    return fail(t('lib.backup.bad_json'))
   }
 
   const parsed = envelopeSchema.safeParse(json)
   if (!parsed.success) {
-    return fail('不是有效的枢衡备份文件(应含 kind: "fulcrum.backup" 与 resources)')
+    return fail(t('lib.backup.bad_file'))
   }
   const file = parsed.data
 
@@ -52,12 +53,12 @@ export function parseBackup(text: string): { data: ResourceData; report: ImportR
   for (const [kind, arr] of Object.entries(file.resources)) {
     const spec = getResourceSpec(kind)
     if (!spec) {
-      skipped.push({ kind, reason: '未知资源类型(当前版本不支持,已忽略)' })
+      skipped.push({ kind, reason: t('lib.backup.unknown_resource') })
       continue
     }
     const res = spec.schema.safeParse(arr)
     if (!res.success) {
-      skipped.push({ kind, reason: `${spec.label} 数据校验失败` })
+      skipped.push({ kind, reason: t('lib.backup.validate_failed', { label: spec.label }) })
       continue
     }
     data[kind] = res.data as unknown[]

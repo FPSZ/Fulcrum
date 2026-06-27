@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect } from 'react'
 import { Shield, X } from 'lucide-react'
 import { IconButton } from '@/components/ui'
+import { useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 /**
@@ -16,6 +17,7 @@ export function MobileDrawer({
   onClose: () => void
   children: ReactNode
 }) {
+  const { t } = useTranslation()
   useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
@@ -53,7 +55,7 @@ export function MobileDrawer({
           <span className="text-[15.5px] font-bold tracking-[-0.01em]">
             枢衡 <span className="font-medium text-ink-3">Fulcrum</span>
           </span>
-          <IconButton label="关闭菜单" variant="ghost" className="ml-auto h-9 w-9" onClick={onClose}>
+          <IconButton label={t('app.drawer.close')} variant="ghost" className="ml-auto h-9 w-9" onClick={onClose}>
             <X className="h-[18px] w-[18px]" />
           </IconButton>
         </div>

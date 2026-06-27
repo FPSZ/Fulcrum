@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { ease } from '@/lib/motion'
 import { DispositionIcon } from './disposition-icon'
 import { EventRow } from './event-row'
-import { DISPOSITION_LABEL } from './meta'
+import { dispositionLabel } from './meta'
 import type { Disposition, FoldedRow } from './types'
 
 export function EventGroup({
@@ -36,7 +36,7 @@ export function EventGroup({
           )}
         />
         <DispositionIcon disp={disp} />
-        {DISPOSITION_LABEL[disp]}
+        {dispositionLabel(disp)}
         <span className="font-data text-[12.5px] font-medium text-ink-mute">{rows.length}</span>
         <span className="ml-auto text-[12.5px] font-medium text-ink-mute opacity-0 transition-opacity hover:text-ink-3 group-hover/grp:opacity-100">
           批量处置

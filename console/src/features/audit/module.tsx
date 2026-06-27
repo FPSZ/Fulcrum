@@ -6,6 +6,7 @@ import { auditResourceSpec } from './backup'
 export const auditModule = defineFeature({
   id: 'audit',
   label: '审计溯源',
+  labelKey: 'app.nav.audit',
   icon: FileSearch,
   group: '取证',
   order: 60,

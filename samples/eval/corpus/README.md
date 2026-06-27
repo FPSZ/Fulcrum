@@ -26,9 +26,9 @@
 # 整库回放,产出 md 记分卡 + json 明细(默认策略 gov_demo)
 python -m fulcrum.eval --dataset samples/eval/corpus --out docs/eval/results/latest.json
 
-# 切策略对比(default 含 http.request 网络规则)
+# 切策略对比(default 含 http.request 网络规则);json/ 落机读、md 自动落平级 markdown/
 python -m fulcrum.eval --dataset samples/eval/corpus --policy data/policies/default.yml \
-  --out docs/eval/results/corpus-default.json
+  --out docs/eval/results/json/corpus-default.json
 ```
 报告含:主指标(召回/FPR/精确率/ASR/Utility/处置准确率/审计完整率)+ 按 OWASP/严重度覆盖矩阵 + 分桶表 + FN/FP 差距清单。
 

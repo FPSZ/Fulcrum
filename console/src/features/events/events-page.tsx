@@ -5,22 +5,17 @@ import { Button, EmptyState, Segmented, toast } from '@/components/ui'
 import { resolveEvent } from '@/lib/api/events'
 import { useAuth } from '@/lib/auth'
 import { useResource } from '@/lib/backup'
+import { useTranslation } from '@/lib/i18n'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { cn } from '@/lib/utils'
 import { ImportBackupButtons } from '../backup/import-controls'
 import { EventDetail } from './event-detail'
 import { EventGroup } from './event-group'
-import { DISPOSITION_ORDER, LEVEL_LABEL } from './meta'
+import { DISPOSITION_ORDER, levelLabel } from './meta'
 import type { Disposition, FoldedRow, RiskLevel, SecurityEvent } from './types'
 import { useEventsFeed } from './use-events'
 
 type Filter = 'all' | RiskLevel
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all', label: '全部' },
-  { value: 'critical', label: LEVEL_LABEL.critical },
-  { value: 'high', label: LEVEL_LABEL.high },
-  { value: 'medium', label: LEVEL_LABEL.medium },
-]
 
 const LEVEL_RANK: Record<RiskLevel, number> = { critical: 3, high: 2, medium: 1, low: 0 }
 
@@ -51,7 +46,15 @@ export function EventsPage() {
   const isLive = !!(live && live.length > 0)
   const events = isLive ? live : backup
   const qc = useQueryClient()
+  const { t } = useTranslation()
   const { has } = useAuth()
+  // 等级筛选项(在组件内构建,随语言切换实时解析,不在模块级冻结)。
+  const filters: { value: Filter; label: string }[] = [
+    { value: 'all', label: t('events.filter.all') },
+    { value: 'critical', label: levelLabel('critical') },
+    { value: 'high', label: levelLabel('high') },
+    { value: 'medium', label: levelLabel('medium') },
+  ]
   // 处置(批准放行/维持阻断)= 写操作:需 events.handle,且仅对真实后端事件生效(演示备份无后端)
   const canHandle = has('events.handle') && isLive
   const [resolving, setResolving] = useState<'allow' | 'block' | null>(null)
@@ -100,8 +103,8 @@ export function EventsPage() {
   useEffect(() => {
     const e = events.find((x) => x.id === selectedId)
     if (e && !e.verified) {
-      toast.error('审计链校验失败', {
-        description: `会话 ${e.sess} 的事件哈希与链不一致,疑似篡改,已锁定并上报。`,
+      toast.error(t('events.toast.tamper_title'), {
+        description: t('events.toast.tamper_desc', { sess: e.sess }),
       })
     }
   }, [selectedId, events])
@@ -146,12 +149,12 @@ export function EventsPage() {
       setResolving(decision)
       try {
         await resolveEvent(selected.id, decision)
-        toast.success(decision === 'allow' ? '已批准放行' : '已维持阻断', {
-          description: '处置已记入审计链,该待审批项已结案。',
+        toast.success(decision === 'allow' ? t('events.toast.allowed') : t('events.toast.blocked'), {
+          description: t('events.toast.resolved_desc'),
         })
         await qc.invalidateQueries({ queryKey: ['events', 'feed'] })
       } catch (err) {
-        toast.error('处置失败', { description: (err as Error).message })
+        toast.error(t('events.toast.resolve_failed'), { description: (err as Error).message })
       } finally {
         setResolving(null)
       }
@@ -167,9 +170,9 @@ export function EventsPage() {
         <div className="flex flex-1 flex-col items-center justify-center gap-5 p-10 text-center">
           <Inbox className="h-8 w-8 text-line-3" strokeWidth={1.4} />
           <div>
-            <p className="text-[16px] font-medium text-ink">还没有数据</p>
+            <p className="text-[16px] font-medium text-ink">{t('events.empty.title')}</p>
             <p className="mx-auto mt-1 max-w-[360px] text-[14.5px] leading-relaxed text-ink-3">
-              事件数据来自导入的备份文件。导入一个枢衡备份,或先载入演示备份查看效果。
+              {t('events.empty.hint')}
             </p>
           </div>
           <ImportBackupButtons />
@@ -184,23 +187,23 @@ export function EventsPage() {
               type="button"
               className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-dashed border-line-2 px-2.5 py-1 text-[14px] text-ink-3 transition-colors hover:border-line-3 hover:text-ink-2"
             >
-              <Plus className="h-3.5 w-3.5" /> 筛选
+              <Plus className="h-3.5 w-3.5" /> {t('events.toolbar.filter')}
             </button>
             <Segmented
               value={filter}
               onValueChange={(v) => setFilter(v as Filter)}
-              items={FILTERS.map((f) => ({ ...f, count: counts[f.value] }))}
+              items={filters.map((f) => ({ ...f, count: counts[f.value] }))}
             />
             <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
               <Button variant="ghost" size="sm" className="max-[1440px]:hidden">
-                <SlidersHorizontal className="h-3.5 w-3.5" /> 分组:处置
+                <SlidersHorizontal className="h-3.5 w-3.5" /> {t('events.toolbar.group')}
               </Button>
               <span className="mx-0.5 h-4 w-px bg-line max-[1440px]:hidden" />
               <Button variant="ghost" size="sm" className="max-[1280px]:hidden">
-                <Clock className="h-3.5 w-3.5" /> 近 24 小时
+                <Clock className="h-3.5 w-3.5" /> {t('events.toolbar.range')}
               </Button>
               <Button variant="primary" size="sm">
-                <Download className="h-3.5 w-3.5" /> 导出报告
+                <Download className="h-3.5 w-3.5" /> {t('events.toolbar.export')}
               </Button>
             </div>
           </div>
@@ -241,7 +244,7 @@ export function EventsPage() {
         ) : (
           /* 桌面空态侧栏;移动端无选中时不渲染(列表占满) */
           <aside className="hidden w-[640px] shrink-0 border-l border-white/50 bg-white/48 backdrop-blur-xl min-[1081px]:flex max-[1440px]:w-[560px] max-[1200px]:w-[480px]">
-            <EmptyState icon={Activity} title="未选中事件" hint="从左侧清单选择一条以查看证据归因链" />
+            <EmptyState icon={Activity} title={t('events.none.title')} hint={t('events.none.hint')} />
           </aside>
         )}
       </div>

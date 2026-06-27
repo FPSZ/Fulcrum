@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { t } from '@/lib/i18n'
 import { buildBackup, parseBackup, type ImportReport } from './io'
 import type { BackupMeta, ResourceData } from './types'
 
@@ -81,7 +82,7 @@ export function BackupProvider({ children }: { children: ReactNode }) {
           ok: false,
           imported: [],
           skipped: [],
-          error: `文件过大(${(file.size / 1024 / 1024).toFixed(1)} MB),备份不应超过 ${mb} MB,请确认选对了文件`,
+          error: t('lib.backup.too_large', { size: (file.size / 1024 / 1024).toFixed(1), max: mb }),
         }
         setReport(r)
         return r
@@ -94,7 +95,7 @@ export function BackupProvider({ children }: { children: ReactNode }) {
   const loadDemo = useCallback(async () => {
     const res = await fetch(`${import.meta.env.BASE_URL}demo-backup.json`)
     if (!res.ok) {
-      const r: ImportReport = { ok: false, imported: [], skipped: [], error: '未找到演示备份文件' }
+      const r: ImportReport = { ok: false, imported: [], skipped: [], error: t('lib.backup.demo_missing') }
       setReport(r)
       return r
     }
@@ -103,8 +104,8 @@ export function BackupProvider({ children }: { children: ReactNode }) {
 
   const exportBackup = useCallback(() => {
     const file = buildBackup(resources, {
-      instance: meta?.instance ?? '枢衡控制台',
-      note: '控制台手动导出',
+      instance: meta?.instance ?? t('lib.backup.instance'),
+      note: t('lib.backup.export_note'),
     })
     download(`fulcrum-backup-${stamp()}.json`, JSON.stringify(file, null, 2))
   }, [resources, meta])

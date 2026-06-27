@@ -21,7 +21,9 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from ..net_guard import validate_endpoint
 
 Protocol = Literal["openai", "ollama", "anthropic"]
 
@@ -32,6 +34,12 @@ class AssistantModelConfig(BaseModel):
     protocol: Protocol = "openai"
     # 端点 base(不含协议路径):各传输自行拼 /chat/completions、/api/chat、/v1/messages。
     endpoint: str = Field(default="", max_length=512)
+
+    @field_validator("endpoint")
+    @classmethod
+    def _check_endpoint(cls, v: str) -> str:
+        return validate_endpoint(v)
+
     api_key: str = Field(default="", max_length=2048)  # 明文落盘,不回前端;本地模型可空
     model: str = Field(default="", max_length=128)
     timeout_seconds: float = Field(default=90.0, ge=1, le=600)

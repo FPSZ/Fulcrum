@@ -5,6 +5,7 @@ import { lazy } from 'react'
 export const policiesModule = defineFeature({
   id: 'policies',
   label: '策略中心',
+  labelKey: 'app.nav.policies',
   icon: Scale,
   group: '管控',
   order: 30,

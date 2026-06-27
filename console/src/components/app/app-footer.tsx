@@ -1,15 +1,6 @@
 import { ArrowUp, CornerDownRight, Github, Mail } from 'lucide-react'
+import { useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
-
-/** 页脚导航项(点了直接切到对应系统页) */
-const NAV: { id: string; label: string }[] = [
-  { id: 'overview', label: '总览' },
-  { id: 'events', label: '事件' },
-  { id: 'users', label: '用户' },
-  { id: 'settings', label: '设置' },
-]
-
-const LEGAL = ['隐私政策', '服务条款', '合规说明', '开源许可']
 
 /** 一个仿照获奖站(kurzform)排版的统一页脚:品牌字组 / 导航 / 合规 / 竖排年号。
  *  视觉:半透明磨砂玻璃盖在 body 背景之上;藏在内容卡之下,卡上滑时露出。 */
@@ -20,6 +11,19 @@ export function AppFooter({
   onNavigate?: (id: string) => void
   onBackToTop?: () => void
 }) {
+  const { t } = useTranslation()
+  const nav = [
+    { id: 'overview', label: t('app.footer.nav.overview') },
+    { id: 'events', label: t('app.footer.nav.events') },
+    { id: 'users', label: t('app.footer.nav.users') },
+    { id: 'settings', label: t('app.footer.nav.settings') },
+  ]
+  const legal = [
+    t('app.footer.legal.privacy'),
+    t('app.footer.legal.terms'),
+    t('app.footer.legal.compliance'),
+    t('app.footer.legal.license'),
+  ]
   return (
     <div className="relative flex h-full w-full flex-col justify-end overflow-hidden bg-[rgba(255,255,255,0.46)] backdrop-blur-2xl">
       {/* 顶部发丝高光 + 分隔 */}
@@ -40,7 +44,7 @@ export function AppFooter({
       <button
         type="button"
         onClick={onBackToTop}
-        aria-label="回到顶部"
+        aria-label={t('app.footer.back_to_top')}
         className="focus-ring group absolute right-7 top-7 grid h-12 w-12 place-items-center rounded-full border border-line-2 bg-white/55 text-ink-2 transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:text-accent"
       >
         <ArrowUp
@@ -63,10 +67,10 @@ export function AppFooter({
             <span className="text-accent">.</span>
           </div>
           <p className="mt-4 text-[13.5px] leading-relaxed text-ink-3">
-            面向政企场景的大模型智能体安全中台
+            {t('app.footer.tagline')}
           </p>
           <div className="mt-6 space-y-1 text-[13px] text-ink-mute">
-            <p className="tabnum">t. 智能体调用 · 实时管控 · 全链路审计</p>
+            <p className="tabnum">{t('app.footer.contact')}</p>
             <p>m. security@fulcrum.makerealm.top</p>
           </div>
         </div>
@@ -74,10 +78,10 @@ export function AppFooter({
         {/* 导航 */}
         <div className="md:justify-self-end">
           <div className="mb-4 text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-mute">
-            导航 / Navigation
+            {t('app.footer.nav')}
           </div>
           <div className="grid grid-cols-2 gap-x-10 gap-y-2.5">
-            {NAV.map((n) => (
+            {nav.map((n) => (
               <button
                 key={n.id}
                 type="button"
@@ -98,7 +102,7 @@ export function AppFooter({
       {/* 底部条:合规链接 + 社交 + 版权 */}
       <div className="relative flex flex-col gap-4 border-t border-line/70 px-10 py-6 md:flex-row md:items-center md:justify-between lg:px-14">
         <div className="flex flex-wrap items-center gap-x-7 gap-y-2">
-          {LEGAL.map((l) => (
+          {legal.map((l) => (
             <button
               key={l}
               type="button"
@@ -111,12 +115,12 @@ export function AppFooter({
 
         <div className="flex items-center gap-4">
           <span className="hidden text-[12.5px] text-ink-mute sm:inline">
-            © 2026 枢衡 Fulcrum · 保留所有权利
+            {t('app.footer.rights')}
           </span>
           <div className="flex items-center gap-2">
             {[
               { Icon: Github, label: 'GitHub' },
-              { Icon: Mail, label: '邮件' },
+              { Icon: Mail, label: t('app.footer.email') },
             ].map(({ Icon, label }) => (
               <button
                 key={label}

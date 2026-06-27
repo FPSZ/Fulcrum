@@ -7,8 +7,8 @@
 >
 > 复现:
 > ```
-> python -m fulcrum.eval --dataset samples/eval/corpus --policy data/policies/default.yml  --out docs/eval/results/corpus-default.json
-> python -m fulcrum.eval --dataset samples/eval/corpus --policy data/policies/gov_demo.yml --out docs/eval/results/corpus-govdemo.json
+> python -m fulcrum.eval --dataset samples/eval/corpus --policy data/policies/default.yml  --out docs/eval/results/json/corpus-default.json
+> python -m fulcrum.eval --dataset samples/eval/corpus --policy data/policies/gov_demo.yml --out docs/eval/results/json/corpus-govdemo.json
 > ```
 
 ## 1. 总览(200 条:恶意 170 · 良性 30)

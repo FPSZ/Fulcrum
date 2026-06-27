@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api, j } from '@/lib/api/client'
+import { t } from '@/lib/i18n'
 import type {
   ApprovalRequest,
   AssistantAction,
@@ -141,7 +142,7 @@ export async function sendChatStream(
     body: JSON.stringify({ message, session_id: sessionId }),
   })
   if (!res.ok || !res.body) {
-    let detail = '助手请求失败'
+    let detail = t('assistant.error.request_failed')
     try {
       detail = ((await res.json()) as { detail?: string })?.detail ?? detail
     } catch {
