@@ -4,6 +4,7 @@ import { ArrowRight, Inbox, Info } from 'lucide-react'
 import { Badge } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { ease } from '@/lib/motion'
+import { useTranslation } from '@/lib/i18n'
 import { useAuth } from '@/lib/auth'
 import { useNavigateFeature } from '@/lib/nav'
 import { useResource } from '@/lib/backup'
@@ -35,6 +36,7 @@ const BUCKET_SEC = 60
 
 /** KPI 卡(实时态显「实时」脉冲;演示备份态显静态「演示」,不伪装实时,不编造环比 delta)。 */
 function StatCard({ s, live }: { s: OverviewStat; live: boolean }) {
+  const { t } = useTranslation()
   const Icon = STAT_ICON[s.key]
   const tone = TONE[s.tone]
   return (
@@ -56,12 +58,12 @@ function StatCard({ s, live }: { s: OverviewStat; live: boolean }) {
         {live ? (
           <span className="flex items-center gap-1.5 font-semibold text-accent-ink">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" style={{ animation: 'pulse-ring 2s infinite' }} />
-            实时
+            {t('overview.live')}
           </span>
         ) : (
           <span className="flex items-center gap-1.5 font-semibold text-ink-mute">
             <span className="h-1.5 w-1.5 rounded-full bg-ink-mute/60" />
-            演示备份
+            {t('overview.backup')}
           </span>
         )}
       </div>
@@ -70,10 +72,11 @@ function StatCard({ s, live }: { s: OverviewStat; live: boolean }) {
 }
 
 function EmptyOverview() {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-5 p-10 text-center">
       <Inbox className="h-9 w-9 text-line-3" strokeWidth={1.4} />
-      <p className="text-[15px] font-semibold text-ink">暂无实时数据</p>
+      <p className="text-[15px] font-semibold text-ink">{t('overview.empty')}</p>
     </div>
   )
 }
@@ -143,6 +146,7 @@ function LiveOverview({
   events: SecurityEvent[]
   live: boolean
 }) {
+  const { t } = useTranslation()
   const navigate = useNavigateFeature()
   const canSeeEvents = useAuth().has('events.view')
   const [now, setNow] = useState(() => Date.now())
@@ -182,12 +186,12 @@ function LiveOverview({
         {live ? (
           <>
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" style={{ animation: 'pulse-ring 2s infinite' }} />
-            实时监测中 · 数据来自运行中的安全网关(/overview/stats · /events)
+            {t('overview.banner.live')}
           </>
         ) : (
           <>
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink-mute/60" />
-            演示备份预览 · 数据来自导入的演示备份(非实时);在「数据与备份」清空即恢复空态
+            {t('overview.banner.backup')}
           </>
         )}
       </p>
@@ -211,23 +215,25 @@ function LiveOverview({
         <div className="glass-card rounded-[16px] lg:col-span-2">
           <div className="flex items-start justify-between gap-4 p-[18px] pb-1">
             <div>
-              <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">网关处理量</div>
+              <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">
+                {t('overview.throughput')}
+              </div>
               <div className="mt-2 flex items-baseline gap-2">
                 <span className="tabnum text-[28px] font-bold tracking-[-0.02em] text-ink">{windowTotal}</span>
                 <span className="text-[14.5px] font-semibold text-ink-3">
-                  {live ? '次 / 近 15 分钟' : '次 / 演示样本'}
+                  {live ? t('overview.throughput.live_unit') : t('overview.throughput.backup_unit')}
                 </span>
               </div>
               <div className="mt-0.5 flex items-center gap-1.5 text-[13.5px] text-ink-mute">
                 {live ? (
                   <>
                     <span className="h-1.5 w-1.5 rounded-full bg-accent" style={{ animation: 'pulse-ring 2s infinite' }} />
-                    每 1 分一桶 · 真实事件时序
+                    {t('overview.throughput.live_hint')}
                   </>
                 ) : (
                   <>
                     <span className="h-1.5 w-1.5 rounded-full bg-ink-mute/60" />
-                    演示备份 · 事件活跃分布
+                    {t('overview.throughput.backup_hint')}
                   </>
                 )}
               </div>
@@ -240,15 +246,17 @@ function LiveOverview({
 
         <div className="glass-card rounded-[16px]">
           <div className="flex items-center justify-between p-[18px] pb-2">
-            <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">请求受控率</div>
+            <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">
+              {t('overview.control_rate')}
+            </div>
           </div>
           <div className="flex flex-col items-center px-[18px] pb-5">
-            <Gauge value={controlRate} label="拦截/审批/净化 占比" />
+            <Gauge value={controlRate} label={t('overview.control_rate.gauge')} />
             <div className="mt-3.5 grid w-full grid-cols-2 gap-x-3 gap-y-1.5 text-[13.5px]">
-              <span className="text-ink-2">拦截 <b className="tabnum font-bold text-crit">{block}</b></span>
-              <span className="text-ink-2">审批 <b className="tabnum font-bold text-high">{approve}</b></span>
-              <span className="text-ink-2">净化 <b className="tabnum font-bold text-med">{sanitize}</b></span>
-              <span className="text-ink-2">放行 <b className="tabnum font-bold text-ok">{allow}</b></span>
+              <span className="text-ink-2">{t('overview.disp.block')} <b className="tabnum font-bold text-crit">{block}</b></span>
+              <span className="text-ink-2">{t('overview.disp.approve')} <b className="tabnum font-bold text-high">{approve}</b></span>
+              <span className="text-ink-2">{t('overview.disp.sanitize')} <b className="tabnum font-bold text-med">{sanitize}</b></span>
+              <span className="text-ink-2">{t('overview.disp.allow')} <b className="tabnum font-bold text-ok">{allow}</b></span>
             </div>
           </div>
         </div>
@@ -259,7 +267,7 @@ function LiveOverview({
         <div className="flex items-center justify-between gap-3 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="text-[18px] font-extrabold tracking-[-0.02em] text-ink">
-              {live ? '实时风险事件' : '风险事件(演示)'}
+              {live ? t('overview.events.live') : t('overview.events.backup')}
             </div>
             {live ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-ok/14 px-2 py-0.5 text-[12px] font-semibold text-ok">
@@ -269,7 +277,7 @@ function LiveOverview({
             ) : (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-mute/12 px-2 py-0.5 text-[12px] font-semibold text-ink-mute">
                 <span className="h-1.5 w-1.5 rounded-full bg-ink-mute/60" />
-                演示备份
+                {t('overview.backup')}
               </span>
             )}
           </div>
@@ -279,12 +287,12 @@ function LiveOverview({
           <table className="w-full text-[14.5px]">
             <thead>
               <tr className="border-y border-line text-[13.5px] text-ink-mute">
-                <th className="px-3 py-2.5 text-left font-semibold">时间</th>
-                <th className="px-3 py-2.5 text-left font-semibold">来源 / 事件</th>
-                <th className="px-3 py-2.5 text-left font-semibold">类型</th>
-                <th className="px-3 py-2.5 text-left font-semibold">处置</th>
-                <th className="px-3 py-2.5 text-left font-semibold">工具</th>
-                <th className="px-3 py-2.5 text-left font-semibold">风险分</th>
+                <th className="px-3 py-2.5 text-left font-semibold">{t('overview.col.time')}</th>
+                <th className="px-3 py-2.5 text-left font-semibold">{t('overview.col.source')}</th>
+                <th className="px-3 py-2.5 text-left font-semibold">{t('overview.col.type')}</th>
+                <th className="px-3 py-2.5 text-left font-semibold">{t('overview.col.disp')}</th>
+                <th className="px-3 py-2.5 text-left font-semibold">{t('overview.col.tool')}</th>
+                <th className="px-3 py-2.5 text-left font-semibold">{t('overview.col.risk')}</th>
               </tr>
             </thead>
             <tbody>
@@ -300,7 +308,7 @@ function LiveOverview({
                           <SrcIcon className="h-[15px] w-[15px] text-ink-2" strokeWidth={1.7} />
                         </span>
                         <span className="flex min-w-0 max-w-[420px] flex-col">
-                          <span className="truncate font-semibold text-ink">{e.title || '(无摘要)'}</span>
+                          <span className="truncate font-semibold text-ink">{e.title || t('overview.no_summary')}</span>
                           <span className="text-[13px] text-ink-mute">{e.src}</span>
                         </span>
                       </div>
@@ -334,7 +342,7 @@ function LiveOverview({
                 >
                   <td colSpan={6} className="px-5 py-3">
                     <span className="flex h-[41px] items-center justify-center gap-1.5 text-[14px] font-semibold text-accent-ink">
-                      查看更多
+                      {t('common.view_more')}
                       <ArrowRight className="h-4 w-4" strokeWidth={2} />
                     </span>
                   </td>
@@ -356,7 +364,7 @@ function LiveOverview({
                     <SrcIcon className="h-[16px] w-[16px] text-ink-2" strokeWidth={1.7} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[14.5px] font-semibold text-ink">{e.title || '(无摘要)'}</div>
+                    <div className="truncate text-[14.5px] font-semibold text-ink">{e.title || t('overview.no_summary')}</div>
                     <div className="truncate text-[12.5px] text-ink-mute">
                       {e.src} · {e.type}
                     </div>
@@ -384,7 +392,7 @@ function LiveOverview({
               onClick={() => navigate('events')}
               className="flex w-full items-center justify-center gap-1.5 px-4 py-3 text-[14px] font-semibold text-accent-ink transition-colors hover:bg-white/55"
             >
-              查看更多
+              {t('common.view_more')}
               <ArrowRight className="h-4 w-4" strokeWidth={2} />
             </button>
           )}
