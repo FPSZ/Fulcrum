@@ -228,12 +228,6 @@ function RuntimePanel() {
         >
           <Badge tone="accent">{t('settings.enforced')}</Badge>
         </SettingRow>
-        <SettingRow
-          label={t('settings.runtime.policy_src')}
-          hint={t('settings.runtime.policy_src_hint')}
-        >
-          <code className="font-data text-[13px] text-ink-2">data/policies/default.yml</code>
-        </SettingRow>
       </SettingSection>
       <SettingSection title={t('settings.audit.title')}>
         <SettingRow label={t('settings.audit.chain')} hint={t('settings.audit.chain_hint')}>
@@ -242,7 +236,7 @@ function RuntimePanel() {
         <SettingRow label={t('settings.audit.store')} hint={t('settings.audit.store_hint')}>
           <Badge tone="high">{t('settings.audit.store_badge')}</Badge>
         </SettingRow>
-        <SettingRow label={t('settings.audit.notify')} hint={t('settings.audit.notify_hint')}>
+        <SettingRow label={t('settings.audit.notify')}>
           <Badge tone="neutral">{t('settings.notimpl')}</Badge>
         </SettingRow>
       </SettingSection>
@@ -263,7 +257,7 @@ function ModelsPanel() {
           <SettingRow label={t('settings.models.endpoint')} hint={t('settings.models.endpoint_hint')}>
             <code className="font-data text-[13px] text-ink-2">{m.endpoint}</code>
           </SettingRow>
-          <SettingRow label={t('settings.models.name')} hint={t('settings.models.name_hint')}>
+          <SettingRow label={t('settings.models.name')}>
             <code className="font-data text-[13px] text-ink-2">{m.model_name}</code>
           </SettingRow>
           <SettingRow label={t('settings.models.key')} hint={t('settings.models.key_hint')}>
