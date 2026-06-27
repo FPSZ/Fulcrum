@@ -8,7 +8,11 @@ detectors:
   - secret_egress        # 出口凭据/系统提示泄露检测(连接串/云密钥/私钥/Bearer + LLM07)
   - manifest_guard       # 请求路径 manifest 哨兵:组件清单评估请求 → 抽取 → 扫描器分级处置
   - disclosure_egress    # 出口自披露:策略原文 / 工具清单泄露(双条件高精度)
-  # - llm_judge          # 语义兜底(P6,可选):抓无触发词的中文社工注入;私有化合规部署推荐启用,见 options.llm_judge
+  # 语义兜底(P6,可选,私有化合规推荐):抓无触发词的中文社工注入。二选一:
+  #   · injection_cascade —— keyword+judge 级联(**推荐**:规则已拦的不重判,judge 调用减半),启用时把上面 `- keyword_rules` 删掉(级联已内含),见 options.injection_cascade
+  #   · llm_judge         —— 纯 judge 全量(每条都判),与 keyword_rules 并列,见 options.llm_judge
+  # - injection_cascade
+  # - llm_judge
 attributor: evidence     # 证据化来源归因(参数片段 × 来源信任)
 risk_scorer: heuristic   # 工具动作固有风险评分
 chain_analyzer: sequence # 任务链异常检测(敏感读取→对外发送 等外泄链);noop 为最小桩
@@ -29,14 +33,33 @@ options:
   # ── 语义层 LLM-judge(可选,私有化合规推荐)──────────────────────
   # judge 走客户**本地自托管**模型(同一台 llama-server/vLLM/Ollama 即可),数据不出域、零云调用——
   # 满足政务"输入不外发"合规红线。Qwen3 等推理模型须关思考(enable_thinking:false)直出裁决。
-  # 实测(冻结语料输入子集):本地 Qwen3-8B/14B 规则+judge 融合召回 88.8% / FPR 0% / 亚秒级;
-  # 对照英文分类器 protectai 单跑 79.8% 但 FPR 47%(政务不可用)。启用:取消上面 `- llm_judge` 注释 + 配下方端点。
+  # 实测(冻结语料 200 条,本地 Qwen3-8B air-gapped):接 judge 后整机召回 78.8%→94.1%、**FPR 0% 不破**、
+  # jailbreak/注入桶 ASR 砍 3–5 倍;代价是延迟 P95 0.7ms→~575ms(judge 单条 ~0.8s、判 ~50% 输入)。
+  # 对照英文分类器 protectai 单跑 79.8% 但 FPR 47%(政务不可用)。
+  #
+  # 级联(推荐):规则先出分,规则已强命中(≥gray_high)的不重判,其余落 judge。gray_low=0=判所有未拦下
+  # (保召回);gray_low>0 对当前二极分数无增益(见 plan/14 §4)。启用:上面用 `- injection_cascade`
+  # 并删掉 `- keyword_rules`(级联已内含),配下方端点。
+  # injection_cascade:
+  #   gray_low: 0.0
+  #   gray_high: 0.6
+  #   judge:
+  #     endpoint: http://127.0.0.1:8123/v1   # 本地 OpenAI 兼容端点(自托管,不出域)
+  #     model: qwen3-8b                       # 复用客户已部署的本地模型即可,无需额外模型
+  #     extra_body:
+  #       chat_template_kwargs:
+  #         enable_thinking: false
+  #
+  # 纯 judge 全量(与 keyword_rules 并列;每条都判,延迟同级联但 judge 调用翻倍):
   # llm_judge:
-  #   endpoint: http://127.0.0.1:8123/v1   # 本地 OpenAI 兼容端点(自托管,不出域)
-  #   model: qwen3-8b                       # 复用客户已部署的本地模型即可,无需额外模型
-  #   extra_body:                           # 推理模型关思考:直出 ATTACK/SAFE、亚秒级(非推理端点删此段)
+  #   endpoint: http://127.0.0.1:8123/v1
+  #   model: qwen3-8b
+  #   extra_body:
   #     chat_template_kwargs:
   #       enable_thinking: false
+  #
+  # 延迟提示:前置网关输入/出口闸门必须**同步**(异步会让恶意输入先进企业智能体,见 plan/14 §4.1);
+  # 要把 ~575ms 压进 500ms 线,换**更快的 judge 模型**(小模型/蒸馏分类器),不是调阈值、不是异步。
   # 审计落库:把上面的 `audit:` 改成 `sqlite` 即启用持久化(重启留存历史、跨进程可查)。
   # 路径默认 data/runtime/fulcrum.sqlite(与 FULCRUM_AUDIT_DB_PATH 默认一致),按需覆盖:
   # sqlite:

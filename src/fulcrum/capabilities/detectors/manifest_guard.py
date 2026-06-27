@@ -99,8 +99,30 @@ def _jsonify(blob: str) -> str:
     return quoted_keys.replace("'", '"')
 
 
+# 强结构信号键:这些是组件清单**专有**的结构字段(非"description/prompt"等通用文本字段),
+# 出现任一即可认定是组件清单——救"无 name 的纯依赖清单"(如只给 deps 求评估,sc-06/07/08)。
+_STRONG_SIGNAL_KEYS: frozenset[str] = frozenset(
+    {
+        "permissions",
+        "scopes",
+        "capabilities",
+        "hooks",
+        "scripts",
+        "lifecycle",
+        "endpoints",
+        "dependencies",
+        "deps",
+        "requires",
+        "tools",
+    }
+)
+
+
 def _looks_like_manifest(obj: dict) -> bool:
-    return "name" in obj and any(k in obj for k in _MANIFEST_SIGNAL_KEYS)
+    # name + 任一信号字段(原口径);或无 name 但含强结构键(纯依赖/权限清单也认)。
+    if "name" in obj and any(k in obj for k in _MANIFEST_SIGNAL_KEYS):
+        return True
+    return any(k in obj for k in _STRONG_SIGNAL_KEYS)
 
 
 @capability("detector", "manifest_guard")
