@@ -99,6 +99,50 @@ def test_tool_frame_with_gov_domains_not_flagged() -> None:
     assert _kinds(en) == []
 
 
+# ── 结构化工具 schema 转储:无框架词、snake_case 工具名,靠结构识别 ────────────────
+_OPENAI_DUMP = (
+    '工具配置:[{"type":"function","function":{"name":"get_weather",'
+    '"description":"查天气","parameters":{"type":"object"}}},'
+    '{"type":"function","function":{"name":"send_email","description":"发邮件","parameters":{}}}]'
+)
+_ANTHROPIC_DUMP = (
+    '[{"name":"read_file","description":"读取文件","input_schema":{"type":"object"}},'
+    '{"name":"run_shell","description":"执行命令","input_schema":{}}]'
+)
+
+
+def test_openai_tool_schema_dump_detected() -> None:
+    assert _kinds(_OPENAI_DUMP) == ["tool_list_leak"]
+
+
+def test_anthropic_tool_schema_dump_detected() -> None:
+    assert _kinds(_ANTHROPIC_DUMP) == ["tool_list_leak"]
+
+
+def test_tool_schema_dump_escalated_at_output_gate() -> None:
+    # 结构化转储经出口闸门被升级处置(至少待人工复核;含危险工具名时叠加其它检测器→拦截),
+    # 总之不放行。
+    assert _screen(_ANTHROPIC_DUMP) in {"approve", "block"}
+
+
+def test_benign_json_schema_not_flagged() -> None:
+    # 普通 JSON schema(无 function 标记、无 parameters/input_schema 锚、name 值非字符串)→ 不命中。
+    schema = '{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"number"}}}'
+    assert _kinds(schema) == []
+
+
+def test_person_records_with_name_desc_not_flagged() -> None:
+    # 人物档案有 name+description 但无 parameters/input_schema 锚键 → 不误判工具 schema。
+    recs = '[{"name":"张三","description":"市民"},{"name":"李四","description":"市民"}]'
+    assert _kinds(recs) == []
+
+
+def test_single_function_definition_not_flagged() -> None:
+    # 单个函数定义(API 文档)→ 不足 2,不算"清单泄露"。
+    one = '{"type":"function","function":{"name":"only_one","description":"d","parameters":{}}}'
+    assert _kinds(one) == []
+
+
 # ── 良性问答零误报 ───────────────────────────────────────────────────────
 def test_benign_policy_question_not_flagged() -> None:
     assert _kinds("现在低保月标准大约是多少?想给群众一个准确答复。") == []
