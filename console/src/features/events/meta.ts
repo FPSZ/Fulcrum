@@ -9,13 +9,18 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { BadgeTone, DotTone } from '@/components/ui'
+import { type MessageKey, t } from '@/lib/i18n'
 import type { Disposition, RiskLevel, SourceType, TrustLevel } from './types'
 
-export const DISPOSITION_LABEL: Record<Disposition, string> = {
-  block: '阻断',
-  approve: '待审批',
-  sanitize: '净化',
-  allow: '放行',
+// 标签经 t() 在调用时解析当前语言(故为函数而非模块级常量——常量会冻结导入时的语言)。
+const DISP_KEY: Record<Disposition, MessageKey> = {
+  block: 'events.disp.block',
+  approve: 'events.disp.approve',
+  sanitize: 'events.disp.sanitize',
+  allow: 'events.disp.allow',
+}
+export function dispositionLabel(d: Disposition): string {
+  return t(DISP_KEY[d])
 }
 export const DISPOSITION_ORDER: Disposition[] = ['block', 'approve', 'sanitize', 'allow']
 export const DISPOSITION_TONE: Record<Disposition, BadgeTone> = {
@@ -25,11 +30,18 @@ export const DISPOSITION_TONE: Record<Disposition, BadgeTone> = {
   allow: 'ok',
 }
 
-export const LEVEL_LABEL: Record<RiskLevel, string> = {
-  critical: '严重',
-  high: '高',
-  medium: '中',
-  low: '低',
+const LEVEL_KEY: Record<RiskLevel, MessageKey> = {
+  critical: 'events.level.critical',
+  high: 'events.level.high',
+  medium: 'events.level.medium',
+  low: 'events.level.low',
+}
+export function levelLabel(l: RiskLevel): string {
+  return t(LEVEL_KEY[l])
+}
+/** 「{等级}风险」(如「高风险」),供行内 Tooltip 与详情头使用。 */
+export function levelRiskLabel(l: RiskLevel): string {
+  return t('events.level_risk', { level: levelLabel(l) })
 }
 export const LEVEL_TONE: Record<RiskLevel, DotTone> = {
   critical: 'crit',
