@@ -149,6 +149,28 @@ def _html_numref(s: str) -> str:
     return _HTML_NUMREF.sub(repl, s)
 
 
+def _untag(text: str) -> str:
+    """还原 Unicode Tag 块走私(U+E0000–E007F)为 ASCII 副本 —— 区别于 normalize() 的剥除。
+
+    Tag char 本身即载荷(cp-0xE0000=ASCII),剥掉等于删指令;这里**还原**成可见 ASCII 供复扫。
+    仅映射解出 0x20–0x7E 可见 ASCII 的 tag char;语言标记/CANCEL/DEL 等非可见标记丢弃;
+    非该区间字符原样保留 → 正常文本(无 tag char)返回值与输入逐字符相同(零开销早退)。
+    """
+    if not any(0xE0000 <= ord(c) <= 0xE007F for c in text):
+        return text
+    out: list[str] = []
+    for c in text:
+        cp = ord(c)
+        if 0xE0000 <= cp <= 0xE007F:
+            d = cp - 0xE0000
+            if 0x20 <= d <= 0x7E:
+                out.append(chr(d))
+            # 非可见 tag 标记(语言标记/CANCEL/DEL)丢弃
+        else:
+            out.append(c)
+    return "".join(out)
+
+
 def decode_variants(text: str, depth: int = 2) -> list[str]:
     """抽取并解码文本里的编码块(base64/hex/URL/ROT13),递归至多 depth 层。
 
@@ -166,6 +188,7 @@ def decode_variants(text: str, depth: int = 2) -> list[str]:
                 cands.append(unquote(s))
             if "&#" in s:
                 cands.append(_html_numref(s))
+            cands.append(_untag(s))  # Unicode Tag 块走私(U+E0000–E007F)还原 ASCII 副本
             try:
                 cands.append(codecs.decode(s, "rot13"))  # ROT13 只影响 a-z,中文不变
             except (UnicodeError, ValueError):
