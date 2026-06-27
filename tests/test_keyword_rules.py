@@ -231,6 +231,8 @@ def test_benign_flag_sequence_no_obfuscated_injection() -> None:
         )
     }
     assert "obfuscated_injection" not in kinds
+
+
 def test_armenian_homoglyph_injection_caught() -> None:
     """亚美尼亚同形字(o→օ)替换 ignore all previous instructions → 经折叠仍判 injection。
 

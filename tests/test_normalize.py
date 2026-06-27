@@ -16,6 +16,8 @@ def _decoded_joined(text: str) -> str:
 def _smuggle(s: str) -> str:
     """把 ASCII 串编码进 Unicode Tag 块(U+E0000–E007F)—— 模型当 ASCII 读,确定性检测器看不到。"""
     return "".join(chr(0xE0000 + ord(ch)) for ch in s)
+
+
 def test_armenian_homoglyph_folds_to_latin() -> None:
     # 亚美尼亚同形字替 o(U+0585 օ)→ 折回拉丁,救回关键词匹配(与西里尔/希腊同款)。
     assert "ignore" in normalize("ignօre")
