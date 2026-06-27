@@ -7,6 +7,9 @@
 
 import { getModuleActions, type ModuleActionRisk } from '@/lib/module'
 
+/** 助手页统一动效缓动(各拆分组件共用,避免各处重复定义)。 */
+export const EASE = [0.25, 1, 0.5, 1] as const
+
 /** 风险分级(后端 catalog 原值):只读可自动执行;一般需留意;高危必须二次确认。 */
 export type ActionRisk = ModuleActionRisk
 
