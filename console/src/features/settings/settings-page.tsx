@@ -12,6 +12,7 @@ import {
 import { Badge, Button, Input, Select, SettingRow, SettingSection, Switch } from '@/components/ui'
 import { useConversationDisplay } from '@/lib/conversation-pref'
 import { useDevMode } from '@/lib/dev-mode'
+import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { BackupSettings } from '../backup/backup-settings'
 import { GatewayUpstreamPanel } from './gateway-upstream'
@@ -29,14 +30,15 @@ function SaveBar({
   ro: boolean
   onSave: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <SettingRow
-      label="保存更改"
-      hint={ro ? '只读:需「修改设置」权限' : dirty ? '有未保存的更改' : '已是最新'}
+      label={t('settings.save.label')}
+      hint={ro ? t('settings.save.ro') : dirty ? t('settings.save.dirty') : t('settings.save.clean')}
     >
       <Button size="sm" variant="primary" onClick={onSave} disabled={ro || saving || !dirty}>
         {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        保存
+        {t('common.save')}
       </Button>
     </SettingRow>
   )
@@ -44,8 +46,9 @@ function SaveBar({
 
 /** 设置面板读取中的占位行。 */
 function LoadingRow() {
+  const { t } = useTranslation()
   return (
-    <SettingRow label="读取配置中…">
+    <SettingRow label={t('settings.loading')}>
       <Loader2 className="h-4 w-4 animate-spin text-ink-3" />
     </SettingRow>
   )
@@ -53,7 +56,7 @@ function LoadingRow() {
 
 interface Cat {
   id: string
-  label: string
+  labelKey: MessageKey
   icon: LucideIcon
   /** global=全局设置(影响整个系统/全体成员,写操作需「修改系统设置」权限);
    *  personal=个人设置(只作用于当前账号/浏览器,人人可改,无需权限)。 */
@@ -62,20 +65,21 @@ interface Cat {
 // 全局设置:实例元信息 → 上游接入 → 运行状态 → 关于(影响全体,写需权限)。
 // 个人设置:本机偏好 → 开发者(只存本浏览器/本账号,人人可改)。
 const CATS: Cat[] = [
-  { id: 'instance', label: '实例信息', icon: SlidersHorizontal, scope: 'global' },
-  { id: 'gateway', label: '上游接入', icon: ShieldCheck, scope: 'global' },
-  { id: 'runtime', label: '运行状态', icon: ServerCog, scope: 'global' },
-  { id: 'about', label: '关于', icon: Info, scope: 'global' },
-  { id: 'local', label: '本机偏好', icon: DatabaseBackup, scope: 'personal' },
-  { id: 'developer', label: '开发者', icon: Code2, scope: 'personal' },
+  { id: 'instance', labelKey: 'settings.cat.instance', icon: SlidersHorizontal, scope: 'global' },
+  { id: 'gateway', labelKey: 'settings.cat.gateway', icon: ShieldCheck, scope: 'global' },
+  { id: 'runtime', labelKey: 'settings.cat.runtime', icon: ServerCog, scope: 'global' },
+  { id: 'about', labelKey: 'settings.cat.about', icon: Info, scope: 'global' },
+  { id: 'local', labelKey: 'settings.cat.local', icon: DatabaseBackup, scope: 'personal' },
+  { id: 'developer', labelKey: 'settings.cat.developer', icon: Code2, scope: 'personal' },
 ]
 
-const SCOPES: { scope: 'global' | 'personal'; label: string }[] = [
-  { scope: 'global', label: '全局设置' },
-  { scope: 'personal', label: '个人设置' },
+const SCOPES: { scope: 'global' | 'personal'; labelKey: MessageKey }[] = [
+  { scope: 'global', labelKey: 'settings.scope.global' },
+  { scope: 'personal', labelKey: 'settings.scope.personal' },
 ]
 
 export function SettingsPage() {
+  const { t } = useTranslation()
   const [cat, setCat] = useState('instance')
 
   return (
@@ -105,7 +109,7 @@ export function SettingsPage() {
                       className={cn('h-4 w-4 shrink-0', active ? 'text-accent' : 'text-ink-3')}
                       strokeWidth={1.8}
                     />
-                    {c.label}
+                    {t(c.labelKey)}
                   </button>
                 )
               })}
@@ -118,7 +122,7 @@ export function SettingsPage() {
           {SCOPES.map((sc) => (
             <div key={sc.scope}>
               <div className="px-2.5 pb-1 pt-1 text-[12px] font-semibold uppercase tracking-wide text-ink-mute">
-                {sc.label}
+                {t(sc.labelKey)}
               </div>
               {CATS.filter((c) => c.scope === sc.scope).map((c) => {
                 const Icon = c.icon
@@ -137,7 +141,7 @@ export function SettingsPage() {
                       className={cn('h-4 w-4 shrink-0', active ? 'text-accent' : 'text-ink-3')}
                       strokeWidth={1.8}
                     />
-                    {c.label}
+                    {t(c.labelKey)}
                   </button>
                 )
               })}
@@ -164,14 +168,15 @@ export function SettingsPage() {
 /* ============================ 各分类面板 ============================ */
 
 function InstancePanel() {
+  const { t } = useTranslation()
   const { form, set, dirty, saving, onSave, loading, ro } = useSettingsForm()
   return (
-    <SettingSection title="实例信息">
+    <SettingSection title={t('settings.cat.instance')}>
       {loading || !form ? (
         <LoadingRow />
       ) : (
         <>
-          <SettingRow label="实例名称" hint="显示在控制台标题与导出报告中">
+          <SettingRow label={t('settings.instance.name')} hint={t('settings.instance.name_hint')}>
             <Input
               value={form.instance_name}
               onChange={(e) => set('instance_name', e.target.value)}
@@ -179,15 +184,15 @@ function InstancePanel() {
               className="w-full"
             />
           </SettingRow>
-          <SettingRow label="部署环境">
+          <SettingRow label={t('settings.instance.env')}>
             <Select
               value={form.environment}
               onValueChange={(v) => set('environment', v as typeof form.environment)}
               disabled={ro}
               options={[
-                { value: 'prod', label: '生产' },
-                { value: 'staging', label: '预发' },
-                { value: 'demo', label: '隔离演示' },
+                { value: 'prod', label: t('settings.env.prod') },
+                { value: 'staging', label: t('settings.env.staging') },
+                { value: 'demo', label: t('settings.env.demo') },
               ]}
             />
           </SettingRow>
@@ -199,41 +204,46 @@ function InstancePanel() {
 }
 
 function GatewayPanel() {
-  return (
-    <GatewayUpstreamPanel />
-  )
+  return <GatewayUpstreamPanel />
 }
 
 function RuntimePanel() {
+  const { t } = useTranslation()
   return (
     <div className="space-y-5">
       <ModelsPanel />
-      <SettingSection title="防护链路">
-        <SettingRow label="输入闸门" hint="用户请求先过 screen_input,危险请求不转发给企业智能体">
-          <Badge tone="ok">已启用</Badge>
+      <SettingSection title={t('settings.runtime.chain')}>
+        <SettingRow label={t('settings.runtime.input')} hint={t('settings.runtime.input_hint')}>
+          <Badge tone="ok">{t('settings.enabled')}</Badge>
         </SettingRow>
-        <SettingRow label="工具治理" hint="工具调用经归因、评分、任务链分析与 YAML 策略判定">
-          <Badge tone="ok">已启用</Badge>
+        <SettingRow label={t('settings.runtime.tool')} hint={t('settings.runtime.tool_hint')}>
+          <Badge tone="ok">{t('settings.enabled')}</Badge>
         </SettingRow>
-        <SettingRow label="出口检测" hint="企业智能体回复经 screen_output 检测后才返回用户">
-          <Badge tone="ok">已启用</Badge>
+        <SettingRow label={t('settings.runtime.output')} hint={t('settings.runtime.output_hint')}>
+          <Badge tone="ok">{t('settings.enabled')}</Badge>
         </SettingRow>
-        <SettingRow label="失败模式" hint="安全关键路径由管线 fail-closed 兜底">
-          <Badge tone="accent">强制</Badge>
+        <SettingRow
+          label={t('settings.runtime.failmode')}
+          hint={t('settings.runtime.failmode_hint')}
+        >
+          <Badge tone="accent">{t('settings.enforced')}</Badge>
         </SettingRow>
-        <SettingRow label="策略来源" hint="修改 data/policies/default.yml 后重启后端生效">
+        <SettingRow
+          label={t('settings.runtime.policy_src')}
+          hint={t('settings.runtime.policy_src_hint')}
+        >
           <code className="font-data text-[13px] text-ink-2">data/policies/default.yml</code>
         </SettingRow>
       </SettingSection>
-      <SettingSection title="审计运行态">
-        <SettingRow label="hash-chain 审计" hint="管线写入防篡改事件链">
-          <Badge tone="ok">已启用</Badge>
+      <SettingSection title={t('settings.audit.title')}>
+        <SettingRow label={t('settings.audit.chain')} hint={t('settings.audit.chain_hint')}>
+          <Badge tone="ok">{t('settings.enabled')}</Badge>
         </SettingRow>
-        <SettingRow label="审计存储" hint="当前默认 audit: memory,重启后历史清零;SQLite AuditSink 是后续后端任务">
-          <Badge tone="high">内存态</Badge>
+        <SettingRow label={t('settings.audit.store')} hint={t('settings.audit.store_hint')}>
+          <Badge tone="high">{t('settings.audit.store_badge')}</Badge>
         </SettingRow>
-        <SettingRow label="自动通知" hint="尚未接入站内/Webhook/邮件发送器,不在设置页伪装成可配置">
-          <Badge tone="neutral">未接入</Badge>
+        <SettingRow label={t('settings.audit.notify')} hint={t('settings.audit.notify_hint')}>
+          <Badge tone="neutral">{t('settings.notimpl')}</Badge>
         </SettingRow>
       </SettingSection>
     </div>
@@ -241,25 +251,31 @@ function RuntimePanel() {
 }
 
 function ModelsPanel() {
+  const { t } = useTranslation()
   const { form, loading } = useSettingsForm()
   const m = form?.backend_model
   return (
-    <SettingSection title="模型接入" desc="经 .env 注入,控制台只读。">
+    <SettingSection title={t('settings.models.title')} desc={t('settings.models.desc')}>
       {loading || !m ? (
         <LoadingRow />
       ) : (
         <>
-          <SettingRow label="出站端点" hint="OpenAI 兼容 /v1(FULCRUM_MODEL_ENDPOINT)">
+          <SettingRow label={t('settings.models.endpoint')} hint={t('settings.models.endpoint_hint')}>
             <code className="font-data text-[13px] text-ink-2">{m.endpoint}</code>
           </SettingRow>
-          <SettingRow label="模型名" hint="FULCRUM_MODEL_NAME">
+          <SettingRow label={t('settings.models.name')} hint={t('settings.models.name_hint')}>
             <code className="font-data text-[13px] text-ink-2">{m.model_name}</code>
           </SettingRow>
-          <SettingRow label="API 密钥" hint="经 .env 注入,不在控制台存储 / 展示">
-            <Badge tone={m.key_set ? 'ok' : 'high'}>{m.key_set ? '已配置' : '未配置'}</Badge>
+          <SettingRow label={t('settings.models.key')} hint={t('settings.models.key_hint')}>
+            <Badge tone={m.key_set ? 'ok' : 'high'}>
+              {m.key_set ? t('settings.configured') : t('settings.unconfigured')}
+            </Badge>
           </SettingRow>
-          <SettingRow label="被保护的企业智能体" hint="网关放行后转发的上游,在「安全网关 → 上游接入」配置">
-            <Badge tone="neutral">见上游接入</Badge>
+          <SettingRow
+            label={t('settings.models.upstream')}
+            hint={t('settings.models.upstream_hint')}
+          >
+            <Badge tone="neutral">{t('settings.models.upstream_badge')}</Badge>
           </SettingRow>
         </>
       )}
@@ -268,11 +284,12 @@ function ModelsPanel() {
 }
 
 function LocalPanel() {
+  const { t } = useTranslation()
   const [convShow, setConvShow] = useConversationDisplay()
   return (
     <div className="space-y-5">
-      <SettingSection title="本机偏好" desc="只存本浏览器。">
-        <SettingRow label="事件对话展示" hint="实时事件详情页展示同会话对话摘要;文本已由后端脱敏">
+      <SettingSection title={t('settings.local.title')} desc={t('settings.local.desc')}>
+        <SettingRow label={t('settings.local.conv')} hint={t('settings.local.conv_hint')}>
           <Switch checked={convShow} onCheckedChange={setConvShow} />
         </SettingRow>
       </SettingSection>
@@ -282,36 +299,42 @@ function LocalPanel() {
 }
 
 function DeveloperPanel() {
+  const { t } = useTranslation()
   const [devMode, setDevMode] = useDevMode()
   return (
-    <SettingSection title="开发者" desc="开发与演示用页面,默认隐藏。">
-      <SettingRow label="开发者模式" hint="开启后侧栏显示「网关实测」「评测验证」">
+    <SettingSection title={t('settings.dev.title')} desc={t('settings.dev.desc')}>
+      <SettingRow label={t('settings.dev.mode')} hint={t('settings.dev.mode_hint')}>
         <Switch checked={devMode} onCheckedChange={setDevMode} />
       </SettingRow>
-      <SettingRow label="网关实测" hint="手动发请求看网关处置与端到端链路">
-        <Badge tone={devMode ? 'accent' : 'neutral'}>{devMode ? '显示' : '隐藏'}</Badge>
+      <SettingRow label={t('settings.dev.gateway')} hint={t('settings.dev.gateway_hint')}>
+        <Badge tone={devMode ? 'accent' : 'neutral'}>
+          {devMode ? t('settings.shown') : t('settings.hidden')}
+        </Badge>
       </SettingRow>
-      <SettingRow label="评测验证" hint="测试集 ASR/FPR/召回记分卡">
-        <Badge tone={devMode ? 'accent' : 'neutral'}>{devMode ? '显示' : '隐藏'}</Badge>
+      <SettingRow label={t('settings.dev.eval')} hint={t('settings.dev.eval_hint')}>
+        <Badge tone={devMode ? 'accent' : 'neutral'}>
+          {devMode ? t('settings.shown') : t('settings.hidden')}
+        </Badge>
       </SettingRow>
     </SettingSection>
   )
 }
 
 function AboutPanel() {
+  const { t } = useTranslation()
   return (
-    <SettingSection title="关于">
-      <SettingRow label="产品">
-        <span className="text-[15px] text-ink-2">枢衡 Fulcrum · 安全控制台</span>
+    <SettingSection title={t('settings.cat.about')}>
+      <SettingRow label={t('settings.about.product')}>
+        <span className="text-[15px] text-ink-2">{t('settings.about.product_val')}</span>
       </SettingRow>
-      <SettingRow label="版本">
+      <SettingRow label={t('settings.about.version')}>
         <span className="font-data text-[14px] text-ink-2">0.5.0</span>
       </SettingRow>
-      <SettingRow label="部署形态">
-        <Badge tone="accent">私有化 · 单租户 · 自托管</Badge>
+      <SettingRow label={t('settings.about.deploy')}>
+        <Badge tone="accent">{t('settings.about.deploy_val')}</Badge>
       </SettingRow>
-      <SettingRow label="许可证">
-        <span className="text-[15px] text-ink-2">内部评估版</span>
+      <SettingRow label={t('settings.about.license')}>
+        <span className="text-[15px] text-ink-2">{t('settings.about.license_val')}</span>
       </SettingRow>
     </SettingSection>
   )

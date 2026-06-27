@@ -20,7 +20,9 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from ..net_guard import validate_endpoint
 
 Protocol = Literal["openai", "rest", "native"]
 AuthType = Literal["none", "bearer", "header"]
@@ -33,6 +35,12 @@ class GatewayConfig(BaseModel):
     name: str = Field(default="默认上游", max_length=64)
     protocol: Protocol = "native"
     endpoint: str = Field(default="http://127.0.0.1:8800", max_length=512)
+
+    @field_validator("endpoint")
+    @classmethod
+    def _check_endpoint(cls, v: str) -> str:
+        return validate_endpoint(v)
+
     path: str = Field(default="", max_length=256)  # 留空按协议取默认
     model: str = Field(default="", max_length=128)  # openai 协议用
     auth_type: AuthType = "none"

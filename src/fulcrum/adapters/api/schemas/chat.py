@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import json
+
+from pydantic import BaseModel, Field, field_validator
 
 from ....core.domain import Disposition
+
+# 未鉴权端点(/v1/chat/completions、/tools/call)的输入上限:挡住"超大体喂同步检测链"的
+# CPU/事件循环 DoS。content 对齐网关的 8000;参数 dict 以序列化长度封顶。
+_MAX_CONTENT = 8000
+_MAX_MESSAGES = 64
+_MAX_ARGS_CHARS = 16384
 
 __all__ = [
     "ChatMessage",
@@ -19,14 +27,14 @@ __all__ = [
 
 # ---- /v1/chat/completions ----
 class ChatMessage(BaseModel):
-    role: str
-    content: str
+    role: str = Field(max_length=32)
+    content: str = Field(max_length=_MAX_CONTENT)
 
 
 class ChatRequest(BaseModel):
-    model: str = "fulcrum-demo"
-    session_id: str | None = None
-    messages: list[ChatMessage]
+    model: str = Field(default="fulcrum-demo", max_length=128)
+    session_id: str | None = Field(default=None, max_length=256)
+    messages: list[ChatMessage] = Field(max_length=_MAX_MESSAGES)
 
 
 class OutcomeDTO(BaseModel):
@@ -47,10 +55,17 @@ class ChatResponse(BaseModel):
 
 # ---- /tools/call ----
 class ToolCallRequest(BaseModel):
-    session_id: str
-    tool_name: str
+    session_id: str = Field(max_length=256)
+    tool_name: str = Field(max_length=128)
     arguments: dict = Field(default_factory=dict)
-    source_ids: list[str] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list, max_length=64)
+
+    @field_validator("arguments")
+    @classmethod
+    def _cap_arguments(cls, v: dict) -> dict:
+        if len(json.dumps(v, ensure_ascii=False, default=str)) > _MAX_ARGS_CHARS:
+            raise ValueError(f"arguments 过大(序列化上限 {_MAX_ARGS_CHARS} 字符)")
+        return v
 
 
 class ToolCallResponse(BaseModel):
