@@ -227,16 +227,24 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
         return [_role_dto(r, directory.role_member_count(r.id)) for r in directory.list_roles()]
 
     @app.post("/admin/roles", response_model=RoleDTO, status_code=201)
-    async def create_role(body: RoleWrite, _: Principal = Depends(can_manage_roles)) -> RoleDTO:
+    async def create_role(
+        body: RoleWrite, principal: Principal = Depends(can_manage_roles)
+    ) -> RoleDTO:
         try:
-            r = directory.create_role(body.name, body.description, body.permissions, body.scope)
+            r = directory.create_role(
+                body.name,
+                body.description,
+                body.permissions,
+                body.scope,
+                actor_permissions=principal.permissions,
+            )
         except (NotFound, Conflict) as exc:
             _raise(exc)
         return _role_dto(r, 0)
 
     @app.patch("/admin/roles/{role_id}", response_model=RoleDTO)
     async def update_role(
-        role_id: int, body: RoleUpdate, _: Principal = Depends(can_manage_roles)
+        role_id: int, body: RoleUpdate, principal: Principal = Depends(can_manage_roles)
     ) -> RoleDTO:
         fields = body.model_dump(exclude_unset=True)
         try:
@@ -245,6 +253,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
                 name=fields.get("name"),
                 description=fields.get("description"),
                 permissions=fields.get("permissions"),
+                actor_permissions=principal.permissions,
             )
         except (NotFound, Conflict) as exc:
             _raise(exc)
@@ -280,7 +289,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
 
     @app.post("/admin/users", response_model=TempPasswordResponse, status_code=201)
     async def create_user(
-        body: UserCreate, _: Principal = Depends(can_manage_users)
+        body: UserCreate, principal: Principal = Depends(can_manage_users)
     ) -> TempPasswordResponse:
         try:
             user, temp = directory.create_user(
@@ -293,6 +302,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
                 email=body.email,
                 phone=body.phone,
                 title=body.title,
+                actor_permissions=principal.permissions,
             )
         except (NotFound, Conflict) as exc:
             _raise(exc)
@@ -309,7 +319,9 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
         fields = body.model_dump(exclude_unset=True)
         _guard_lead_mutation(principal, fields)
         try:
-            user = directory.update_user(user_id, fields=fields)
+            user = directory.update_user(
+                user_id, fields=fields, actor_permissions=principal.permissions
+            )
         except (NotFound, Conflict) as exc:
             _raise(exc)
         return _user_dto(user)
@@ -353,7 +365,12 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账号不存在")
         _guard_approve(principal, target, body.role_id, body.department_id)
         try:
-            user = directory.approve(user_id, body.role_id, body.department_id)
+            user = directory.approve(
+                user_id,
+                body.role_id,
+                body.department_id,
+                actor_permissions=principal.permissions,
+            )
         except (NotFound, Conflict) as exc:
             _raise(exc)
         return _user_dto(user)
