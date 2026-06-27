@@ -108,6 +108,37 @@ def test_aws_prefix_word_not_over_redacted() -> None:
     assert redact(text) == text
 
 
+def test_redacts_connection_uri_password() -> None:
+    # 连接串 URI 内嵌口令(scheme://user:PASS@host):口令常 <24、无 key= 形,内网/IP 主机时
+    # 通用规则与 _EMAIL 附带打码都抓不到 → 不专列就把生产库口令明文落库(secret_egress 标 critical)。
+    for text, pw in (
+        ("mysql://root:S3cr3t@db/app", "S3cr3t"),  # 裸主机名
+        ("postgres://svc:Hunter2@10.1.1.2/hr", "Hunter2"),  # IP 主机
+        ("mongodb+srv://admin:Pw0rd@cluster.mongodb.net/db", "Pw0rd"),  # 点分主机
+        ("redis://u:longPasswordValue123456@cache:6379", "longPasswordValue123456"),
+    ):
+        out = redact(text)
+        assert pw not in out, text
+        assert "***" in out
+        assert "@" in out  # 主机段保留便于排障
+
+
+def test_redacts_basic_auth_header() -> None:
+    # Authorization: Basic <base64(user:pass)>:base64 常 <24,短于 _LONG_TOKEN 阈值 → 整条漏过。
+    out = redact("Authorization: Basic dXNlcjpwYXNz")
+    assert "dXNlcjpwYXNz" not in out
+    assert "Basic" in out and "***" in out
+
+
+def test_benign_url_with_port_or_path_not_redacted() -> None:
+    # 无凭据的普通 URL(host:port / path)不被新 URI 口令规则误打码。
+    for text in (
+        "见 https://example.com:8080/path?q=1",
+        "文档在 https://api.gov.cn/v1/items 上",
+    ):
+        assert redact(text) == text, text
+
+
 def test_keeps_normal_text() -> None:
     text = "你好,请帮我查询低保办件进度,谢谢。"
     assert redact(text) == text  # 无敏感量 → 原样
