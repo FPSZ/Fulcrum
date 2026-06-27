@@ -5,22 +5,17 @@ import { Button, EmptyState, Segmented, toast } from '@/components/ui'
 import { resolveEvent } from '@/lib/api/events'
 import { useAuth } from '@/lib/auth'
 import { useResource } from '@/lib/backup'
+import { useTranslation } from '@/lib/i18n'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { cn } from '@/lib/utils'
 import { ImportBackupButtons } from '../backup/import-controls'
 import { EventDetail } from './event-detail'
 import { EventGroup } from './event-group'
-import { DISPOSITION_ORDER, LEVEL_LABEL } from './meta'
+import { DISPOSITION_ORDER, levelLabel } from './meta'
 import type { Disposition, FoldedRow, RiskLevel, SecurityEvent } from './types'
 import { useEventsFeed } from './use-events'
 
 type Filter = 'all' | RiskLevel
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all', label: '全部' },
-  { value: 'critical', label: LEVEL_LABEL.critical },
-  { value: 'high', label: LEVEL_LABEL.high },
-  { value: 'medium', label: LEVEL_LABEL.medium },
-]
 
 const LEVEL_RANK: Record<RiskLevel, number> = { critical: 3, high: 2, medium: 1, low: 0 }
 
@@ -51,7 +46,15 @@ export function EventsPage() {
   const isLive = !!(live && live.length > 0)
   const events = isLive ? live : backup
   const qc = useQueryClient()
+  const { t } = useTranslation()
   const { has } = useAuth()
+  // 等级筛选项(在组件内构建,随语言切换实时解析,不在模块级冻结)。
+  const filters: { value: Filter; label: string }[] = [
+    { value: 'all', label: t('events.filter.all') },
+    { value: 'critical', label: levelLabel('critical') },
+    { value: 'high', label: levelLabel('high') },
+    { value: 'medium', label: levelLabel('medium') },
+  ]
   // 处置(批准放行/维持阻断)= 写操作:需 events.handle,且仅对真实后端事件生效(演示备份无后端)
   const canHandle = has('events.handle') && isLive
   const [resolving, setResolving] = useState<'allow' | 'block' | null>(null)
@@ -189,7 +192,7 @@ export function EventsPage() {
             <Segmented
               value={filter}
               onValueChange={(v) => setFilter(v as Filter)}
-              items={FILTERS.map((f) => ({ ...f, count: counts[f.value] }))}
+              items={filters.map((f) => ({ ...f, count: counts[f.value] }))}
             />
             <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
               <Button variant="ghost" size="sm" className="max-[1440px]:hidden">

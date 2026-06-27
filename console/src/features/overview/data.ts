@@ -1,7 +1,7 @@
 import { ShieldCheck, ShieldAlert, Clock, FileCheck2, type LucideIcon } from 'lucide-react'
 import type { BadgeTone } from '@/components/ui'
 import type { OverviewStats } from '@/lib/api/overview'
-import { DISPOSITION_LABEL, DISPOSITION_TONE, SOURCE_ICON } from '../events/meta'
+import { dispositionLabel, DISPOSITION_TONE, SOURCE_ICON } from '../events/meta'
 import type { SecurityEvent } from '../events/types'
 import type { OverviewStat } from './backup'
 
@@ -104,7 +104,7 @@ export function deriveRecent(events: SecurityEvent[], n = 6): RecentRow[] {
       src: e.srcType,
       srcIcon: SOURCE_ICON[e.srcType],
       type: e.risk,
-      status: { label: DISPOSITION_LABEL[e.disp], tone: DISPOSITION_TONE[e.disp] },
+      status: { label: dispositionLabel(e.disp), tone: DISPOSITION_TONE[e.disp] },
       tool: e.tool,
       risk: Math.round(e.conf * 100),
     }))

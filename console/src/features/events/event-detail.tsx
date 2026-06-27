@@ -18,10 +18,10 @@ import { useConversationDisplay } from '@/lib/conversation-pref'
 import { detailSwap } from '@/lib/motion'
 import { EvidenceChain } from './evidence-chain'
 import {
-  DISPOSITION_LABEL,
+  dispositionLabel,
   DISPOSITION_TONE,
   LEVEL_BADGE,
-  LEVEL_LABEL,
+  levelRiskLabel,
   TRUST_LABEL,
   TRUST_TONE,
 } from './meta'
@@ -230,10 +230,10 @@ export function EventDetail({
               </div>
               <div className="mt-2.5">
                 <Badge tone={LEVEL_BADGE[e.level]} dot>
-                  {LEVEL_LABEL[e.level]}风险
+                  {levelRiskLabel(e.level)}
                 </Badge>
                 <Badge tone={DISPOSITION_TONE[e.disp]} className="ml-1.5">
-                  {DISPOSITION_LABEL[e.disp]}
+                  {dispositionLabel(e.disp)}
                 </Badge>
               </div>
             </div>
