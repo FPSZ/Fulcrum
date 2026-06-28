@@ -5,7 +5,8 @@
 被原样吐出——含口令的数据库连接串、云厂商 API 密钥、私钥块、`Authorization: Bearer` 令牌——
 也抓不住智能体被诱导**复述自己的系统提示词**(LLM07 系统提示泄露)。本检测器专补这两类:
 
-    credential_egress   回复/输入夹带**带凭据的连接串 / 云厂商密钥 / 私钥块 / Bearer 令牌**
+    credential_egress   回复/输入夹带**带凭据的连接串 / 云厂商·AI 厂商密钥 / 私钥块 /
+                        Authorization 头令牌 / 裸 JWT 访问令牌**
     system_prompt_leak  自陈式系统提示披露("以下是我的系统提示词…")+ 提示模板边界标记
 
 与既有能力互补、不重叠:
@@ -24,6 +25,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 
 from ...core.domain import Context, Finding, SourceSpan, TrustLevel
@@ -47,7 +50,9 @@ _ADO_CRED = re.compile(
 _PEM = re.compile(r"-----BEGIN (?:[A-Z0-9 ]*)PRIVATE KEY-----")
 # HTTP 授权头携带 Bearer/Basic 令牌实值。
 _AUTH_HDR = re.compile(r"(?i)\bauthorization\s*:\s*(?:bearer|basic)\s+[A-Za-z0-9._\-+/=]{8,}")
-# 高熵前缀型云厂商/服务密钥(前缀锚定,近零误报):AWS / Google / GitHub / Slack / Stripe。
+# 高熵前缀型云厂商/AI 厂商/服务密钥(前缀锚定,近零误报):AWS / Google / GitHub / Slack /
+# Stripe / OpenAI / Anthropic / GitLab / HuggingFace。本系统本身是代理上游 OpenAI·Anthropic 的
+# AI 网关——这两家的密钥正是它持有/转发的凭据,却原本一个都不识别,补上是出口闸门的应有之义。
 _PROVIDER = re.compile(
     r"(?<![A-Za-z0-9])(?:"
     r"(?:AKIA|ASIA)[A-Z0-9]{16}"  # AWS access key id
@@ -56,7 +61,21 @@ _PROVIDER = re.compile(
     r"|github_pat_[A-Za-z0-9_]{60,}"  # GitHub 细粒度 PAT
     r"|xox[baprs]-[A-Za-z0-9-]{10,}"  # Slack token
     r"|sk_live_[A-Za-z0-9]{16,}"  # Stripe live secret
+    r"|sk-proj-[A-Za-z0-9_-]{20,}"  # OpenAI 项目密钥
+    r"|sk-ant-[A-Za-z0-9_-]{24,}"  # Anthropic 密钥(本网关上游)
+    r"|sk-[A-Za-z0-9]{32,}"  # OpenAI 传统密钥
+    r"|glpat-[A-Za-z0-9_-]{20,}"  # GitLab 个人访问令牌
+    r"|hf_[A-Za-z0-9]{34,}"  # HuggingFace 令牌
+    r"|ya29\.[A-Za-z0-9_\-]{20,}"  # Google OAuth 访问令牌
     r")"
+)
+# 裸 JWT 访问令牌:无 Authorization 头包裹时 _AUTH_HDR 抓不到,而 JWT 本身即可直接当 Bearer 用。
+# 结构 = header.payload.signature 三段 base64url,与签发方无关(通用能力,非某家签名)。靠**解码
+# 校验**保精度:第一段须能 base64url 解成含 "alg" 字段的 JOSE 头 JSON(JWS 强制字段);随机点分串 /
+# data-uri / 版本号 / 三段单词一律解不出合法头 → 近零误报。
+_JWT = re.compile(
+    r"(?<![A-Za-z0-9_/+\-])(eyJ[A-Za-z0-9_-]{8,})\.eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}"
+    r"(?![A-Za-z0-9_/+\-])"
 )
 
 # ── system_prompt_leak:自陈式披露 + 提示模板边界标记 ──────────────────────────
@@ -129,6 +148,19 @@ def _is_placeholder_pw(pw: str) -> bool:
     return bool(_PW_MASK.fullmatch(s))
 
 
+def _is_jwt(text: str) -> bool:
+    """文本里是否含一个**结构与解码都成立**的 JWT(第一段 base64url 解出含 alg 的 JOSE 头)。"""
+    for m in _JWT.finditer(text):
+        seg = m.group(1)
+        try:
+            header = json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))
+        except (ValueError, TypeError):
+            continue
+        if isinstance(header, dict) and "alg" in header:
+            return True
+    return False
+
+
 def _credential_labels(text: str) -> list[str]:
     """返回命中的凭据外泄子类标签(去重、固定顺序);占位口令的连接串不计入。"""
     labels: list[str] = []
@@ -142,6 +174,8 @@ def _credential_labels(text: str) -> list[str]:
         labels.append("authorization_header")
     if _PROVIDER.search(text):
         labels.append("provider_secret")
+    if _is_jwt(text):
+        labels.append("jwt")
     return labels
 
 

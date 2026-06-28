@@ -47,6 +47,15 @@ _AWS_KEY = re.compile(
 # JWT:三段 base64url 以 . 分隔,前两段以 eyJ 开头。各段常 <24 且被 . 截断,_LONG_TOKEN 抓不全 →
 # 作为整体识别。锚定前两段的 eyJ 头,避免误伤普通点分串。
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{4,}\.eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}")
+# HTTP 授权头凭据值:Bearer/Basic 之后的令牌。Basic 的 base64(编码 user:pass,常 <24)与短
+# Bearer 令牌都低于 _LONG_TOKEN 的 24 阈值、又无 key= 形 → 不专列就连 user:pass 一起明文落库。
+# 保留方案名(Bearer/Basic)便于排障,值整体打码。
+_AUTH_HDR = re.compile(r"(?i)\b(authorization\s*:\s*(?:bearer|basic)\s+)([A-Za-z0-9._~+/\-]{4,}=*)")
+# 连接串 URI 内嵌口令 scheme://user:PASS@host。口令常 <24、又无 key= 形,通用规则均抓不到;
+# 内网/IP 主机时连 _EMAIL 的附带打码都蹭不上 → 不专列就把生产库口令明文落进审计,正是
+# secret_egress 标 critical 的同一串。仅打码口令段,保留 scheme://user@host 便于排障。
+# 口令段排除 `:/@` 以不越过 host:port;含 `@` 的未转义口令(RFC 应 %40)非常态,不强求。
+_URI_CRED = re.compile(r"([a-z][a-z0-9+.\-]*://[^\s:/@]+:)([^\s:/@]+)(@)", re.IGNORECASE)
 
 
 def _mask_uscc(m: re.Match[str]) -> str:
@@ -67,6 +76,10 @@ def redact(text: str) -> str:
         return text
     # PEM 私钥整块先吞:置于所有规则之前,避免块体被零散打码后头尾结构仍留痕。
     text = _PEM_BLOCK.sub("[私钥已脱敏]", text)
+    # 授权头凭据值 / 连接串 URI 口令:置于通用规则之前,确保短凭据(<24)也被整段打码,
+    # 而非被 _EMAIL/_LONG_TOKEN 部分命中后残留首字符或整条漏过。
+    text = _AUTH_HDR.sub(lambda m: f"{m.group(1)}***", text)
+    text = _URI_CRED.sub(lambda m: f"{m.group(1)}***{m.group(3)}", text)
     text = _SECRET_KV.sub(lambda m: f"{m.group(1)}{m.group(2)}{m.group(3)}***", text)
     text = _ID_CARD.sub(lambda m: f"{m.group(1)}{'*' * 8}{m.group(3)}", text)
     # USCC 置于身份证之后:18 位纯数字身份证(末位为数字)也合 USCC 形,先按身份证打码

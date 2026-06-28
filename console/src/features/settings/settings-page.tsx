@@ -278,11 +278,21 @@ function ModelsPanel() {
 }
 
 function LocalPanel() {
-  const { t } = useTranslation()
+  const { t, locale, setLocale } = useTranslation()
   const [convShow, setConvShow] = useConversationDisplay()
   return (
     <div className="space-y-5">
       <SettingSection title={t('settings.local.title')} desc={t('settings.local.desc')}>
+        <SettingRow label={t('settings.local.lang')} hint={t('settings.local.lang_hint')}>
+          <Select
+            value={locale}
+            onValueChange={(v) => setLocale(v as 'zh' | 'en')}
+            options={[
+              { value: 'zh', label: '中文' },
+              { value: 'en', label: 'English' },
+            ]}
+          />
+        </SettingRow>
         <SettingRow label={t('settings.local.conv')} hint={t('settings.local.conv_hint')}>
           <Switch checked={convShow} onCheckedChange={setConvShow} />
         </SettingRow>
