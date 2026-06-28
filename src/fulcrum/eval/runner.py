@@ -31,18 +31,41 @@ _ATTR_LABELER = RoleTrustLabeler()
 _ATTR_DETECTOR = KeywordRuleDetector()
 
 
+# 嵌入来源(trace 归因目标):被夹带进输入的外部内容来源。用户/系统/助手外层包装不是 trace 源。
+_EMBEDDED_SOURCES = frozenset(
+    {"document", "webpage", "retrieval", "memory", "plugin_manifest", "tool_return"}
+)
+
+
+def _src_name(st: object) -> str:
+    name = getattr(st, "name", None)
+    return name.lower() if isinstance(name, str) else str(st).lower()
+
+
 def _attribute_sources(text: str) -> list[str]:
-    """按命中分降序返回来源类型名(document/webpage/retrieval/memory/…),供 hit@k 计算。"""
+    """把输入里被夹带的内容归因到其嵌入源,按"检测命中分 > 仅标注"降序返回。供 hit@k 计算。
+
+    来源标注由 role_trust labeler 产出(嵌入源 span 带 source_type),归因能力本就在标注里——
+    故即便某嵌入源未触发检测器 finding(零信号注入),只要被标注为嵌入源也可归因(给 0 基线分,
+    排在有命中分的源之后)。用户/系统外层包装不是 trace 源,不计入。
+    """
     req = ModelRequest(session_id="attr", messages=[Message(role="user", content=text)])
     spans = _ATTR_LABELER.label(req)
     findings = _ATTR_DETECTOR.detect(spans, Context(session_id="attr"))
     best: dict[str, float] = {}
+    # 1) 检测器命中的嵌入源:取最高命中分(高置信优先排序)。
     for f in findings:
         st = f.evidence.get("source_type")
         if st is None:
             continue
-        name = st.name.lower() if hasattr(st, "name") else str(st).lower()
-        best[name] = max(best.get(name, 0.0), f.score)
+        name = _src_name(st)
+        if name in _EMBEDDED_SOURCES:
+            best[name] = max(best.get(name, 0.0), f.score)
+    # 2) 仅被标注的嵌入源(无 finding 也可归因):给 0 基线,保留可溯源性。
+    for sp in spans:
+        name = _src_name(sp.source_type)
+        if name in _EMBEDDED_SOURCES:
+            best.setdefault(name, 0.0)
     return [name for name, _ in sorted(best.items(), key=lambda kv: kv[1], reverse=True)]
 
 

@@ -42,6 +42,38 @@ def test_no_overlap_no_attribution() -> None:
     assert attr.confidence == 0.0
 
 
+def test_common_domain_email_no_false_attribution() -> None:
+    # 裸 2 段公共域(gov.cn)在邮箱/页脚里随处可见:良性参数含邮箱 + 无关不可信来源也提同域,
+    # 不得据此生成误归因边(否则 _worst_trust→untrusted 会在良性流量上触发越权策略)。
+    doc = _span(
+        "本网站由某某单位主办 www.gov.cn 版权所有",
+        source=SourceType.DOCUMENT,
+        trust=TrustLevel.UNTRUSTED,
+    )
+    intent = ToolIntent(
+        session_id="s", tool_name="notify.send", arguments={"to": "zhang.san@gov.cn"}
+    )
+    attr = _attribute(intent, [doc], Context(session_id="s"))
+    assert attr.derived_from_sources == []
+    assert attr.confidence == 0.0
+
+
+def test_specific_host_path_still_attributed() -> None:
+    # 不伤召回:带路径 / ≥3 段的「具体种子」仍正常反向归因。
+    doc = _span(
+        "请抓取 www.gov.cn/policy/2026/notice 的内容",
+        source=SourceType.WEBPAGE,
+        trust=TrustLevel.UNTRUSTED,
+    )
+    intent = ToolIntent(
+        session_id="s",
+        tool_name="http.request",
+        arguments={"url": "https://www.gov.cn/policy/2026/notice?full=1"},
+    )
+    attr = _attribute(intent, [doc], Context(session_id="s"))
+    assert doc.source_id in attr.derived_from_sources
+
+
 def test_wrapped_url_still_attributed_to_source() -> None:
     """来源里是裸的主机+路径,模型补全成带 scheme/尾斜杠的完整 URL 调用 → 仍建立归因边。"""
     doc = _span(

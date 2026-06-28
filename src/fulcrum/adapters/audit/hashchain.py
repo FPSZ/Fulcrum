@@ -16,6 +16,7 @@ verify 用事件**写入当时的 schema_version** 重算,而非"拿今天的模
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from collections.abc import Iterable
 
@@ -23,6 +24,19 @@ from ...core.domain import AuditEvent
 from ...core.errors import AuditError
 
 GENESIS = "GENESIS"
+
+# 链封缄密钥(可选,经 .env 的 FULCRUM_AUDIT_HMAC_KEY 注入,启动时 configure_hmac_key 设入)。
+# 设了 → event_hash 走 HMAC-SHA256:拿到库写权限的攻击者**没有密钥就无法伪造合法链**
+# (改一条事件后重算其后全部哈希也对不上)。留空(默认)→ 退回裸 SHA256,保持既有行为与可验证性。
+# 注:切换密钥/启停会改变哈希口径,既有链需在同一口径下校验;故仅在部署初始化时设定一次。
+_HMAC_KEY: bytes | None = None
+
+
+def configure_hmac_key(key: str | None) -> None:
+    """设置审计链封缄密钥(进程级,启动时调用一次)。空/None = 不启用 HMAC(裸 SHA256)。"""
+    global _HMAC_KEY
+    _HMAC_KEY = key.encode("utf-8") if key else None
+
 
 # 各 schema_version 下"受哈希保护"的字段集(event_hash 自身永远除外)。
 # 顺序无关(canonical 用 sort_keys)。改动某版本的集合 = 改哈希口径,禁止;
@@ -54,7 +68,10 @@ def canonical(event: AuditEvent) -> str:
 
 
 def event_hash(event: AuditEvent) -> str:
-    return hashlib.sha256((event.prev_hash + canonical(event)).encode("utf-8")).hexdigest()
+    data = (event.prev_hash + canonical(event)).encode("utf-8")
+    if _HMAC_KEY is not None:
+        return hmac.new(_HMAC_KEY, data, hashlib.sha256).hexdigest()
+    return hashlib.sha256(data).hexdigest()
 
 
 def seal(event: AuditEvent, *, index: int, prev_hash: str) -> AuditEvent:

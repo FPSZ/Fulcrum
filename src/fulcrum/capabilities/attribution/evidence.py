@@ -39,6 +39,8 @@ _SCHEME = re.compile(r"^[a-z][a-z0-9+.\-]*://")
 # 通用词子串匹配。片段仍须 ≥ _MIN_TOKEN。
 _IPV4_RX = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}(?:/[\w.\-/]*)?")  # IPv4(可带尾随 /path)
 _HOST_RX = re.compile(r"(?:[a-z0-9\-]+\.)+[a-z]{2,}(?:/[\w.\-/]*)?")  # 域名(可带尾随 /path)
+# 裸 2 段点分 token(恰一个点、无路径):gov.cn / user.name / 邮箱域部 —— 判别力太低,不当种子。
+_BARE_2LABEL_RX = re.compile(r"^[a-z0-9\-]+\.[a-z0-9\-]+$", re.IGNORECASE)
 _UNIX_PATH_RX = re.compile(r"~?(?:/[\w.\-]+)+|(?:[\w.\-]+/)+[\w.\-]+")  # /etc/passwd、~/.ssh/x
 _WIN_PATH_RX = re.compile(r"(?:[a-z]:)?[\w.\-]*(?:\\[\w.\-]+)+")  # C:\Users\x\.ssh
 _SEED_RXS = (_IPV4_RX, _HOST_RX, _UNIX_PATH_RX, _WIN_PATH_RX)
@@ -101,6 +103,11 @@ def _seed_fragments(value: str) -> list[str]:
     def _add(frag: str) -> None:
         frag = frag.strip("\"'`").rstrip("/")
         if _is_filename_not_host(frag):  # 收紧:排除被 host 正则误抽的裸文件名(防伪造归因边)
+            return
+        # 低判别力裸域:无路径的「2 段点分」token(gov.cn / user.name / 邮箱域部)极易与公共域、
+        # 通用点分标识符碰撞 → 在无关不可信来源里同名即生成高置信误归因边。只收带路径或 ≥3 段的
+        # host(www.gov.cn/policy、a.b.c),裸 2 段一律不纳入(不伤真实「具体种子」归因)。
+        if "/" not in frag and "\\" not in frag and _BARE_2LABEL_RX.match(frag):
             return
         if len(frag) >= _MIN_TOKEN and frag not in out:
             out.append(frag)

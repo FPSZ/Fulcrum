@@ -12,6 +12,7 @@ import {
   toast,
 } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/i18n'
 import {
   createMember,
   listMembers,
@@ -45,6 +46,7 @@ interface Props {
 }
 
 export function MembersTab({ departments, roles, canManage, scoped = false, onChanged }: Props) {
+  const { t } = useTranslation()
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [deptFilter, setDeptFilter] = useState<number | null>(null)
@@ -64,11 +66,11 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
       })
       setMembers(data)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : t('admin.members.load_failed'))
     } finally {
       setLoading(false)
     }
-  }, [deptFilter, statusFilter, search])
+  }, [t, deptFilter, statusFilter, search])
 
   useEffect(() => {
     void reload()
@@ -83,10 +85,10 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
   const toggleStatus = async (m: Member) => {
     try {
       await setMemberStatus(m.id, m.status === 'active' ? 'disabled' : 'active')
-      toast.success(m.status === 'active' ? '已停用' : '已启用')
+      toast.success(m.status === 'active' ? t('admin.members.disabled') : t('admin.members.enabled'))
       refreshAll()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
+      toast.error(e instanceof Error ? e.message : t('admin.members.op_failed'))
     }
   }
 
@@ -94,9 +96,9 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
     try {
       const r = await resetMemberPassword(m.id)
       if (r.temp_password) setTemp({ username: m.username, password: r.temp_password })
-      else toast.success('口令已重置')
+      else toast.success(t('admin.members.pw_reset'))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
+      toast.error(e instanceof Error ? e.message : t('admin.members.op_failed'))
     }
   }
 
@@ -105,7 +107,7 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
       {/* 左:组织架构树(点击筛选);移动端隐藏,表格占满;团队负责人视图不展示(已限本团队) */}
       {!scoped && (
         <aside className="hidden w-60 shrink-0 flex-col gap-1 overflow-y-auto rounded-[12px] border border-line bg-surface/60 p-2 md:flex">
-          <TreeItem label="全部成员" active={deptFilter === null} depth={0}
+          <TreeItem label={t('admin.members.all')} active={deptFilter === null} depth={0}
             onClick={() => setDeptFilter(null)} />
           {tree.map((d) => (
             <TreeItem
@@ -128,7 +130,7 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索姓名 / 账号 / 工号"
+              placeholder={t('admin.members.search')}
               className="w-[230px] pl-8"
             />
           </div>
@@ -136,15 +138,15 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
             value={statusFilter}
             onValueChange={(v) => setStatusFilter(v as 'all' | UserStatus)}
             items={[
-              { value: 'all', label: '全部' },
-              { value: 'active', label: '在职' },
-              { value: 'disabled', label: '停用' },
+              { value: 'all', label: t('admin.members.filter.all') },
+              { value: 'active', label: t('admin.members.filter.active') },
+              { value: 'disabled', label: t('admin.members.filter.disabled') },
             ]}
           />
           {canManage && (
             <Button variant="primary" className="ml-auto" onClick={() => setCreating(true)}>
               <UserPlus className="h-4 w-4" />
-              新增成员
+              {t('admin.members.add')}
             </Button>
           )}
         </div>
@@ -153,12 +155,12 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
           <table className="hidden w-full border-collapse text-[14px] md:table">
             <thead className="sticky top-0 z-[1] bg-subtle text-[13px] text-ink-3">
               <tr className="[&>th]:px-3 [&>th]:py-2.5 [&>th]:text-left [&>th]:font-medium">
-                <th>成员</th>
-                <th>部门</th>
-                <th>角色</th>
-                <th>状态</th>
-                <th>最后登录</th>
-                {canManage && <th className="text-right">操作</th>}
+                <th>{t('admin.members.col.member')}</th>
+                <th>{t('admin.members.col.dept')}</th>
+                <th>{t('admin.members.col.role')}</th>
+                <th>{t('admin.members.col.status')}</th>
+                <th>{t('admin.members.col.last_login')}</th>
+                {canManage && <th className="text-right">{t('admin.members.col.actions')}</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -183,14 +185,14 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
                   {canManage && (
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1">
-                        <IconButton label="编辑" onClick={() => setEditing(m)}>
+                        <IconButton label={t('common.edit')} onClick={() => setEditing(m)}>
                           <Pencil className="h-[15px] w-[15px]" />
                         </IconButton>
-                        <IconButton label="重置口令" onClick={() => reset(m)}>
+                        <IconButton label={t('admin.members.reset_pw')} onClick={() => reset(m)}>
                           <KeyRound className="h-[15px] w-[15px]" />
                         </IconButton>
                         <IconButton
-                          label={m.status === 'active' ? '停用' : '启用'}
+                          label={m.status === 'active' ? t('admin.members.disable') : t('admin.members.enable')}
                           onClick={() => toggleStatus(m)}
                           className={m.status === 'active' ? 'hover:text-crit' : 'hover:text-ok'}
                         >
@@ -224,14 +226,14 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
                 </div>
                 {canManage && (
                   <div className="flex shrink-0 items-center gap-0.5">
-                    <IconButton label="编辑" onClick={() => setEditing(m)}>
+                    <IconButton label={t('common.edit')} onClick={() => setEditing(m)}>
                       <Pencil className="h-[15px] w-[15px]" />
                     </IconButton>
-                    <IconButton label="重置口令" onClick={() => reset(m)}>
+                    <IconButton label={t('admin.members.reset_pw')} onClick={() => reset(m)}>
                       <KeyRound className="h-[15px] w-[15px]" />
                     </IconButton>
                     <IconButton
-                      label={m.status === 'active' ? '停用' : '启用'}
+                      label={m.status === 'active' ? t('admin.members.disable') : t('admin.members.enable')}
                       onClick={() => toggleStatus(m)}
                       className={m.status === 'active' ? 'hover:text-crit' : 'hover:text-ok'}
                     >
@@ -244,7 +246,11 @@ export function MembersTab({ departments, roles, canManage, scoped = false, onCh
           </div>
 
           {!loading && members.length === 0 && (
-            <EmptyState icon={Users} title="暂无成员" hint="当前筛选条件下没有成员。" />
+            <EmptyState
+              icon={Users}
+              title={t('admin.members.empty.title')}
+              hint={t('admin.members.empty.hint')}
+            />
           )}
         </div>
       </div>
@@ -327,6 +333,7 @@ function MemberDialog({
   onCreated: (username: string, password: string | null) => void
   onSaved: () => void
 }) {
+  const { t } = useTranslation()
   const editMode = member !== null
   const [form, setForm] = useState({
     username: member?.username ?? '',
@@ -343,17 +350,17 @@ function MemberDialog({
     setForm((f) => ({ ...f, [k]: v }))
 
   const deptOptions = [
-    { value: NONE, label: '未分配' },
+    { value: NONE, label: t('admin.unassigned_dept') },
     ...departments.map((d) => ({ value: String(d.id), label: d.name })),
   ]
   const roleOptions = [
-    { value: NONE, label: '未分配角色' },
+    { value: NONE, label: t('admin.unassigned_role') },
     ...roles.map((r) => ({ value: String(r.id), label: r.name })),
   ]
 
   const submit = async () => {
     if (!form.display_name.trim() || (!editMode && !form.username.trim())) {
-      toast.error('请填写姓名与账号')
+      toast.error(t('admin.member_form.require_name_account'))
       return
     }
     setBusy(true)
@@ -368,7 +375,7 @@ function MemberDialog({
           department_id: form.department_id,
           role_id: form.role_id,
         })
-        toast.success('已保存')
+        toast.success(t('admin.member_form.saved'))
         onSaved()
       } else {
         const r = await createMember({
@@ -381,12 +388,12 @@ function MemberDialog({
           department_id: form.department_id,
           role_id: form.role_id,
         })
-        toast.success('成员已创建')
+        toast.success(t('admin.member_form.created'))
         onCreated(r.user.username, r.temp_password)
       }
       onClose()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : t('admin.member_form.save_failed'))
     } finally {
       setBusy(false)
     }
@@ -396,42 +403,42 @@ function MemberDialog({
     <Dialog
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title={editMode ? '编辑成员' : '新增成员'}
-      description={editMode ? undefined : '不填口令则由系统生成一次性临时口令。'}
+      title={editMode ? t('admin.member_form.edit') : t('admin.member_form.new')}
+      description={editMode ? undefined : t('admin.member_form.new_desc')}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>取消</Button>
+          <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" onClick={submit} disabled={busy}>
-            {editMode ? '保存' : '创建'}
+            {editMode ? t('common.save') : t('admin.member_form.create')}
           </Button>
         </>
       }
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FormField label="姓名" required>
+        <FormField label={t('admin.member_form.name')} required>
           <Input value={form.display_name} onChange={(e) => set('display_name', e.target.value)} />
         </FormField>
-        <FormField label="账号" required>
+        <FormField label={t('admin.member_form.account')} required>
           <Input
             value={form.username}
             onChange={(e) => set('username', e.target.value)}
             disabled={editMode}
-            placeholder="登录账号"
+            placeholder={t('admin.member_form.account_ph')}
           />
         </FormField>
-        <FormField label="工号">
+        <FormField label={t('admin.member_form.employee_no')}>
           <Input value={form.employee_no} onChange={(e) => set('employee_no', e.target.value)} />
         </FormField>
-        <FormField label="职位">
-          <Input value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="如 安全运营工程师" />
+        <FormField label={t('admin.member_form.title')}>
+          <Input value={form.title} onChange={(e) => set('title', e.target.value)} placeholder={t('admin.member_form.title_ph')} />
         </FormField>
-        <FormField label="邮箱">
+        <FormField label={t('admin.member_form.email')}>
           <Input value={form.email} onChange={(e) => set('email', e.target.value)} />
         </FormField>
-        <FormField label="手机">
+        <FormField label={t('admin.member_form.phone')}>
           <Input value={form.phone} onChange={(e) => set('phone', e.target.value)} />
         </FormField>
-        <FormField label="部门">
+        <FormField label={t('admin.member_form.dept')}>
           <Select
             value={form.department_id == null ? NONE : String(form.department_id)}
             onValueChange={(v) => set('department_id', v === NONE ? null : Number(v))}
@@ -439,7 +446,7 @@ function MemberDialog({
             className="w-full"
           />
         </FormField>
-        <FormField label="角色">
+        <FormField label={t('admin.member_form.role')}>
           <Select
             value={form.role_id == null ? NONE : String(form.role_id)}
             onValueChange={(v) => set('role_id', v === NONE ? null : Number(v))}

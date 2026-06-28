@@ -155,3 +155,92 @@ def test_resolve_requires_handle_permission(tmp_path: Path) -> None:
     _login(client, "low", _LOW_PW)
     resp = client.post("/events/any-id/resolve", json={"decision": "allow"})
     assert resp.status_code == 403
+
+
+# ── 垂直提权防护回归(安全审计 CRIT-1/2)──────────────────────────────────
+# 红线:持「成员管理」/「角色管理」者绝不能把自己提成超管,也不能授予自己没有的权限。
+
+
+def _super_role_id(client: TestClient) -> int:
+    return next(r for r in client.get("/admin/roles").json() if r["key"] == "super_admin")["id"]
+
+
+def test_users_manage_holder_cannot_self_assign_super_admin(tmp_path: Path) -> None:
+    """持 users.manage 的非超管账号把自己改派成超管 → 409(组织级角色包含性闸)。"""
+    client = _client(tmp_path)
+    _login(client, "admin", _ADMIN_PW)
+    role = client.post(
+        "/admin/roles",
+        json={
+            "name": "成员管理员",
+            "description": "",
+            "permissions": ["users.view", "users.manage"],
+        },
+    ).json()
+    created = client.post(
+        "/admin/users",
+        json={
+            "username": "mgr",
+            "display_name": "成员管理员甲",
+            "role_id": role["id"],
+            "department_id": None,
+            "password": "mgr-pw-123456",
+        },
+    )
+    assert created.status_code == 201, created.text
+    mgr_id = created.json()["user"]["id"]
+    super_id = _super_role_id(client)
+
+    _login(client, "mgr", "mgr-pw-123456")
+    resp = client.patch(f"/admin/users/{mgr_id}", json={"role_id": super_id})
+    assert resp.status_code == 409, resp.text
+    # 真没提上去:会话权限仍只有原两项,绝无 roles.manage。
+    me = client.get("/auth/me").json()
+    assert "roles.manage" not in me["permissions"]
+    assert set(me["permissions"]) == {"users.view", "users.manage"}
+
+
+def test_roles_manage_holder_cannot_grant_unheld_permission(tmp_path: Path) -> None:
+    """持 roles.manage 但权限有限者,新建/改角色塞入自己没有的权限点 → 409(包含性闸)。"""
+    client = _client(tmp_path)
+    _login(client, "admin", _ADMIN_PW)
+    role = client.post(
+        "/admin/roles",
+        json={
+            "name": "角色管理员",
+            "description": "",
+            "permissions": ["users.view", "roles.manage"],
+        },
+    ).json()
+    created = client.post(
+        "/admin/users",
+        json={
+            "username": "rmgr",
+            "display_name": "角色管理员甲",
+            "role_id": role["id"],
+            "department_id": None,
+            "password": "rmgr-pw-123456",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    _login(client, "rmgr", "rmgr-pw-123456")
+    resp = client.post(
+        "/admin/roles",
+        json={"name": "提权角色", "description": "", "permissions": ["settings.manage"]},
+    )
+    assert resp.status_code == 409, resp.text
+
+
+def test_super_admin_role_is_immutable(tmp_path: Path) -> None:
+    """超管角色定义不可被改写/删除(防抽空全权或借编辑自封),即便操作者是超管。"""
+    client = _client(tmp_path)
+    _login(client, "admin", _ADMIN_PW)
+    super_id = _super_role_id(client)
+    assert (
+        client.patch(
+            f"/admin/roles/{super_id}", json={"permissions": ["overview.view"]}
+        ).status_code
+        == 409
+    )
+    assert client.delete(f"/admin/roles/{super_id}").status_code == 409

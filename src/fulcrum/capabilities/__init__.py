@@ -12,8 +12,10 @@ def load_builtin_capabilities() -> None:
     from .attribution import evidence, zero  # noqa: F401
 
     # 语义兜底(默认不入装配,可选):llm_judge=中文 LLM-judge(选定);ml_classifier=HF 分类器(反例)。
+    # injection_cascade=灰区级联(keyword_rules 快路径 + llm_judge 灰区兜底,在线降延迟)。
     from .detectors import (  # noqa: F401
         disclosure_egress,
+        injection_cascade,
         keyword_rules,
         llm_judge,
         manifest_guard,

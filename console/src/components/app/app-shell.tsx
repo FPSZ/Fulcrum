@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useTranslation } from '@/lib/i18n'
 import { getFeature } from '@/lib/module'
 import { Sidebar } from './sidebar'
 import { MobileDrawer } from './mobile-drawer'
@@ -16,7 +17,13 @@ export function AppShell({
 }) {
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const title = getFeature(active)?.label ?? '控制台'
+  const { t } = useTranslation()
+  const activeFeature = getFeature(active)
+  const title = activeFeature
+    ? activeFeature.labelKey
+      ? t(activeFeature.labelKey)
+      : activeFeature.label
+    : t('app.shell.console')
 
   /** 移动端点导航后顺手关抽屉 */
   const navigateMobile = (id: string) => {

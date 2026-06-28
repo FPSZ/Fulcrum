@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Package, ShieldAlert } from 'lucide-react'
 import { Badge, type BadgeTone, Card, EmptyState } from '@/components/ui'
 import { useResource } from '@/lib/backup'
+import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { type Rating, type ScanReport, type Severity } from './data'
 import { useSupplyScans } from './use-supply'
@@ -12,11 +13,11 @@ const RATING_TONE: Record<Rating, BadgeTone> = {
   sanitize: 'med',
   allow: 'ok',
 }
-const RATING_LABEL: Record<Rating, string> = {
-  block: '阻断',
-  approve: '需复核',
-  sanitize: '净化',
-  allow: '放行',
+const RATING_KEY: Record<Rating, MessageKey> = {
+  block: 'supply.rating.block',
+  approve: 'supply.rating.approve',
+  sanitize: 'supply.rating.sanitize',
+  allow: 'supply.rating.allow',
 }
 const SEV_TONE: Record<Severity, BadgeTone> = {
   critical: 'crit',
@@ -26,6 +27,7 @@ const SEV_TONE: Record<Severity, BadgeTone> = {
 }
 
 export function SupplyPage() {
+  const { t } = useTranslation()
   // 三态:真后端扫描评级 → 真;否则用户载入的备份演示数据;都没有 → 诚实空态(绝不自动塞假数据)。
   const live = useSupplyScans().data
   const backup = useResource<ScanReport>('supply')
@@ -37,11 +39,7 @@ export function SupplyPage() {
 
   if (reports.length === 0) {
     return (
-      <EmptyState
-        icon={Package}
-        title="暂无组件扫描"
-        hint="登记组件清单(manifest)后由静态扫描评级。也可在「数据与备份」载入演示备份预览。"
-      />
+      <EmptyState icon={Package} title={t('supply.empty.title')} hint={t('supply.empty.hint')} />
     )
   }
 
@@ -66,11 +64,11 @@ export function SupplyPage() {
                 {r.component_id}
               </code>
               <Badge tone={RATING_TONE[r.rating]} dot className="ml-auto shrink-0">
-                {RATING_LABEL[r.rating]}
+                {t(RATING_KEY[r.rating])}
               </Badge>
             </div>
             <p className="mt-1.5 text-[12px] text-ink-3">
-              {r.kind} · {r.risks.length} 项风险
+              {r.kind} · {t('supply.risk_count', { count: r.risks.length })}
             </p>
           </button>
         ))}
@@ -84,19 +82,21 @@ export function SupplyPage() {
               <h2 className="text-[15px] font-semibold text-ink">{report.component_id}</h2>
               <Badge tone={RATING_TONE[report.rating]}>
                 <ShieldAlert className="h-3.5 w-3.5" />
-                评级:{RATING_LABEL[report.rating]}
+                {t('supply.rating', { rating: t(RATING_KEY[report.rating]) })}
               </Badge>
-              <span className="text-[13px] text-ink-3">{report.kind} · {report.risks.length} 项风险</span>
+              <span className="text-[13px] text-ink-3">
+                {report.kind} · {t('supply.risk_count', { count: report.risks.length })}
+              </span>
             </div>
 
             <Card className="mt-3 overflow-hidden">
               <table className="w-full text-[14px]">
                 <thead>
                   <tr className="border-b border-line text-left text-[13px] text-ink-3">
-                    <th className="px-4 py-2.5 font-medium">风险项</th>
-                    <th className="px-4 py-2.5 font-medium">严重度</th>
-                    <th className="px-4 py-2.5 font-medium">分值</th>
-                    <th className="px-4 py-2.5 font-medium">说明</th>
+                    <th className="px-4 py-2.5 font-medium">{t('supply.col.risk')}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('supply.col.severity')}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('supply.col.score')}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('supply.col.detail')}</th>
                   </tr>
                 </thead>
                 <tbody>

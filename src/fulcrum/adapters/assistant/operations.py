@@ -534,6 +534,7 @@ async def _approve_account(args: dict, principal: Any, services: Any) -> Operati
             uid,
             int(role_id) if role_id is not None else None,
             int(dept_id) if dept_id is not None else None,
+            actor_permissions=getattr(principal, "permissions", None),
         )
     except Exception as exc:  # noqa: BLE001
         return OperationResult(summary=f"审批失败:{exc}", ok=False, error="conflict")
@@ -818,6 +819,7 @@ async def _create_user(args: dict, principal: Any, services: Any) -> OperationRe
             email=str(args.get("email") or ""),
             phone=str(args.get("phone") or ""),
             title=str(args.get("title") or ""),
+            actor_permissions=getattr(principal, "permissions", None),
         )
     except Exception as exc:  # noqa: BLE001 —— 重名/引用不存在等护栏违例如实回报
         return OperationResult(summary=f"建成员失败:{exc}", ok=False, error="conflict")
@@ -897,7 +899,9 @@ async def _update_user(args: dict, principal: Any, services: Any) -> OperationRe
             )
     old = {k: getattr(user, k) for k in fields}
     try:
-        updated = d.update_user(uid, fields=fields)
+        updated = d.update_user(
+            uid, fields=fields, actor_permissions=getattr(principal, "permissions", None)
+        )
     except Exception as exc:  # noqa: BLE001
         return OperationResult(summary=f"更新成员失败:{exc}", ok=False, error="conflict")
     return OperationResult(
@@ -1056,7 +1060,12 @@ async def _create_role(args: dict, principal: Any, services: Any) -> OperationRe
     if not isinstance(perms, list):
         return OperationResult(summary="permissions 需为字符串数组。", ok=False, error="bad_args")
     try:
-        role = d.create_role(name, str(args.get("description") or ""), [str(p) for p in perms])
+        role = d.create_role(
+            name,
+            str(args.get("description") or ""),
+            [str(p) for p in perms],
+            actor_permissions=getattr(principal, "permissions", None),
+        )
     except Exception as exc:  # noqa: BLE001
         return OperationResult(summary=f"建角色失败:{exc}", ok=False, error="conflict")
     return OperationResult(
@@ -1123,6 +1132,7 @@ async def _update_role(args: dict, principal: Any, services: Any) -> OperationRe
             name=args.get("name"),
             description=args.get("description"),
             permissions=[str(p) for p in perms] if isinstance(perms, list) else None,
+            actor_permissions=getattr(principal, "permissions", None),
         )
     except Exception as exc:  # noqa: BLE001 —— 角色不存在/参数冲突等护栏
         return OperationResult(summary=f"改角色失败:{exc}", ok=False, error="conflict")
@@ -1430,6 +1440,11 @@ async def _add_team_member(args: dict, principal: Any, services: Any) -> Operati
     prior = _prior_membership(services, team_id, user_id)
     team_role = str(args.get("team_role") or "member").strip() or "member"
     is_lead = bool(args.get("is_lead", False))
+    # 任命负责人是放权动作:纯团队负责人不得增设负责人(防领导权在子树内扩散),须 users.manage。
+    if is_lead and not _is_org_member_admin(principal):
+        return OperationResult(
+            summary="仅组织级成员管理员可任命团队负责人。", ok=False, error="forbidden"
+        )
     try:
         m = d.add_team_member(team_id, user_id, team_role, is_lead)
     except Exception as exc:  # noqa: BLE001 —— 团队/成员不存在等护栏如实回报

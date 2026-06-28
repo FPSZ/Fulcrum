@@ -122,6 +122,50 @@ def test_taint_catches_hex_encoded_exfil() -> None:
     assert f.evidence["encoded"] is True
 
 
+def test_taint_catches_base32_encoded_exfil() -> None:
+    # Base32 是 DNS 外泄的标准编码(DNS 标签大小写不敏感)。先 base32 再外发不能规避。
+    secret = "SECRETLEDGER-110101199001011234"
+    payload = "blob=" + base64.b32encode(secret.encode()).decode()
+    f = _taint_finding(f"公民台账 {secret} 金额5000", payload)
+    assert f is not None, "Base32 编码后外发应仍被判污点"
+    assert f.evidence["encoded"] is True
+    assert f.evidence["pattern"] == "tool_return->encode->exfil"
+
+
+def test_taint_catches_lowercase_base32_exfil() -> None:
+    # DNS 隧道惯用小写 base32 标签:大小写不敏感解码后仍命中。
+    secret = "CONFIDENTIAL-ROSTER-7788990011"
+    payload = "q=" + base64.b32encode(secret.encode()).decode().lower()
+    f = _taint_finding(secret, payload)
+    assert f is not None, "小写 Base32 外发应仍被判污点"
+    assert f.evidence["encoded"] is True
+
+
+def test_taint_catches_urlsafe_base64_exfil() -> None:
+    # URL-safe Base64(-_ 字母表)塞进 query 不用转义,标准 base64 表抓不到 → 须单独覆盖。
+    secret = "LEDGER-SECRET-110101199001011234"
+    blob = base64.urlsafe_b64encode(b"\xff\xfe" + secret.encode()).decode()
+    assert "-" in blob or "_" in blob  # 确保样本真含 URL-safe 专有字符
+    f = _taint_finding(f"台账 {secret}", "u=" + blob)
+    assert f is not None, "URL-safe Base64 外发应仍被判污点"
+    assert f.evidence["encoded"] is True
+
+
+def test_unrelated_base32_does_not_false_taint() -> None:
+    # 外发带个无关 base32 块,解码后与返回无重叠 → 不误报污点(与 base64 同口径)。
+    blob = base64.b32encode("完全无关的随机内容zzqqxx填充".encode()).decode()
+    f = _taint_finding("公民记录 张三 110101199001011234 低保台账", f"note={blob}")
+    assert f is None
+
+
+def test_uuid_payload_does_not_false_taint() -> None:
+    # 含连字符的 UUID 会被 URL-safe blob 正则匹配,但解码为垃圾、与返回无重叠 → 不误报。
+    f = _taint_finding(
+        "公民记录 张三 110101199001011234", "id=550e8400-e29b-41d4-a716-446655440000"
+    )
+    assert f is None
+
+
 def test_verbatim_taint_not_flagged_as_encoded() -> None:
     # 原样外发仍命中,且 encoded=False(没把普通外发误标成编码规避)。
     f = _taint_finding("abcSECRETDATA99X", "q=SECRETDATA99 原样外发")

@@ -20,6 +20,7 @@ MVP 边界(对齐 arch §6.3,诚实声明降级):
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -35,17 +36,136 @@ if TYPE_CHECKING:
 # 外联白名单。故执行前按协议白名单 fail-closed:非 http/https 一律拒。
 _ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
 
+# 无 `://` 主机段、但仍是 LFI/SSRF 面的"不透明"协议(`file:/etc/passwd`、`jar:a!/b`、`dict:…`)。
+# 协议判定以"含 `://`"为主信号(排除 `localhost:6379`/`12:30`/`user@host` 这类带冒号的良性值被
+# 误读成协议),再叠加本集合兜住无双斜杠的危险协议。集中定义便于扩。
+_RISKY_OPAQUE_SCHEMES: frozenset[str] = frozenset(
+    {
+        "file",
+        "gopher",
+        "dict",
+        "ftp",
+        "ftps",
+        "sftp",
+        "tftp",
+        "ldap",
+        "ldaps",
+        "jar",
+        "data",
+        "javascript",
+        "php",
+        "expect",
+        "netdoc",
+        "smb",
+        "redis",
+    }
+)
+
+# 目的地参数键集(协议兜底覆盖面)。工具未必把地址放进 `url`——webhook.send 用 webhook、
+# external.post 用 endpoint、转发类用 to/recipient/forward_to……只校验 `url` 一个键,攻击者
+# 改键名塞 file:// / gopher:// 即绕过。故协议白名单对**所有目的地键**生效;此处集中定义便于扩。
+_DEST_URL_KEYS: frozenset[str] = frozenset(
+    {
+        "url",
+        "uri",
+        "endpoint",
+        "webhook",
+        "webhook_url",
+        "callback",
+        "callback_url",
+        "target",
+        "target_url",
+        "dest",
+        "destination",
+        "to",
+        "recipient",
+        "address",
+        "addr",
+        "host",
+        "forward_to",
+        "redirect",
+        "redirect_url",
+        "location",
+        "link",
+    }
+)
+
+# 路径参数键集(软链容纳检查覆盖面)。与目的地键互斥:这些键承载文件系统路径,执行前对其
+# 真实路径(realpath,跟随软链)做工作区容纳判定。集中定义便于以后随工具形态扩。
+_PATH_ARG_KEYS: frozenset[str] = frozenset(
+    {
+        "path",
+        "file",
+        "filename",
+        "filepath",
+        "file_path",
+        "src",
+        "source",
+        "dir",
+        "directory",
+        "folder",
+        "input",
+        "input_path",
+        "output",
+        "output_path",
+    }
+)
+
 
 def _deny(reason: str) -> ExecResult:
     return ExecResult(ok=False, error=f"[沙箱拒绝] {reason}", side_effects={"sandbox": "denied"})
 
 
-def _url_scheme(arguments: dict) -> str | None:
-    """取 url 参数的协议(小写);无 url 或无协议返回 None。"""
-    url = str(arguments.get("url") or "")
-    if not url:
-        return None
-    return urlparse(url).scheme.lower() or None
+def _disallowed_url_scheme(arguments: dict) -> tuple[str, str] | None:
+    """扫描**所有目的地键**,返回首个带非 http/https 协议的 (键名, 协议);全合规返回 None。
+
+    纵深兜底:`_url_scheme` 旧实现只读 `url` 键,协议白名单只护住一个键,改键名(endpoint=
+    `file:///etc/passwd`、webhook=`gopher://…`)即绕过。这里对 `_DEST_URL_KEYS` 全集判协议。
+    协议成立须满足"含 `://`(权威形 URL)或属 `_RISKY_OPAQUE_SCHEMES`(file:/jar:…)",据此把
+    `localhost:6379`/`12:30`/`user@host`/`C:/x` 这类带冒号的良性值排除在外(只做加法、不误伤)。
+    """
+    for key in _DEST_URL_KEYS:
+        raw = str(arguments.get(key) or "")
+        if not raw:
+            continue
+        scheme = urlparse(raw).scheme.lower()
+        if not scheme or scheme in _ALLOWED_URL_SCHEMES:
+            continue
+        if "://" in raw or scheme in _RISKY_OPAQUE_SCHEMES:
+            return key, scheme
+    return None
+
+
+def _realpath_escapes(raw: str, workspace: str) -> bool:
+    """纯函数:路径经 realpath(跟随软链)解析后,是否仍越出受控工作区。
+
+    缺口:`argrisk.path_outside_workspace` 是纯字符串判定(看 `..`/workspace 前缀/盘符),
+    **不解析软链**——工作区内一条软链(data/workspace/x → /etc/passwd)字符串检查全过、却读到
+    区外。本检查独立于 argrisk:对路径与 workspace **两侧都 realpath** 后再比对(/tmp 本身可能
+    是软链,只解析一侧会误伤合法区内访问),解析后真实路径不在 workspace 根内即为逃逸。
+    """
+    if not raw:
+        return False
+    real_ws = os.path.realpath(workspace)
+    # 相对路径按"工作区内"解释(与受控工作区语义一致,故裸名 notice.txt 仍判区内、不误伤);
+    # 绝对/盘符路径照原样解析。两侧都 realpath 后再比,避免 /tmp 软链一侧未解析的假阳。
+    candidate = raw if os.path.isabs(raw) else os.path.join(workspace, raw)
+    real_target = os.path.realpath(candidate)
+    try:
+        # commonpath 归一分隔符/末尾斜杠;真实路径落在 ws 内 → 公共前缀正是 ws。
+        return os.path.commonpath([real_ws, real_target]) != real_ws
+    except ValueError:
+        # 不同盘符 / 一方为相对一方为绝对无公共前缀(Windows)→ 视为越界。
+        return True
+
+
+def _symlink_escape_key(arguments: dict, workspace: str) -> str | None:
+    """扫描**所有路径键**,返回首个 realpath 解析后逃逸出工作区的键名;全部容纳返回 None。"""
+    for key in _PATH_ARG_KEYS:
+        raw = str(arguments.get(key) or "")
+        if raw and _realpath_escapes(raw, workspace):
+            return key
+    return None
 
 
 def _payload_size(value: object) -> int:
@@ -88,12 +208,20 @@ class RestrictedExecutor:
             return _deny("涉密/敏感路径,拒绝执行")
         if argrisk.path_outside_workspace(args, self._workspace):
             return _deny("路径越出受控工作区,拒绝执行")
+        # 软链逃逸兜底(纵深,不依赖 argrisk 的纯字符串判定):realpath 跟随软链解析后再判容纳。
+        escaped_key = _symlink_escape_key(args, self._workspace)
+        if escaped_key is not None:
+            return _deny(f"路径参数 {escaped_key} 经软链解析后越出受控工作区,拒绝执行")
         if argrisk.command_dangerous(args):
             return _deny("命令含高危操作,拒绝执行")
-        scheme = _url_scheme(args)
-        if scheme is not None and scheme not in _ALLOWED_URL_SCHEMES:
-            # file:///etc/passwd 这类无主机协议会绕过下面的域名白名单,故先按协议白名单拦下。
-            return _deny(f"URL 协议 {scheme}:// 不在允许清单(仅 http/https),拒绝执行")
+        # 协议白名单兜底覆盖**所有目的地键**(非仅 url):file:///etc/passwd(LFI)、gopher://(SSRF)
+        # 这类无主机协议会让下面的域名白名单返回 True 直接绕过,故先按协议白名单拦下。
+        bad_scheme = _disallowed_url_scheme(args)
+        if bad_scheme is not None:
+            key, scheme = bad_scheme
+            return _deny(
+                f"目的地参数 {key} 的 URL 协议 {scheme}:// 不在允许清单(仅 http/https),拒绝执行"
+            )
         if not argrisk.domain_allowed(args, self._allow_domains):
             return _deny("目标域名不在沙箱外联白名单(默认关闭外联)")
         if _payload_size(args) > self._max_input:

@@ -97,6 +97,17 @@ def test_plain_prose_not_flagged() -> None:
     assert _kinds("请帮我把这份公文格式化一下,谢谢。") == []
 
 
+def test_nameless_dep_manifest_routed() -> None:
+    # 无 name 的纯依赖清单(含强结构键 deps)也认定为组件清单 → 路由进扫描器(救 sc-06/08)。
+    text = "评估依赖:【插件清单】{deps:{'x':'git+https://github.com/throwaway/u.git#main'}}【/插件清单】"
+    assert "supplychain_manifest" in _kinds(text)
+
+
+def test_nameless_plain_object_still_not_flagged() -> None:
+    # 无 name 且无强结构键的普通 {…} 不误认(0 FP 红线)。
+    assert _kinds("配置:{age: 30, city:'北京'}") == []
+
+
 # ── 分级处置:主动恶意→block、仅声明可疑→approve、干净→不出分 ─────────────────
 def test_exec_hook_blocked() -> None:
     assert _kinds(_EXEC_HOOK) == ["supplychain_manifest"]

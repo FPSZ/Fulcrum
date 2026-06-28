@@ -68,6 +68,52 @@ def test_locate_break_pinpoints_tampered_index() -> None:
 def test_locate_break_none_when_intact() -> None:
     sink = _sink_with_events(3)
     assert asyncio.run(sink.locate_break("s")) is None
+
+
+def test_hmac_changes_event_hash() -> None:
+    """配了封缄密钥 → event_hash 走 HMAC,与裸 SHA256 不同(口径切换)。"""
+    from fulcrum.adapters.audit import hashchain
+
+    ev = AuditEvent(session_id="s", event_type=AuditEventType.REQUEST_RECEIVED)
+    ev.prev_hash = "GENESIS"
+    try:
+        hashchain.configure_hmac_key(None)
+        plain = hashchain.event_hash(ev)
+        hashchain.configure_hmac_key("audit-secret-key")
+        keyed = hashchain.event_hash(ev)
+        assert plain != keyed
+    finally:
+        hashchain.configure_hmac_key(None)
+
+
+def test_hmac_chain_blocks_keyless_forgery() -> None:
+    """启用 HMAC 后,拿到库写权限但无密钥的攻击者无法伪造合法链:
+
+    攻击者改一条证据并用「公开算法 + 创世」重算其后全部哈希——但没有密钥只能算裸 SHA256;
+    取证端用真密钥校验立即识破。这正是裸链(可被内部人重写)补不上的那一刀。
+    """
+    from fulcrum.adapters.audit import hashchain
+
+    try:
+        hashchain.configure_hmac_key("audit-secret-key")
+        sink = _sink_with_events(3)  # 在 HMAC 口径下封缄
+        assert asyncio.run(sink.verify_chain("s")) is True
+
+        events = asyncio.run(sink.events("s"))
+        events[1].evidence = {"tampered": True}
+        # 模拟攻击者:无密钥,只能裸 SHA256 重算被改事件及其后链
+        hashchain.configure_hmac_key(None)
+        prev = events[0].event_hash
+        for ev in events[1:]:
+            ev.prev_hash = prev
+            ev.event_hash = hashchain.event_hash(ev)
+            prev = ev.event_hash
+
+        # 取证端用真密钥校验 → 识破伪造
+        hashchain.configure_hmac_key("audit-secret-key")
+        assert asyncio.run(sink.verify_chain("s")) is False
+    finally:
+        hashchain.configure_hmac_key(None)
     assert asyncio.run(sink.locate_break("no-such-session")) is None
 
 

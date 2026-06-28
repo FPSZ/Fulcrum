@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/components/ui'
+import { t } from '@/lib/i18n'
 import { useAuth } from '@/lib/auth'
 import {
   getConsoleSettings,
@@ -56,7 +57,7 @@ export function useSettingsForm() {
     setSaving(true)
     try {
       await save(toWrite(draft))
-      toast.success('已保存')
+      toast.success(t('settings.saved'))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {

@@ -74,11 +74,16 @@ _TAG_TYPE: dict[str, SourceType] = {
 _TAG_ALT = "|".join(re.escape(t) for t in sorted(_TAG_TYPE, key=len, reverse=True))
 # RAG 框架常用的标记行定界:3+ 个 - 或 = 组成的分隔线。
 _MARK = r"[-=]{3,}"
-# 四种成对定界:<tag>…</tag>  /  [tag]…[/tag]  /  【tag】…【/tag】  /
+# 四种成对定界:<tag …>…</tag>  /  [tag]…[/tag]  /  【tag】…【/tag】  /
 # ---BEGIN tag--- … ---END tag---(LangChain/LlamaIndex 风格的检索块包裹)。
 # 每个正则:group(1)=标签名,group(2)=块内容;\1 反向引用确保开闭标签一致。
+# 尖括号开标签允许携带属性:`<document index="1" source="kb">…</document>`——这是
+# Anthropic 官方长上下文 RAG 范式与 LangChain/LlamaIndex XML 检索器的默认输出格式,
+# 旧正则的 `\s*>` 不容属性 → 这类最主流的检索块被整体漏标(留在残余文本继承承载信任级)。
+# `(?:\s+[^>]*)?` 仅吞掉标签名之后、`>` 之前的属性串(非捕获,不改组号);闭标签无属性,\1 不变。
+# 仍要求标签名命中 _TAG_ALT 白名单,FP 画像与无属性版完全同构(只认已知来源名)。
 _STYLE_RES: tuple[re.Pattern[str], ...] = (
-    re.compile(rf"<\s*({_TAG_ALT})\s*>(.*?)<\s*/\s*\1\s*>", re.IGNORECASE | re.DOTALL),
+    re.compile(rf"<\s*({_TAG_ALT})(?:\s+[^>]*)?\s*>(.*?)<\s*/\s*\1\s*>", re.IGNORECASE | re.DOTALL),
     re.compile(rf"\[\s*({_TAG_ALT})\s*\](.*?)\[\s*/\s*\1\s*\]", re.IGNORECASE | re.DOTALL),
     re.compile(rf"【\s*({_TAG_ALT})\s*】(.*?)【\s*/\s*\1\s*】", re.IGNORECASE | re.DOTALL),
     re.compile(

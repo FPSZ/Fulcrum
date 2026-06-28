@@ -186,7 +186,13 @@ class DirectoryService:
         return self._store.list_roles()
 
     def create_role(
-        self, name: str, description: str, permissions: list[str], scope: str = "team"
+        self,
+        name: str,
+        description: str,
+        permissions: list[str],
+        scope: str = "team",
+        *,
+        actor_permissions: frozenset[str] | None = None,
     ) -> Role:
         name = name.strip()
         if not name:
@@ -195,6 +201,7 @@ class DirectoryService:
 
         sc = scope if scope in VALID_ROLE_SCOPES else ROLE_SCOPE_TEAM
         perms = valid_permissions(permissions)
+        self._ensure_grantable(actor_permissions, perms)
         key = self._unique_role_key(_slugify(name))
         return self._store.create_role(
             key, name, description.strip(), False, perms, self._now(), scope=sc
@@ -217,15 +224,22 @@ class DirectoryService:
         name: str | None = None,
         description: str | None = None,
         permissions: list[str] | None = None,
+        actor_permissions: frozenset[str] | None = None,
     ) -> Role:
         role = self._store.get_role(role_id)
         if role is None:
             raise NotFound("角色不存在")
+        # 超级管理员角色是系统的全权根,定义不可被改写(防有人借此抽空全权角色或自封超管)。
+        if role.key == DEFAULT_BOOTSTRAP_ROLE:
+            raise Conflict("超级管理员角色不可修改")
+        new_perms = valid_permissions(permissions) if permissions is not None else None
+        if new_perms is not None:
+            self._ensure_grantable(actor_permissions, new_perms)
         self._store.update_role(
             role_id,
             name.strip() if name else None,
             description.strip() if description is not None else None,
-            valid_permissions(permissions) if permissions is not None else None,
+            new_perms,
         )
         updated = self._store.get_role(role_id)
         assert updated is not None
@@ -235,6 +249,8 @@ class DirectoryService:
         role = self._store.get_role(role_id)
         if role is None:
             raise NotFound("角色不存在")
+        if role.key == DEFAULT_BOOTSTRAP_ROLE:
+            raise Conflict("超级管理员角色不可删除")
         if self._store.role_member_count(role_id) > 0:
             raise Conflict("仍有成员使用该角色,请先改派后再删除")
         self._store.delete_role(role_id)
@@ -271,6 +287,7 @@ class DirectoryService:
         email: str = "",
         phone: str = "",
         title: str = "",
+        actor_permissions: frozenset[str] | None = None,
     ) -> tuple[User, str | None]:
         """管理员直建成员。无 password 则生成临时口令一次性返回。"""
         username = username.strip()
@@ -280,6 +297,7 @@ class DirectoryService:
         if self._store.get_user(username) is not None:
             raise Conflict("该账号已存在")
         self._validate_refs(role_id, department_id)
+        self._ensure_role_assignable(actor_permissions, role_id)
         temp = None
         if password:
             if len(password) < _MIN_PASSWORD_LEN:
@@ -307,6 +325,7 @@ class DirectoryService:
         user_id: int,
         *,
         fields: dict[str, object],
+        actor_permissions: frozenset[str] | None = None,
     ) -> User:
         user = self._require_user(user_id)
         role_changed = "role_id" in fields and fields["role_id"] != user.role_id
@@ -315,6 +334,10 @@ class DirectoryService:
                 fields.get("role_id", user.role_id),  # type: ignore[arg-type]
                 fields.get("department_id", user.department_id),  # type: ignore[arg-type]
             )
+        if role_changed:
+            # 防垂直提权:不能把成员改派到权限超出操作者自身的角色(否则持 users.manage
+            # 者可一键自封超管)。actor_permissions=None 时(种子/测试/内部调用)不约束。
+            self._ensure_role_assignable(actor_permissions, fields.get("role_id"))  # type: ignore[arg-type]
         if role_changed and self._is_last_active_admin(user):
             raise Conflict("不能改派最后一个在岗超级管理员的角色")
         clean = {k: v for k, v in fields.items() if k != "status"}  # 状态走独立通道
@@ -351,11 +374,19 @@ class DirectoryService:
         self._store.delete_user_sessions(user_id)  # 重置后旧会话失效
         return temp
 
-    def approve(self, user_id: int, role_id: int | None, department_id: int | None) -> User:
+    def approve(
+        self,
+        user_id: int,
+        role_id: int | None,
+        department_id: int | None,
+        *,
+        actor_permissions: frozenset[str] | None = None,
+    ) -> User:
         user = self._require_user(user_id)
         if user.status != STATUS_PENDING:
             raise Conflict("该账号不在待审批状态")
         self._validate_refs(role_id, department_id)
+        self._ensure_role_assignable(actor_permissions, role_id)
         self._store.update_user_profile(
             user_id,
             {"status": STATUS_ACTIVE, "role_id": role_id, "department_id": department_id},
@@ -383,6 +414,38 @@ class DirectoryService:
             raise NotFound("角色不存在")
         if department_id is not None and self._get_dept(department_id) is None:
             raise NotFound("部门不存在")
+
+    def _ensure_grantable(self, actor_permissions: frozenset[str] | None, perms: list[str]) -> None:
+        """包含性校验:不能授予操作者本身不持有的权限点。actor_permissions=None 即不约束
+        (用于种子/测试/内部调用;真实请求一律由路由层把当事人权限传进来)。"""
+        if actor_permissions is None:
+            return
+        extra = [p for p in perms if p not in actor_permissions]
+        if extra:
+            raise Conflict("越权:不能授予你本身没有的权限 —— " + "、".join(sorted(extra)))
+
+    def _ensure_role_assignable(
+        self, actor_permissions: frozenset[str] | None, role_id: int | None
+    ) -> None:
+        """防垂直提权:被指派的**组织级**角色其权限集必须 ⊆ 操作者权限集,否则拒。
+
+        组织级角色(super_admin / sys_admin)是接管全平台的载体,任何人不得指派出超过自身
+        权限的组织级角色——这是堵死"持 users.manage / account.approve 即自封超管"的闸。
+        团队级角色不在此约束:它们受 scope(只作用团队内)与既有团队负责人范围闸约束
+        (负责人只能在本团队、只能赋团队级角色),是产品设计内的合法授权下放(plan/13 §6)。
+        """
+        if actor_permissions is None or role_id is None:
+            return
+        from .models import ROLE_SCOPE_TEAM
+
+        role = self._store.get_role(role_id)
+        if role is None:
+            raise NotFound("角色不存在")
+        if role.scope == ROLE_SCOPE_TEAM:
+            return
+        extra = [p for p in role.permissions if p not in actor_permissions]
+        if extra:
+            raise Conflict("越权:不能把成员设为权限高于你自己的组织级角色")
 
     def _is_last_active_admin(self, user: User) -> bool:
         """user 是否为最后一个在岗超级管理员(护栏:防止把自己锁在门外)。"""
