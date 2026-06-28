@@ -143,6 +143,27 @@ def test_single_function_definition_not_flagged() -> None:
     assert _kinds(one) == []
 
 
+def test_form_field_config_with_outer_schema_not_flagged() -> None:
+    # 复审 #103 FP:表单字段配置 [{"name","description"}] + 外层 input_schema —— 三锚点不在
+    # 同一对象(name/description 在内层字段对象、input_schema 在外层),不得误判工具 schema。
+    # 用英文名(ASCII)确保不是靠 _TOOL_NAME 的中文排除碰巧躲过。
+    form = (
+        '{"fields":[{"name":"applicant","description":"申请人"},'
+        '{"name":"amount","description":"金额"}],"input_schema":"v1"}'
+    )
+    assert _kinds(form) == []
+
+
+def test_outer_parameters_with_named_items_not_flagged() -> None:
+    # 复审 #103 FP:外层 parameters 键 + items 内层 [{"name","description"}] —— 同样三锚点
+    # 分散在不同对象,不算工具清单泄露。
+    payload = (
+        '{"parameters":{}, "items":[{"name":"itemA","description":"d1"},'
+        '{"name":"itemB","description":"d2"}]}'
+    )
+    assert _kinds(payload) == []
+
+
 # ── 良性问答零误报 ───────────────────────────────────────────────────────
 def test_benign_policy_question_not_flagged() -> None:
     assert _kinds("现在低保月标准大约是多少?想给群众一个准确答复。") == []
