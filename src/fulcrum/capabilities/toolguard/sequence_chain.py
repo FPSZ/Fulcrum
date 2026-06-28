@@ -236,6 +236,15 @@ def _is_execute(intent: ToolIntent) -> bool:
     return any(k in intent.arguments for k in _EXEC_ARG_KEYS)
 
 
+def _exec_is_dangerous(intent: ToolIntent) -> bool:
+    """对**统一执行文本**(command/cmd/script/code,见 `_exec_text`)判危险命令,而非仅 command/cmd
+    键。argrisk.command_dangerous 原只读 command/cmd —— 把危险载荷放 `script`/`code` 键
+    (`code.run(script="…|sh")`)就到不了 critical 升级、封顶 0.7,与设计声明不一致。统一在
+    实际待执行文本上判,口径与 `_is_execute`/`_inline_exec_taint` 对齐,且不改 argrisk 判定规则。
+    """
+    return argrisk.command_dangerous({"command": _exec_text(intent)})
+
+
 def _is_file_write(intent: ToolIntent) -> bool:
     """是否为带目标路径的文件写动作(staged 链的「落盘」段)。"""
     return bool(_WRITE_RE.search(intent.tool_name)) and "path" in intent.arguments
@@ -288,18 +297,22 @@ def _inline_exec_taint(current: ToolIntent, tool_returns: list[str]) -> tuple[st
 
     对齐分支②的"执行位 vs 数据参数"判别(复审修正):工具返回的长路径/配置串原样出现在
     `python3 /opt/etl/aggregate.py --input <该串>` 里时,旧逻辑无条件判 critical = 误报。
-    三类执行位(任一,污点须落在其中)才算:
-    - 命令本身危险(`argrisk.command_dangerous`:`python -c`、`|sh`、`base64 -d|sh`、`curl|bash`…)
+    两类执行位(任一,污点须落在其中)才算:
+    - 命令本身危险(`_exec_is_dangerous`:`python -c`、`|sh`、`base64 -d|sh`、`curl|bash`…)
       → 内联污点必在执行语境,沿用原判定;
-    - 污点落在内联解释器源码段(`-c/-e/-r/eval/exec/source` 之后)或管道喂 shell 的左侧;
-    - 命令以抓取内容打头(整条命令 / 首 token 即被执行的程序本身)。
-    真内联脚本执行(`python3 -c "<抓取脚本>"`、整条命令即抓取脚本)仍 critical;数据参数不报。
+    - 污点落在内联解释器源码段(`-c/-e/-r/eval/exec/source` 之后)或管道喂 shell 的左侧。
+    真内联脚本执行(`python3 -c "<抓取脚本>"`)仍 critical;数据参数不报。
+
+    **不再含**「命令以抓取内容打头」分支(复审 #93):`norm_cmd.startswith(norm_ret)` 无法区分
+    「执行抓来的脚本正文」与「执行 registry.lookup/config.get 查得的已部署程序路径」——后者是
+    正常的「查工具路径再执行」企业模式(命令不危险、无落盘),旧分支会误判 critical→BLOCK。
+    真恶意的整条抓取脚本若含危险原语已由①命中;benign 与之结构同形,故移除该分支。
     """
     cmd = _exec_text(current)
     if not cmd or not tool_returns:
         return None
     # ① 命令本身危险:内联污点处于执行语境,沿用原 _taint_source 判定与摘要。
-    if argrisk.command_dangerous(current.arguments):
+    if _exec_is_dangerous(current):
         return _taint_source(current, tool_returns)
     # ② 污点落在执行位区域:内联解释器源码尾 + 管道入 shell 的左侧。
     regions: list[str] = []
@@ -313,12 +326,6 @@ def _inline_exec_taint(current: ToolIntent, tool_returns: list[str]) -> tuple[st
         hit = _taint_in_text(" ".join(regions), tool_returns)
         if hit is not None:
             return hit
-    # ③ 命令以抓取内容打头:被执行的程序本身即抓取内容(首 token / 整条命令)。
-    norm_cmd = _normalize_taint(cmd)
-    for ret in tool_returns:
-        norm_ret = _normalize_taint(ret)
-        if len(norm_ret) >= _TAINT_MIN and norm_cmd.startswith(norm_ret):
-            return ret.strip()[:80], False
     return None
 
 
@@ -472,7 +479,8 @@ class SequenceChainAnalyzer:
         # 铁律收紧:落盘文件须真处于**执行位**(被当作程序运行),否则仅在命令本身危险时才认。
         # 仅作数据参数喂给既有程序(`render.py --in data.csv`)且命令不危险 → 不报(ETL/绘图良性,
         # 含其内容来自工具返回也不误升 critical)。`base64 -d X|sh` 这类间接执行靠 dangerous 兜。
-        dangerous = argrisk.command_dangerous(current.arguments)
+        # 危险判定走 _exec_is_dangerous(看 command/cmd/script/code 统一文本),覆盖 code.run(script)。
+        dangerous = _exec_is_dangerous(current)
         executed = [
             w for w in referenced if _path_executed(str(w.arguments.get("path") or ""), exec_text)
         ]
