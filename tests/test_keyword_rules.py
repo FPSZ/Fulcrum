@@ -244,3 +244,30 @@ def test_totp_style_base32_secret_no_finding() -> None:
         )
     }
     assert "obfuscated_injection" not in kinds
+
+
+def _obf_kinds(text: str) -> set[str]:
+    detector = KeywordRuleDetector()
+    return {
+        f.kind
+        for f in detector.detect(
+            [_span(text, source=SourceType.DOCUMENT, trust=TrustLevel.UNTRUSTED)], _CTX
+        )
+    }
+
+
+def test_dnssec_style_uppercase_token_no_obfuscated_injection() -> None:
+    """复审 #96 实证 FP:DNSSEC 形大写标签 `DNSEC3R2KZN23534`(全在 A-Z2-7 表内)base32 解出
+    `\\x1bdAn:V[|` 二进制垃圾,旧通道撞 `\\bDAN\\b`→jailbreak→obfuscated_injection critical。
+    解码可读门丢弃含控制字节的垃圾后,不得再误报。"""
+    assert "obfuscated_injection" not in _obf_kinds("DNS 标签 DNSEC3R2KZN23534 为只读记录。")
+
+
+def test_aws_access_key_no_obfuscated_injection() -> None:
+    """AWS access key 形大写 token(`AKIAIOSFODNN7EXAMPLE`)解出二进制垃圾 → 不得误报。"""
+    assert "obfuscated_injection" not in _obf_kinds("示例凭据 AKIAIOSFODNN7EXAMPLE 仅供文档说明。")
+
+
+def test_uppercase_checksum_token_no_obfuscated_injection() -> None:
+    """16 位大写校验码(base32 形)解出无害/垃圾字节 → 不得误报 obfuscated_injection。"""
+    assert "obfuscated_injection" not in _obf_kinds("文件校验码 MFRGGZDFMZTWQ2LK 已记录。")

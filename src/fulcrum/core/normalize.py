@@ -163,10 +163,29 @@ def _html_numref(s: str) -> str:
     return _HTML_NUMREF.sub(repl, s)
 
 
+# 解码产物「可读文本」门:base32/base64/hex 命中真实大写/编码 token(AWS access key、TOTP、
+# DNSSEC 标签、hex 摘要)时解出的是二进制垃圾——常夹 C0/C1 控制字节,这些控制字节又给
+# `\bDAN\b`/`\bAIM\b` 这类短规则凑出词边界致误报(复审 #96:`DNSEC3R2KZN23534`→`\x1bdAn:V[|`)。
+# 真实隐藏载荷解出的是干净可读文本。故解码产物须先过本门才作为复扫变体:无 C0/C1 控制字符
+# (\t\n\r 除外)且可打印/文字字符占比够高;否则当二进制垃圾丢弃,堵「编码 token→噪声→短规则」。
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+_CLEAN_MIN_RATIO = 0.9
+
+
+def _is_clean_text(s: str) -> bool:
+    """解码产物是否为可读文本(供复扫的前置门):无控制噪声、可打印占比 ≥ 阈值。"""
+    if not s or _CTRL.search(s):
+        return False
+    printable = sum(1 for ch in s if ch.isprintable() or ch in "\t\n\r")
+    return printable / len(s) >= _CLEAN_MIN_RATIO
+
+
 def decode_variants(text: str, depth: int = 2) -> list[str]:
     """抽取并解码文本里的编码块(base64/hex/URL/ROT13),递归至多 depth 层。
 
     解不出可读文本 / 无意义则丢弃,故正常 base64(图片、随机令牌)不会刷出垃圾命中。
+    解码产物还须过 `_is_clean_text` 可读门:二进制垃圾(真实大写/编码 token 解出的控制字节
+    噪声)不作为复扫变体,避免撞上短规则误报(复审 #96)。
     """
     out: list[str] = []
     seen: set[str] = set()
@@ -190,7 +209,7 @@ def decode_variants(text: str, depth: int = 2) -> list[str]:
                 pass
             for c in cands:
                 c = (c or "").strip()
-                if c and c != s and c not in seen:
+                if c and c != s and c not in seen and _is_clean_text(c):
                     seen.add(c)
                     out.append(c)
                     nxt.append(c)
