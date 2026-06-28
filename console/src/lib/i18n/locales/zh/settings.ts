@@ -54,6 +54,8 @@ export const settings = {
   'settings.models.upstream_badge': '见上游接入',
   'settings.local.title': '本机偏好',
   'settings.local.desc': '只存本浏览器。',
+  'settings.local.lang': '界面语言',
+  'settings.local.lang_hint': '只切换本机显示语言',
   'settings.local.conv': '事件对话展示',
   'settings.local.conv_hint': '在事件详情展示同会话对话摘要',
   'settings.dev.title': '开发者',

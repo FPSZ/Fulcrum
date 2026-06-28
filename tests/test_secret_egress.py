@@ -106,3 +106,60 @@ def test_evidence_carries_no_plaintext_secret() -> None:
     blob = repr(f[0].evidence)
     assert "TopSecretPw99" not in blob
     assert "matched_kinds" in f[0].evidence
+
+
+# JWT 头(HS256)+ 载荷,签名段够长 → 裸 JWT,无 Authorization 头包裹。
+_JWT_SAMPLE = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+    ".eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkFkbWluIn0"
+    ".dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+)
+
+
+def test_bare_jwt_flagged() -> None:
+    """裸 JWT(不带 Authorization 头)在回复里被识别为 credential_egress/jwt。"""
+    f = _detect(f"当然,这是你的访问令牌:{_JWT_SAMPLE} 请妥善保管")
+    assert _kinds(f) == {"credential_egress"}
+    assert "jwt" in f[0].evidence["matched_kinds"]
+    assert f[0].evidence["severity"] == "critical"
+
+
+def test_jwt_in_cookie_flagged() -> None:
+    f = _detect(f"Set-Cookie: session={_JWT_SAMPLE}; HttpOnly")
+    assert "jwt" in f[0].evidence["matched_kinds"]
+
+
+def test_jwt_evidence_carries_no_plaintext_token() -> None:
+    """JWT 证据同样只记标签,不把令牌写进审计。"""
+    f = _detect(f"令牌:{_JWT_SAMPLE}")
+    assert _JWT_SAMPLE[:20] not in repr(f[0].evidence)
+
+
+def test_ai_provider_keys_flagged() -> None:
+    """AI 网关上游的 OpenAI / Anthropic 密钥,以及 GitLab/HuggingFace/Google OAuth 令牌被识别。"""
+    for text in (
+        "sk-proj-abcDEF1234567890abcDEF1234567890abcDEF12T3BlbkFJabcDEF1234567890",
+        "sk-ant-api03-abcDEF1234567890abcDEF1234567890abcDEF1234567890abcDEF1234",
+        "sk-abcDEF1234567890abcDEF1234567890abcDEF1234567890T3",
+        "glpat-abcDEF1234567890abcd",
+        "hf_abcDEF1234567890abcDEF1234567890abcDEF",
+        "ya29.a0AbcDEF1234567890_abcDEF1234567890",
+    ):
+        f = _detect(f"密钥是 {text}")
+        assert f and "provider_secret" in f[0].evidence["matched_kinds"], text
+
+
+def test_jwt_and_provider_benign_negatives_not_flagged() -> None:
+    """点分串/版本号/data-uri/政务域名/短串/普通含 sk- 词不误报。"""
+    for text in (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ",
+        "升级到 v1.2.3,详见 release.note.md",
+        "this.is.fine 只是三段点分单词",
+        "eyJxxxxxxxx.eyJyyyyyy.zzzzzz 不是合法 JWT 头",
+        "前往 console.gov.cn 办理",
+        "the desk-clerk handled it efficiently today",
+        "请 ask-me-anything about the policy here",
+        "sk-123 太短不算密钥",
+        "请问低保政策的申请标准是什么?",
+    ):
+        assert _detect(text) == [], text
