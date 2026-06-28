@@ -5,6 +5,7 @@ import { lazy } from 'react'
 export const settingsModule = defineFeature({
   id: 'settings',
   label: '系统设置',
+  labelKey: 'app.nav.settings',
   icon: Settings,
   group: '系统',
   order: 90,

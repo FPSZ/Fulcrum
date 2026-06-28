@@ -20,10 +20,11 @@ export function makeSessionId(): string {
   return `assistant:web:${rand}`
 }
 
+// 标题取首条用户消息;无则留空,由 UI 层按当前语言回退展示「新对话」(不冻结语言)。
 function deriveTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user')
-  const t = (firstUser?.text ?? '').trim().replace(/\s+/g, ' ')
-  return t ? (t.length > 22 ? `${t.slice(0, 22)}…` : t) : '新对话'
+  const txt = (firstUser?.text ?? '').trim().replace(/\s+/g, ' ')
+  return txt ? (txt.length > 22 ? `${txt.slice(0, 22)}…` : txt) : ''
 }
 
 function loadList(): Conversation[] {

@@ -6,6 +6,7 @@ import { overviewResourceSpec } from './backup'
 export const overviewModule = defineFeature({
   id: 'overview',
   label: '安全总览',
+  labelKey: 'app.nav.overview',
   icon: Gauge,
   group: '监测',
   order: 10,

@@ -6,6 +6,7 @@ import { lazy } from 'react'
 export const usersModule = defineFeature({
   id: 'admin-users',
   label: '组织与成员',
+  labelKey: 'app.nav.members',
   icon: Users,
   group: '系统',
   order: 80,

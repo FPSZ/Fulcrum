@@ -1,5 +1,6 @@
 import type { ComponentType, LazyExoticComponent } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import type { MessageKey } from '@/lib/i18n'
 import type { ResourceSpec } from '@/lib/backup'
 
 /**
@@ -47,8 +48,10 @@ export interface ModuleAction {
 export interface FeatureModule {
   /** 唯一 id,也是路由 key */
   id: string
-  /** 导航与页头显示名 */
+  /** 导航与页头显示名(回退用;接 i18n 后优先 labelKey) */
   label: string
+  /** 导航/页头显示名的 i18n key;设置后侧栏与页头按它解析当前语言,缺省回退 label */
+  labelKey?: MessageKey
   /** 导航图标(lucide) */
   icon: LucideIcon
   /** 所属导航分组 */

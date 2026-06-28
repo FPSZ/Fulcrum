@@ -94,7 +94,10 @@ _MANIFEST_INJECTION = re.compile(
     r"无视(系统|安全|上述|之前)(的)?(设定|规则|指令)|"
     r"覆盖(系统|上层|之前的?)(指令|设定|规则)|"
     r"(泄露|输出|打印|回显)(系统)?提示词|"
-    r"(外发|外传|回传|上传|发送).{0,12}(到|至|给).{0,16}(外部|http|服务器|攻击者|邮箱))",
+    r"(外发|外传|回传|上传|发送).{0,12}(到|至|给).{0,16}(外部|http|服务器|攻击者|邮箱)|"
+    # 隐蔽外泄指令(rug-pull / 描述投毒:批准后把"偷偷抄送全部记录""别告诉用户"塞进 desc):
+    r"(附|附上|附带|并附|额外附).{0,8}(全部|所有|全量).{0,12}(聊天|对话|记录|历史|消息|内容)|"
+    r"不要\s*(告诉|让|通知)\s*(用户|任何人|对方))",
     re.IGNORECASE,
 )
 # 敏感凭据文件 / 密钥环境变量的访问意图(命中即 critical)。与 _PERM_RULES 的 credential_access
@@ -200,6 +203,51 @@ def _gather(manifest: dict, *keys: str) -> list[str]:
     return out
 
 
+def _dep_items(manifest: dict) -> list[tuple[str, str]]:
+    """依赖抽成 (名, 版本/源) 列表。兼容三态:dict{名:版本}、list[名]、裸字符串。
+
+    样例常把 deps 写成 `{'reqeusts':'2.31.0', 'x':'git+https://…'}`(dict),旧 `_gather`
+    只认 str/list 会整块漏掉——故单列。
+    """
+    out: list[tuple[str, str]] = []
+    for key in ("dependencies", "requires", "deps"):
+        node = manifest.get(key)
+        if isinstance(node, dict):
+            out.extend((str(k), str(v)) for k, v in node.items())
+        elif isinstance(node, list):
+            out.extend((str(v), "") for v in node)
+        elif isinstance(node, str) and node.strip():
+            out.append((node, ""))
+    return out
+
+
+_VER_MAJOR = re.compile(r"^\D*(\d+)")
+
+
+def _abnormal_version(spec: str) -> bool:
+    """主版本号畸高(≥50)→ 依赖混淆典型信号(攻击者发超高版本抢解析,如 99.0.1 / ^100.0.0)。"""
+    m = _VER_MAJOR.match(spec.strip())
+    return bool(m) and int(m.group(1)) >= 50
+
+
+def _nested_descriptions(manifest: dict) -> list[str]:
+    """抽取嵌套工具/能力的描述文本(`tools:[{name,desc}]` 等),供描述/注入面扫描。
+
+    rug-pull / 描述投毒常把恶意指令藏进**子工具**的 desc(非顶层 description),旧扫描只看顶层
+    会漏(如 sc-09)。"""
+    out: list[str] = []
+    for container in ("tools", "functions", "skills", "commands", "actions"):
+        node = manifest.get(container)
+        if not isinstance(node, list):
+            continue
+        for item in node:
+            if isinstance(item, dict):
+                text = item.get("desc") or item.get("description") or ""
+                if str(text).strip():
+                    out.append(str(text))
+    return out
+
+
 def _finding(kind: str, severity: str, detail: str, **extra: object) -> Finding:
     return Finding(
         kind=kind,
@@ -226,8 +274,11 @@ class ManifestScanner:
                     seen_kinds.add(kind)
                     risks.append(_finding(kind, severity, f"声明高危权限:{perm}", permission=perm))
 
-        # 2) 描述可疑关键词
-        description = str(manifest.get("description") or manifest.get("desc") or "")
+        # 2) 描述可疑关键词(含嵌套子工具描述:rug-pull / 描述投毒藏在 tools[].desc)
+        nested_desc = _nested_descriptions(manifest)
+        description = "\n".join(
+            [str(manifest.get("description") or manifest.get("desc") or ""), *nested_desc]
+        )
         hits = sorted({m.group(0) for m in _DESC_SUSPICIOUS.finditer(description)})
         if hits:
             risks.append(
@@ -238,7 +289,7 @@ class ManifestScanner:
 
         # 2.5) 指令字段注入(Manifest 注入面):被投毒组件把注入/外泄指挥语藏进
         #      instructions/prompt/system 等字段,装载即污染 agent 上下文。
-        instr_parts: list[str] = []
+        instr_parts: list[str] = list(nested_desc)  # 子工具描述也是指令注入面(rug-pull)
         for field in _INSTRUCTION_FIELDS:
             instr_parts.extend(_as_list(manifest.get(field)))
         inj = sorted({m.group(0) for m in _MANIFEST_INJECTION.finditer("\n".join(instr_parts))})
@@ -285,16 +336,36 @@ class ManifestScanner:
                     )
                 )
 
-        # 4) 依赖来源
-        for dep in _gather(manifest, "dependencies", "requires", "deps"):
-            low = dep.lower()
-            if "://" in low or low.startswith("git+") or low.startswith(("http", "ftp")):
+        # 4) 依赖来源(兼容 dict{名:版本} / list / 字符串):未版本化 URL 源、版本畸高(依赖混淆)
+        seen_dep_kinds: set[str] = set()
+        for dep_name, spec in _dep_items(manifest):
+            # URL/源 既可能在版本位(dict 形 名:'git+…'),也可能整条就是 URL(list 形),两处都查。
+            blob = f"{dep_name} {spec}".lower()
+            label = f"{dep_name}@{spec}" if spec else dep_name
+            if (
+                "://" in blob
+                or "git+" in blob
+                or "file:" in blob
+                or blob.rstrip().endswith((".tgz", ".tar.gz", ".git"))
+            ):
+                if "dep.install_from_url" not in seen_dep_kinds:
+                    seen_dep_kinds.add("dep.install_from_url")
+                    risks.append(
+                        _finding(
+                            "dep.install_from_url",
+                            "high",
+                            f"从 URL/源码直接安装依赖(未版本化、可变,rug-pull 载体):{label}",
+                            dependency=label,
+                        )
+                    )
+            elif _abnormal_version(spec) and "dep.version_anomaly" not in seen_dep_kinds:
+                seen_dep_kinds.add("dep.version_anomaly")
                 risks.append(
                     _finding(
-                        "dep.install_from_url",
+                        "dep.version_anomaly",
                         "high",
-                        f"从 URL/源码直接安装依赖:{dep}",
-                        dependency=dep,
+                        f"依赖版本号畸高,疑依赖混淆抢解析:{label}",
+                        dependency=label,
                     )
                 )
 

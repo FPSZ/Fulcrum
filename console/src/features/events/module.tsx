@@ -6,6 +6,7 @@ import { eventResourceSpec } from './backup'
 export const eventsModule = defineFeature({
   id: 'events',
   label: '实时事件',
+  labelKey: 'app.nav.events',
   icon: Activity,
   group: '监测',
   order: 20,

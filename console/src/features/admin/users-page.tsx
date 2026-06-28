@@ -3,6 +3,7 @@ import { Building2, Inbox, Shield, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Badge, toast } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/i18n'
 import { useAuth } from '@/lib/auth'
 import {
   listDepartments,
@@ -34,6 +35,7 @@ interface SectionDef {
 }
 
 export function UsersPage() {
+  const { t } = useTranslation()
   const { has, isLead } = useAuth()
   const [section, setSection] = useState<SectionId>('members')
   const [departments, setDepartments] = useState<Department[]>([])
@@ -55,7 +57,7 @@ export function UsersPage() {
       setRoles(r)
       setPermissions(p)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : t('admin.members.load_failed'))
     }
     // 全局统计仅组织级读权可取;团队负责人无权,静默跳过(其视图不展示全局数)。
     if (canViewOrg) {
@@ -73,21 +75,36 @@ export function UsersPage() {
 
   const sections = useMemo<SectionDef[]>(() => {
     const list: SectionDef[] = [
-      { id: 'members', label: '成员', icon: Users, desc: scopedView ? '本团队成员' : '组织全部成员' },
-      { id: 'teams', label: '团队', icon: Building2, desc: '团队 = 带负责人与成员的实体' },
+      {
+        id: 'members',
+        label: t('admin.section.members'),
+        icon: Users,
+        desc: scopedView ? t('admin.section.members.desc_scoped') : t('admin.section.members.desc'),
+      },
+      {
+        id: 'teams',
+        label: t('admin.section.teams'),
+        icon: Building2,
+        desc: t('admin.section.teams.desc'),
+      },
     ]
     if (canViewOrg)
-      list.push({ id: 'roles', label: '角色', icon: Shield, desc: '组织级 / 团队级角色模板' })
+      list.push({
+        id: 'roles',
+        label: t('admin.section.roles'),
+        icon: Shield,
+        desc: t('admin.section.roles.desc'),
+      })
     if (canApprove)
       list.push({
         id: 'approvals',
-        label: '待审批',
+        label: t('admin.section.approvals'),
         icon: Inbox,
-        desc: '账号加入申请',
+        desc: t('admin.section.approvals.desc'),
         badge: stats.pending || undefined,
       })
     return list
-  }, [canViewOrg, canApprove, scopedView, stats.pending])
+  }, [t, canViewOrg, canApprove, scopedView, stats.pending])
 
   // 若当前分区因权限不可见(如负责人切到隐藏的角色页),回退到成员页。
   useEffect(() => {
@@ -102,7 +119,7 @@ export function UsersPage() {
       <nav className="flex shrink-0 gap-1 overflow-x-auto rounded-[12px] border border-line bg-surface/60 p-2 max-md:order-first md:w-52 md:flex-col md:overflow-visible">
         {canViewOrg && (
           <div className="hidden px-2 pb-1 pt-1 text-[12px] font-semibold uppercase tracking-wide text-ink-mute md:block">
-            访问与组织
+            {t('admin.nav.group')}
           </div>
         )}
         {sections.map((s) => {
@@ -142,7 +159,7 @@ export function UsersPage() {
           <span className="text-[13px] text-ink-mute">{current?.desc}</span>
           {scopedView && (
             <Badge tone="info" className="ml-auto">
-              团队负责人 · 仅本团队
+              {t('admin.scoped_badge')}
             </Badge>
           )}
         </header>

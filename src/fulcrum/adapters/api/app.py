@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import secrets
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
@@ -81,6 +82,22 @@ def build_api(
     assistant_model_turn: ModelTurn | None = None,
 ) -> FastAPI:
     app = FastAPI(title="枢衡 Fulcrum API", version=__version__)
+
+    # 全局请求体上限(1 MiB):未鉴权的 /v1/chat/completions、/tools/call 之外的兜底闸,
+    # 挡"超大体喂同步检测链"的 CPU/事件循环 DoS。各端点另有字段级上限(见 schemas)。
+    _max_body = 1_048_576
+
+    @app.middleware("http")
+    async def _limit_body_size(request: Request, call_next):  # type: ignore[no-untyped-def]
+        cl = request.headers.get("content-length")
+        if cl is not None:
+            try:
+                too_big = int(cl) > _max_body
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "Content-Length 非法"})
+            if too_big:
+                return JSONResponse(status_code=413, content={"detail": "请求体过大"})
+        return await call_next(request)
 
     @app.exception_handler(FulcrumError)
     async def _on_fulcrum_error(_: Request, exc: FulcrumError) -> JSONResponse:
@@ -250,8 +267,14 @@ def build_api(
         )
 
     @app.post("/gateway/chat", response_model=GatewayChatResponse)
-    async def gateway_chat(body: GatewayChatRequest) -> GatewayChatResponse:
+    async def gateway_chat(body: GatewayChatRequest, request: Request) -> GatewayChatResponse:
         """前置网关:判恶意 → 拦截/审核/放行;仅放行时转发企业智能体并回传其真实回复。"""
+        # 数据面鉴权:配了 gateway_api_key 即要求请求头匹配,挡未授权直连/开放中继(常数级比较)。
+        gw_key = settings.gateway_api_key if settings is not None else ""
+        if gw_key and not secrets.compare_digest(
+            request.headers.get("x-fulcrum-gateway-key", ""), gw_key
+        ):
+            raise HTTPException(status_code=401, detail="网关数据面鉴权失败")
         # 该被保护智能体归属的团队(P2 数据隔离):据此给事件打 team_id,仅本团队/组织管理员可见。
         team_id = gateway_store.load().team_id if gateway_store is not None else None
         verdict = await pipeline.screen_input(body.session_id, body.message, team_id=team_id)

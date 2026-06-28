@@ -4,13 +4,14 @@
  * 走相对路径同源请求,会话 Cookie 自动携带;后端按权限点强制鉴权(前端隐藏只是体验)。
  * 非 2xx 抛出后端的 detail 文案(422 校验错误逐条展开),便于直接 toast / 交给 Query 的 error。
  */
+import { t } from '@/lib/i18n'
 
 // FastAPI 校验错误的 loc 首段是入参位置(body/query/path/...),对用户是噪音,去掉只留字段路径。
 const _LOC_PREFIXES = new Set(['body', 'query', 'path', 'header', 'cookie'])
 
 function errorMessage(detail: unknown): string {
   if (typeof detail === 'string') return detail
-  if (!Array.isArray(detail)) return '操作失败'
+  if (!Array.isArray(detail)) return t('lib.api.failed')
 
   const messages = detail
     .map((item) => {
@@ -24,7 +25,7 @@ function errorMessage(detail: unknown): string {
     })
     .filter(Boolean)
 
-  return messages.join('; ') || '操作失败'
+  return messages.join('; ') || t('lib.api.failed')
 }
 
 /** 统一请求封装:非 2xx 抛出后端的 detail 文案。 */
@@ -37,7 +38,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
     })
   } catch {
-    throw new Error('无法连接服务,请稍后再试')
+    throw new Error(t('lib.api.offline'))
   }
   if (res.status === 204) return undefined as T
   const text = await res.text()
@@ -46,7 +47,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     data = text ? JSON.parse(text) : undefined
   } catch {
     // 非 JSON 响应体(反代 502 的 HTML 页等)→ 给状态码兜底,而非抛出生硬的 SyntaxError。
-    throw new Error(res.ok ? '服务返回了无法解析的响应' : `服务异常(${res.status})`)
+    throw new Error(res.ok ? t('lib.api.bad_response') : t('lib.api.server_error', { status: res.status }))
   }
   if (!res.ok) {
     const detail = (data as { detail?: unknown })?.detail

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { Badge, Button, Dialog, EmptyState, IconButton, Input, Select, toast } from '@/components/ui'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/i18n'
 import { useAuth } from '@/lib/auth'
 import {
   addTeamMember,
@@ -43,6 +44,7 @@ interface DialogState {
 }
 
 export function DepartmentsTab({ departments, canManage, onChanged }: Props) {
+  const { t } = useTranslation()
   const { canManageTeam } = useAuth()
   const rows = flattenTree(buildTree(departments))
   const [dialog, setDialog] = useState<DialogState | null>(null)
@@ -57,39 +59,39 @@ export function DepartmentsTab({ departments, canManage, onChanged }: Props) {
   const remove = async (d: Department) => {
     try {
       await deleteDepartment(d.id)
-      toast.success('已删除部门')
+      toast.success(t('admin.dept.deleted'))
       onChanged()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
+      toast.error(e instanceof Error ? e.message : t('admin.dept.delete_failed'))
     }
   }
 
   const submit = async () => {
     if (!dialog) return
-    if (!dialog.name.trim()) return toast.error('请填写部门名称')
+    if (!dialog.name.trim()) return toast.error(t('admin.dept.require_name'))
     setBusy(true)
     try {
       if (dialog.mode === 'create') {
         await createDepartment({ name: dialog.name.trim(), parent_id: dialog.parent_id })
-        toast.success('部门已创建')
+        toast.success(t('admin.dept.created'))
       } else {
         await updateDepartment(dialog.id!, {
           name: dialog.name.trim(),
           parent_id: dialog.parent_id,
         })
-        toast.success('已保存')
+        toast.success(t('admin.member_form.saved'))
       }
       setDialog(null)
       onChanged()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : t('admin.member_form.save_failed'))
     } finally {
       setBusy(false)
     }
   }
 
   const parentOptions = [
-    { value: NONE, label: '顶层(无上级)' },
+    { value: NONE, label: t('admin.dept.top_level') },
     // 编辑时排除自身,避免选自己当父级(成环由后端兜底,这里先做体验)
     ...departments
       .filter((d) => dialog?.mode !== 'edit' || d.id !== dialog?.id)
@@ -102,14 +104,18 @@ export function DepartmentsTab({ departments, canManage, onChanged }: Props) {
         <div className="mb-3 flex">
           <Button variant="primary" className="ml-auto" onClick={() => openCreate(null)}>
             <FolderPlus className="h-4 w-4" />
-            新建部门
+            {t('admin.dept.new')}
           </Button>
         </div>
       )}
 
       <div className="min-h-0 flex-1 overflow-auto rounded-[12px] border border-line">
         {rows.length === 0 ? (
-          <EmptyState icon={Building2} title="暂无部门" hint="点击右上角新建部门,搭建组织架构。" />
+          <EmptyState
+            icon={Building2}
+            title={t('admin.dept.empty.title')}
+            hint={t('admin.dept.empty.hint')}
+          />
         ) : (
           <ul className="divide-y divide-line">
             {rows.map((d) => (
@@ -122,19 +128,21 @@ export function DepartmentsTab({ departments, canManage, onChanged }: Props) {
                 <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">
                   {d.name}
                 </span>
-                <span className="font-data text-[13px] text-ink-mute">{d.member_count} 人</span>
-                <IconButton label="团队成员" onClick={() => setTeamFor(d)}>
+                <span className="font-data text-[13px] text-ink-mute">
+                  {t('admin.dept.member_unit', { count: d.member_count })}
+                </span>
+                <IconButton label={t('admin.dept.team_members')} onClick={() => setTeamFor(d)}>
                   <Users className="h-[15px] w-[15px]" />
                 </IconButton>
                 {canManage && (
                   <div className="flex items-center gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                    <IconButton label="添加子部门" onClick={() => openCreate(d.id)}>
+                    <IconButton label={t('admin.dept.add_child')} onClick={() => openCreate(d.id)}>
                       <Plus className="h-[15px] w-[15px]" />
                     </IconButton>
-                    <IconButton label="编辑" onClick={() => openEdit(d)}>
+                    <IconButton label={t('common.edit')} onClick={() => openEdit(d)}>
                       <Pencil className="h-[15px] w-[15px]" />
                     </IconButton>
-                    <IconButton label="删除" className="hover:text-crit" onClick={() => remove(d)}>
+                    <IconButton label={t('common.delete')} className="hover:text-crit" onClick={() => remove(d)}>
                       <Trash2 className="h-[15px] w-[15px]" />
                     </IconButton>
                   </div>
@@ -149,29 +157,29 @@ export function DepartmentsTab({ departments, canManage, onChanged }: Props) {
         <Dialog
           open
           onOpenChange={(o) => !o && setDialog(null)}
-          title={dialog.mode === 'create' ? '新建部门' : '编辑部门'}
+          title={dialog.mode === 'create' ? t('admin.dept.new') : t('admin.dept.edit')}
           widthClassName="max-w-md"
           footer={
             <>
-              <Button variant="ghost" onClick={() => setDialog(null)}>取消</Button>
+              <Button variant="ghost" onClick={() => setDialog(null)}>{t('common.cancel')}</Button>
               <Button variant="primary" onClick={submit} disabled={busy}>
-                {dialog.mode === 'create' ? '创建' : '保存'}
+                {dialog.mode === 'create' ? t('admin.member_form.create') : t('common.save')}
               </Button>
             </>
           }
         >
           <div className="space-y-3">
             <label className="block">
-              <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">部门名称</span>
+              <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">{t('admin.dept.name')}</span>
               <Input
                 value={dialog.name}
                 autoFocus
                 onChange={(e) => setDialog({ ...dialog, name: e.target.value })}
-                placeholder="如 应急响应组"
+                placeholder={t('admin.dept.name_ph')}
               />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">上级部门</span>
+              <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">{t('admin.dept.parent')}</span>
               <Select
                 value={dialog.parent_id == null ? NONE : String(dialog.parent_id)}
                 onValueChange={(v) =>
@@ -206,6 +214,7 @@ function TeamMembersDialog({
   canManage: boolean
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const [members, setMembers] = useState<Membership[]>([])
   const [all, setAll] = useState<Member[]>([])
   const [addId, setAddId] = useState('')
@@ -217,9 +226,9 @@ function TeamMembersDialog({
       setMembers(m)
       setAll(a)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载团队成员失败')
+      toast.error(e instanceof Error ? e.message : t('admin.team.load_failed'))
     }
-  }, [team.id])
+  }, [t, team.id])
 
   useEffect(() => {
     void reload()
@@ -235,7 +244,7 @@ function TeamMembersDialog({
       await fn()
       await reload()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
+      toast.error(e instanceof Error ? e.message : t('admin.members.op_failed'))
     } finally {
       setBusy(false)
     }
@@ -246,7 +255,7 @@ function TeamMembersDialog({
     guard(async () => {
       await addTeamMember(team.id, { user_id: Number(addId) })
       setAddId('')
-      toast.success('已加入团队')
+      toast.success(t('admin.team.joined'))
     })
   const remove = (uid: number) => guard(() => removeTeamMember(team.id, uid))
   const toggleLead = (m: Membership) =>
@@ -255,11 +264,11 @@ function TeamMembersDialog({
     )
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()} title={`团队成员 · ${team.name}`}>
+    <Dialog open onOpenChange={(o) => !o && onClose()} title={t('admin.team.title', { name: team.name })}>
       <div className="space-y-3">
         {members.length === 0 ? (
           <p className="rounded-lg bg-surface-2 px-3 py-6 text-center text-[13.5px] text-ink-3">
-            该团队还没有成员
+            {t('admin.team.empty')}
           </p>
         ) : (
           <ul className="divide-y divide-line rounded-[10px] border border-line">
@@ -268,7 +277,7 @@ function TeamMembersDialog({
                 <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{nameOf(m.user_id)}</span>
                 {m.is_lead && (
                   <Badge tone="info">
-                    <ShieldCheck className="h-3 w-3" /> 负责人
+                    <ShieldCheck className="h-3 w-3" /> {t('admin.team.lead')}
                   </Badge>
                 )}
                 {canManage && (
@@ -279,10 +288,10 @@ function TeamMembersDialog({
                       onClick={() => toggleLead(m)}
                       className="focus-ring rounded-md px-2 py-1 text-[12.5px] text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink-2 disabled:opacity-50"
                     >
-                      {m.is_lead ? '取消负责人' : '设为负责人'}
+                      {m.is_lead ? t('admin.team.unset_lead') : t('admin.team.set_lead')}
                     </button>
                     <IconButton
-                      label="移出团队"
+                      label={t('admin.team.remove')}
                       className="hover:text-crit"
                       onClick={() => remove(m.user_id)}
                     >
@@ -301,14 +310,14 @@ function TeamMembersDialog({
               value={addId}
               onValueChange={setAddId}
               options={[
-                { value: '', label: addable.length ? '选择成员加入…' : '无可加入的成员' },
+                { value: '', label: addable.length ? t('admin.team.add_ph') : t('admin.team.add_none') },
                 ...addable.map((u) => ({ value: String(u.id), label: u.display_name })),
               ]}
               className="flex-1"
             />
             <Button variant="primary" onClick={add} disabled={busy || !addId}>
               <UserPlus className="h-4 w-4" />
-              加入
+              {t('admin.team.add')}
             </Button>
           </div>
         )}

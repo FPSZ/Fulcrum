@@ -5,6 +5,7 @@ import { lazy } from 'react'
 export const evalModule = defineFeature({
   id: 'eval',
   label: '评测验证',
+  labelKey: 'app.nav.eval',
   icon: FlaskConical,
   group: '取证',
   order: 70,

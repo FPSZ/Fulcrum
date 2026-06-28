@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
+from pathlib import Path
 
-from fulcrum.capabilities.sandbox.restricted_executor import RestrictedExecutor
+import pytest
+
+from fulcrum.capabilities.sandbox.restricted_executor import (
+    RestrictedExecutor,
+    _disallowed_url_scheme,
+    _realpath_escapes,
+)
 from fulcrum.core.domain import Context, ExecResult, ToolIntent
 
 
@@ -166,3 +174,113 @@ def test_default_input_cap_is_generous() -> None:
     # 默认 64KB:寻常办公参数不应被误拒(不传 max_input_chars)。
     r = _run(_PassTool(), {"path": "notice.txt", "text": "正常公文内容" * 200})
     assert r.ok and r.output == "done"
+
+
+# ---- 缺口1:符号链接逃逸(realpath 容纳检查,纵深,不依赖 argrisk 纯字符串判定)----
+
+
+def test_realpath_pure_contains_inside_path(tmp_path: Path) -> None:
+    """纯函数:工作区内的普通文件/子目录 realpath 后仍在区内 → 不逃逸。"""
+    ws = str(tmp_path)
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "a.txt").write_text("x", encoding="utf-8")
+    assert _realpath_escapes("sub/a.txt", ws) is False
+    assert _realpath_escapes(str(tmp_path / "sub" / "a.txt"), ws) is False
+    assert _realpath_escapes("", ws) is False  # 无路径不判逃逸
+
+
+def test_realpath_pure_detects_escape(tmp_path: Path) -> None:
+    """纯函数:解析后真实路径落到工作区外 → 逃逸(绝对路径/上级穿越两形态)。"""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+    assert _realpath_escapes(str(outside), str(ws)) is True
+    assert _realpath_escapes("../outside.txt", str(ws)) is True
+
+
+def test_symlink_escape_denied(tmp_path: Path) -> None:
+    """工作区内一条软链指向区外文件:argrisk 字符串检查放过,realpath 容纳检查拦下。
+
+    跨平台:Windows 建软链需特权,os.symlink 抛 OSError/NotImplementedError → skip(不让无权限
+    环境 CI 变红);realpath 容纳逻辑另由上面两条纯函数单测覆盖,不依赖本用例。
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    outside = tmp_path / "outside_secret.txt"
+    outside.write_text("classified", encoding="utf-8")
+    link = ws / "innocent.txt"
+    try:
+        os.symlink(outside, link)
+    except (OSError, NotImplementedError):
+        pytest.skip("当前平台/权限不支持创建符号链接")
+
+    # 字符串层(argrisk):软链名 innocent.txt 看着区内,旧检查放过。
+    from fulcrum.capabilities.toolguard import argrisk
+
+    assert argrisk.path_outside_workspace({"path": "innocent.txt"}, str(ws)) is False
+    # 执行器纵深层:realpath 跟随软链 → 解析到区外 → 拒绝执行,工具未触达。
+    tool = _RecordingTool()
+    r = _run(tool, {"path": str(link)}, workspace=str(ws))
+    assert not r.ok and "软链" in (r.error or "")
+    assert r.side_effects.get("sandbox") == "denied"
+    assert tool.called is False
+
+
+def test_inside_workspace_symlink_allowed(tmp_path: Path) -> None:
+    """区内软链指向区内文件:仍在工作区内 → 不应被误拒(只拦逃逸,不伤合法软链)。"""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "real.txt").write_text("ok", encoding="utf-8")
+    link = ws / "alias.txt"
+    try:
+        os.symlink(ws / "real.txt", link)
+    except (OSError, NotImplementedError):
+        pytest.skip("当前平台/权限不支持创建符号链接")
+    assert _realpath_escapes(str(link), str(ws)) is False
+    r = _run(_PassTool(), {"path": str(link)}, workspace=str(ws))
+    assert r.ok and r.output == "done"
+
+
+# ---- 缺口2:多键 URL 协议绕过(协议白名单覆盖所有目的地键,非仅 url)----
+
+
+def test_multikey_scheme_bypass_denied() -> None:
+    """地址放进 endpoint/webhook/target/to… 等键传非 http/https 协议 → 各自被拦。"""
+    cases = [
+        {"endpoint": "file:///etc/passwd"},
+        {"webhook": "gopher://127.0.0.1:6379/_"},
+        {"target": "dict://x:11211/"},
+        {"to": "ftp://evil/x"},
+        {"callback": "file:/etc/shadow"},  # 单斜杠 file: 也属危险不透明协议
+        {"forward_to": "jar:nested!/a"},  # 无 :// 但在危险协议集合
+    ]
+    for args in cases:
+        tool = _RecordingTool()
+        r = _run(tool, args, allow_domains=["evil", "x", "127.0.0.1"])
+        assert not r.ok and "协议" in (r.error or ""), args
+        assert r.side_effects.get("sandbox") == "denied"
+        assert tool.called is False, args
+
+
+def test_multikey_http_in_alt_key_falls_through_to_domain() -> None:
+    """非 url 键里放白名单内 https → 协议层放过,仍由域名白名单把关(在白名单 → 放行)。"""
+    r = _run(_PassTool(), {"endpoint": "https://gov.cn/x"}, allow_domains=["gov.cn"])
+    assert r.ok and r.output == "done"
+
+
+def test_multikey_benign_colon_values_not_treated_as_scheme() -> None:
+    """带冒号的良性值(host:port、时间、邮箱)不应被误判为协议绕过。"""
+    for args in (
+        {"endpoint": "localhost:6379"},
+        {"to": "user@example.com"},
+        {"address": "12:30 会议"},
+        {"target": "section3"},
+    ):
+        assert _disallowed_url_scheme(args) is None, args
+
+
+def test_url_key_scheme_still_denied() -> None:
+    """既有 url 键的协议白名单行为不变(回归保护)。"""
+    r = _run(_PassTool(), {"url": "file:///etc/passwd"}, allow_domains=["gov.cn"])
+    assert not r.ok and "协议" in (r.error or "")

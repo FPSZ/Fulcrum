@@ -227,16 +227,24 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
         return [_role_dto(r, directory.role_member_count(r.id)) for r in directory.list_roles()]
 
     @app.post("/admin/roles", response_model=RoleDTO, status_code=201)
-    async def create_role(body: RoleWrite, _: Principal = Depends(can_manage_roles)) -> RoleDTO:
+    async def create_role(
+        body: RoleWrite, principal: Principal = Depends(can_manage_roles)
+    ) -> RoleDTO:
         try:
-            r = directory.create_role(body.name, body.description, body.permissions, body.scope)
+            r = directory.create_role(
+                body.name,
+                body.description,
+                body.permissions,
+                body.scope,
+                actor_permissions=principal.permissions,
+            )
         except (NotFound, Conflict) as exc:
             _raise(exc)
         return _role_dto(r, 0)
 
     @app.patch("/admin/roles/{role_id}", response_model=RoleDTO)
     async def update_role(
-        role_id: int, body: RoleUpdate, _: Principal = Depends(can_manage_roles)
+        role_id: int, body: RoleUpdate, principal: Principal = Depends(can_manage_roles)
     ) -> RoleDTO:
         fields = body.model_dump(exclude_unset=True)
         try:
@@ -245,6 +253,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
                 name=fields.get("name"),
                 description=fields.get("description"),
                 permissions=fields.get("permissions"),
+                actor_permissions=principal.permissions,
             )
         except (NotFound, Conflict) as exc:
             _raise(exc)
@@ -280,7 +289,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
 
     @app.post("/admin/users", response_model=TempPasswordResponse, status_code=201)
     async def create_user(
-        body: UserCreate, _: Principal = Depends(can_manage_users)
+        body: UserCreate, principal: Principal = Depends(can_manage_users)
     ) -> TempPasswordResponse:
         try:
             user, temp = directory.create_user(
@@ -293,6 +302,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
                 email=body.email,
                 phone=body.phone,
                 title=body.title,
+                actor_permissions=principal.permissions,
             )
         except (NotFound, Conflict) as exc:
             _raise(exc)
@@ -309,7 +319,9 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
         fields = body.model_dump(exclude_unset=True)
         _guard_lead_mutation(principal, fields)
         try:
-            user = directory.update_user(user_id, fields=fields)
+            user = directory.update_user(
+                user_id, fields=fields, actor_permissions=principal.permissions
+            )
         except (NotFound, Conflict) as exc:
             _raise(exc)
         return _user_dto(user)
@@ -353,7 +365,12 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账号不存在")
         _guard_approve(principal, target, body.role_id, body.department_id)
         try:
-            user = directory.approve(user_id, body.role_id, body.department_id)
+            user = directory.approve(
+                user_id,
+                body.role_id,
+                body.department_id,
+                actor_permissions=principal.permissions,
+            )
         except (NotFound, Conflict) as exc:
             _raise(exc)
         return _user_dto(user)
@@ -371,7 +388,14 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
 
     # ── 团队成员关系(负责人管本团队;plan/13 P1b.3)──────────────────
     @app.get("/admin/teams/{team_id}/members", response_model=list[MembershipDTO])
-    async def team_members(team_id: int, _: Principal = Depends(can_view)) -> list[MembershipDTO]:
+    async def team_members(
+        team_id: int, principal: Principal = Depends(can_view)
+    ) -> list[MembershipDTO]:
+        # 纯团队负责人(无组织级 users.view)只能看自己负责团队的花名册,不得跨队枚举。
+        if not principal.has("users.view") and not principal.can_manage_team(team_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="只能查看你负责团队的成员"
+            )
         return [
             MembershipDTO(
                 user_id=m.user_id, team_id=m.team_id, team_role=m.team_role, is_lead=m.is_lead
@@ -386,6 +410,12 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
         if not principal.can_manage_team(team_id):  # 只能往自己负责的团队加人
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="只能管理你负责的团队成员"
+            )
+        # 任命团队负责人是放权动作:纯团队负责人不得自行增设负责人(防在子树内无限扩散领导权),
+        # 须组织级 users.manage。普通加人(is_lead=False)仍允许负责人在本团队内进行。
+        if body.is_lead and not principal.has("users.manage"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="仅组织级成员管理员可任命团队负责人"
             )
         try:
             m = directory.add_team_member(team_id, body.user_id, body.team_role, body.is_lead)

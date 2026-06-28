@@ -55,6 +55,10 @@ def build_pipeline(config: dict[str, Any] | None = None) -> SecurityPipeline:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     configure_logging(settings.log_level)
+    # 审计链封缄:配了 FULCRUM_AUDIT_HMAC_KEY 即让 hash-chain 走 HMAC(防内部人伪造/截断)。
+    from .adapters.audit.hashchain import configure_hmac_key
+
+    configure_hmac_key(settings.audit_hmac_key)
     cfg = load_capability_config(settings.capability_config)
     # 延迟导入,避免 core 测试时强依赖 fastapi。
     from .adapters.api import build_api

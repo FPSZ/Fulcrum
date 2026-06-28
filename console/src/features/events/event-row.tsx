@@ -1,6 +1,6 @@
 import { Tooltip } from '@/components/ui'
 import { cn } from '@/lib/utils'
-import { LEVEL_BAR, LEVEL_LABEL, SOURCE_ICON, TRUST_TONE } from './meta'
+import { LEVEL_BAR, levelRiskLabel, SOURCE_ICON, TRUST_TONE } from './meta'
 import type { RiskLevel, SecurityEvent } from './types'
 
 const TRUST_TEXT: Record<string, string> = {
@@ -41,7 +41,7 @@ export function EventRow({
       )}
     >
       {/* 最左竖色条 = 严重等级(纯颜色,不写字;折叠时取桶内最坏等级) */}
-      <Tooltip content={`${LEVEL_LABEL[lvl]}风险`} side="right">
+      <Tooltip content={levelRiskLabel(lvl)} side="right">
         <span className={cn('absolute inset-y-0 left-0 w-1', LEVEL_BAR[lvl])} />
       </Tooltip>
 

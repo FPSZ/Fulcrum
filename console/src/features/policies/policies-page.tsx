@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowRight, Scale } from 'lucide-react'
 import { Badge, type BadgeTone, Card, EmptyState, Segmented } from '@/components/ui'
+import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { type Disposition } from './data'
 import { usePolicies } from './use-policies'
 
@@ -10,11 +11,11 @@ const DISP_TONE: Record<Disposition, BadgeTone> = {
   sanitize: 'med',
   allow: 'ok',
 }
-const DISP_LABEL: Record<Disposition, string> = {
-  block: '阻断',
-  approve: '审批',
-  sanitize: '净化',
-  allow: '放行',
+const DISP_KEY: Record<Disposition, MessageKey> = {
+  block: 'policies.disp.block',
+  approve: 'policies.disp.approve',
+  sanitize: 'policies.disp.sanitize',
+  allow: 'policies.disp.allow',
 }
 const LEVEL_TONE: Record<string, BadgeTone> = {
   critical: 'crit',
@@ -24,13 +25,14 @@ const LEVEL_TONE: Record<string, BadgeTone> = {
 }
 
 type Filter = 'all' | Disposition
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all', label: '全部' },
-  { value: 'block', label: '阻断' },
-  { value: 'approve', label: '审批' },
-]
 
 export function PoliciesPage() {
+  const { t } = useTranslation()
+  const FILTERS: { value: Filter; label: string }[] = [
+    { value: 'all', label: t('policies.filter.all') },
+    { value: 'block', label: t('policies.filter.block') },
+    { value: 'approve', label: t('policies.filter.approve') },
+  ]
   // 策略是后端装配的配置事实(/policies),后端在跑即非空;不可达/非 yaml 引擎 → 诚实空态(不塞假数据)。
   const ps = usePolicies().data
   const [filter, setFilter] = useState<Filter>('all')
@@ -41,11 +43,7 @@ export function PoliciesPage() {
 
   if (!ps) {
     return (
-      <EmptyState
-        icon={Scale}
-        title="暂无装配策略"
-        hint="策略来自后端当前加载的 data/policies/*.yml。请确认安全网关后端在运行。"
-      />
+      <EmptyState icon={Scale} title={t('policies.empty.title')} hint={t('policies.empty.hint')} />
     )
   }
 
@@ -54,17 +52,19 @@ export function PoliciesPage() {
       {/* 当前装配策略的配置事实(标题已在顶栏,这里只给状态) */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-3">
         <span>
-          默认处置 <Badge tone={DISP_TONE[ps.default]}>{DISP_LABEL[ps.default]}</Badge>
+          {t('policies.default')} <Badge tone={DISP_TONE[ps.default]}>{t(DISP_KEY[ps.default])}</Badge>
         </span>
         <span>
-          工作区 <code className="text-ink-2">{ps.workspace}</code>
+          {t('policies.workspace')} <code className="text-ink-2">{ps.workspace}</code>
         </span>
-        <span>外联白名单 {ps.allow_domains.join('、')}</span>
-        <span>规则集 v{ps.version}</span>
+        <span>
+          {t('policies.allow_domains')} {ps.allow_domains.join('、')}
+        </span>
+        <span>{t('policies.version', { version: ps.version })}</span>
       </div>
 
       <div className="flex items-center gap-3">
-        <span className="text-[13px] text-ink-3">{rules.length} 条规则</span>
+        <span className="text-[13px] text-ink-3">{t('policies.rule_count', { count: rules.length })}</span>
         <Segmented value={filter} onValueChange={(v) => setFilter(v as Filter)} items={FILTERS} />
       </div>
 
@@ -79,9 +79,9 @@ export function PoliciesPage() {
               <code className="text-[13.5px] font-medium text-ink">{r.id}</code>
               <Badge tone={LEVEL_TONE[r.risk_level] ?? 'neutral'}>{r.risk_level}</Badge>
               <span className="ml-auto inline-flex items-center gap-1.5 text-[13px] text-ink-3">
-                条件命中 <ArrowRight className="h-3.5 w-3.5" />
+                {t('policies.condition_hit')} <ArrowRight className="h-3.5 w-3.5" />
                 <Badge tone={DISP_TONE[r.decision]} dot>
-                  {DISP_LABEL[r.decision]}
+                  {t(DISP_KEY[r.decision])}
                 </Badge>
               </span>
             </div>

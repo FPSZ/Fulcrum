@@ -1,6 +1,7 @@
 /** 总览图表:纯 SVG 矢量,低 DPI 锐利。颜色取设计令牌 CSS 变量。 */
 
 import { useEffect, useRef, useState } from 'react'
+import { t } from '@/lib/i18n'
 
 /** 测量容器实际像素宽:让 viewBox 宽 = 容器宽,1 单位=1px,绝不letterbox压扁(手机关键) */
 function useWidth(): [React.RefObject<HTMLDivElement>, number] {
@@ -103,14 +104,14 @@ export function BarChart({
 
 /** 距今 sec 秒 → 相对时间标签(横坐标用) */
 function fmtAgo(sec: number): string {
-  if (sec <= 0.5) return '现在'
-  if (sec < 60) return `-${Math.round(sec)}秒`
-  if (sec < 3600) return `-${Math.round(sec / 60)}分`
+  if (sec <= 0.5) return t('overview.ago.now')
+  if (sec < 60) return t('overview.ago.sec', { n: Math.round(sec) })
+  if (sec < 3600) return t('overview.ago.min', { n: Math.round(sec / 60) })
   if (sec < 86400) {
     const h = sec / 3600
-    return `-${h < 10 ? +h.toFixed(1) : Math.round(h)}时`
+    return t('overview.ago.hour', { n: h < 10 ? +h.toFixed(1) : Math.round(h) })
   }
-  return `-${+(sec / 86400).toFixed(1)}天`
+  return t('overview.ago.day', { n: +(sec / 86400).toFixed(1) })
 }
 
 /**

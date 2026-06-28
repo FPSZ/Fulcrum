@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bell, HelpCircle, Images, Menu, PanelLeft, Radio, Search, Shield } from 'lucide-react'
 import { IconButton, Kbd } from '@/components/ui'
 import { BACKGROUNDS, useBackground } from '@/lib/background'
+import { useTranslation } from '@/lib/i18n'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -38,11 +39,12 @@ export function Topbar({
   onMenu: () => void
 }) {
   const { current, cycle } = useBackground()
+  const { t } = useTranslation()
   return (
     <header className="flex h-14 shrink-0 items-center gap-2.5 pl-2.5 pr-3 md:h-20 md:gap-3 md:pl-3 md:pr-4">
       {/* 移动端:汉堡打开抽屉 */}
       <IconButton
-        label="打开菜单"
+        label={t('app.topbar.menu')}
         variant="ghost"
         className="h-9 w-9 rounded-[10px] md:hidden"
         onClick={onMenu}
@@ -51,7 +53,7 @@ export function Topbar({
       </IconButton>
       {/* 桌面:收起/展开侧栏 */}
       <IconButton
-        label={collapsed ? '展开侧栏' : '收起侧栏'}
+        label={collapsed ? t('app.topbar.expand_sidebar') : t('app.topbar.collapse_sidebar')}
         variant="ghost"
         className="hidden h-9 w-9 rounded-[10px] md:inline-flex"
         onClick={onToggle}
@@ -81,16 +83,16 @@ export function Topbar({
           className="focus-ring hidden h-9 w-[260px] max-w-[34vw] items-center gap-2 rounded-[11px] border border-line bg-surface/70 px-3 text-[14.5px] text-ink-mute transition-colors hover:border-line-2 lg:flex"
         >
           <Search className="h-[15px] w-[15px] shrink-0" strokeWidth={1.9} />
-          <span className="truncate">检索事件 / 会话 / trace_id…</span>
+          <span className="truncate">{t('app.topbar.search_placeholder')}</span>
           <Kbd className="ml-auto">⌘K</Kbd>
         </button>
         {/* 移动端:检索收成图标 */}
-        <IconButton label="检索" variant="secondary" className="h-9 w-9 rounded-full lg:hidden">
+        <IconButton label={t('app.topbar.search')} variant="secondary" className="h-9 w-9 rounded-full lg:hidden">
           <Search className="h-[17px] w-[17px]" strokeWidth={1.9} />
         </IconButton>
         {BACKGROUNDS.length > 1 && (
           <IconButton
-            label={`切换背景 · ${current.name}`}
+            label={t('app.topbar.switch_bg', { name: current.name })}
             variant="secondary"
             className="hidden h-9 w-9 rounded-full md:inline-flex"
             onClick={cycle}
@@ -98,11 +100,11 @@ export function Topbar({
             <Images className="h-[17px] w-[17px]" strokeWidth={1.9} />
           </IconButton>
         )}
-        <IconButton label="帮助" variant="secondary" className="hidden h-9 w-9 rounded-full md:inline-flex">
+        <IconButton label={t('app.topbar.help')} variant="secondary" className="hidden h-9 w-9 rounded-full md:inline-flex">
           <HelpCircle className="h-[17px] w-[17px]" strokeWidth={1.9} />
         </IconButton>
         <span className="relative">
-          <IconButton label="告警" variant="secondary" className="h-9 w-9 rounded-full">
+          <IconButton label={t('app.topbar.alerts')} variant="secondary" className="h-9 w-9 rounded-full">
             <Bell className="h-[17px] w-[17px]" strokeWidth={1.9} />
           </IconButton>
           <span className="pointer-events-none absolute right-2 top-2 h-[7px] w-[7px] rounded-full bg-crit ring-2 ring-surface" />

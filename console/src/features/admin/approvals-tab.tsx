@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, Inbox, X } from 'lucide-react'
 import { Avatar, Button, Dialog, EmptyState, Select, toast } from '@/components/ui'
+import { useTranslation } from '@/lib/i18n'
 import { useAuth } from '@/lib/auth'
 import {
   approveMember,
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export function ApprovalsTab({ departments, roles, scoped = false, onChanged }: Props) {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const managed = new Set(user?.managedTeams ?? [])
   // 负责人:可选部门限本人可管团队,角色限团队级模板;组织审批人不受限。
@@ -37,11 +39,11 @@ export function ApprovalsTab({ departments, roles, scoped = false, onChanged }: 
     try {
       setPending(await listMembers({ status: 'pending' }))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '加载失败')
+      toast.error(e instanceof Error ? e.message : t('admin.approvals.load_failed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     void reload()
@@ -55,15 +57,21 @@ export function ApprovalsTab({ departments, roles, scoped = false, onChanged }: 
   const reject = async (m: Member) => {
     try {
       await rejectMember(m.id)
-      toast.success('已驳回申请')
+      toast.success(t('admin.approvals.rejected'))
       afterChange()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
+      toast.error(e instanceof Error ? e.message : t('admin.approvals.op_failed'))
     }
   }
 
   if (!loading && pending.length === 0) {
-    return <EmptyState icon={Inbox} title="没有待审批的申请" hint="新的账号申请会出现在这里。" />
+    return (
+      <EmptyState
+        icon={Inbox}
+        title={t('admin.approvals.empty.title')}
+        hint={t('admin.approvals.empty.hint')}
+      />
+    )
   }
 
   return (
@@ -80,16 +88,16 @@ export function ApprovalsTab({ departments, roles, scoped = false, onChanged }: 
               <div className="truncate font-data text-[12.5px] text-ink-mute">{m.username}</div>
             </div>
             <div className="hidden font-data text-[13px] text-ink-3 sm:block">
-              申请于 {fmtTime(m.created_at)}
+              {t('admin.approvals.applied_at', { time: fmtTime(m.created_at) })}
             </div>
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="sm" onClick={() => reject(m)}>
                 <X className="h-3.5 w-3.5" />
-                驳回
+                {t('admin.approvals.reject')}
               </Button>
               <Button variant="primary" size="sm" onClick={() => setApproving(m)}>
                 <Check className="h-3.5 w-3.5" />
-                批准
+                {t('admin.approvals.approve')}
               </Button>
             </div>
           </li>
@@ -122,6 +130,7 @@ function ApproveDialog({
   onClose: () => void
   onDone: () => void
 }) {
+  const { t } = useTranslation()
   const [roleId, setRoleId] = useState<string>(NONE)
   const [deptId, setDeptId] = useState<string>(NONE)
   const [busy, setBusy] = useState(false)
@@ -133,11 +142,11 @@ function ApproveDialog({
         role_id: roleId === NONE ? null : Number(roleId),
         department_id: deptId === NONE ? null : Number(deptId),
       })
-      toast.success(`已批准 ${member.display_name}`)
+      toast.success(t('admin.approve.done', { name: member.display_name }))
       onClose()
       onDone()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '操作失败')
+      toast.error(e instanceof Error ? e.message : t('admin.approvals.op_failed'))
     } finally {
       setBusy(false)
     }
@@ -147,36 +156,36 @@ function ApproveDialog({
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title={`批准 ${member.display_name}`}
-      description="为该成员指定系统角色与所属部门,批准后即可登录。"
+      title={t('admin.approve.title', { name: member.display_name })}
+      description={t('admin.approve.desc')}
       widthClassName="max-w-md"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>取消</Button>
-          <Button variant="primary" onClick={submit} disabled={busy}>确认批准</Button>
+          <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button variant="primary" onClick={submit} disabled={busy}>{t('admin.approve.confirm')}</Button>
         </>
       }
     >
       <div className="space-y-3">
         <label className="block">
-          <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">系统角色</span>
+          <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">{t('admin.approve.role')}</span>
           <Select
             value={roleId}
             onValueChange={setRoleId}
             options={[
-              { value: NONE, label: '暂不分配' },
+              { value: NONE, label: t('admin.approve.unassigned') },
               ...roles.map((r) => ({ value: String(r.id), label: r.name })),
             ]}
             className="w-full"
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">所属部门</span>
+          <span className="mb-1.5 block text-[12.5px] font-medium text-ink-2">{t('admin.approve.dept')}</span>
           <Select
             value={deptId}
             onValueChange={setDeptId}
             options={[
-              { value: NONE, label: '暂不分配' },
+              { value: NONE, label: t('admin.approve.unassigned') },
               ...departments.map((d) => ({ value: String(d.id), label: d.name })),
             ]}
             className="w-full"
