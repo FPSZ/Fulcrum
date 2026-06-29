@@ -124,6 +124,10 @@ def match_variants(text: str) -> list[str]:
 # ---- 递归解码:把藏进 base64 / hex / URL 编码 / ROT13 / HTML 数字实体的指令解出来供复扫 ----
 _B64 = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 _HEX = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
+# base32(RFC4648 字母表 A-Z2-7):把指令 base32 编码绕过关键词匹配,与 base64/hex 同属"解码后复扫"。
+_B32 = re.compile(r"[A-Z2-7]{16,}={0,6}")
+# URL-safe base64 字符替换(-_ → +/),用于兜底解 urlsafe 变体。
+_URLSAFE_B64 = str.maketrans("-_", "+/")
 # HTML 数字字符引用:&#105; / &#x69;。把字母编码成数字实体(`&#105;gnore previous…`)是网页/
 # 文档绕过关键词匹配的常见手法。**只解数字引用**——具名实体(&lt; &amp; &nbsp;)正常文档遍地都是,
 # 解了反而误伤;字母的数字引用几乎只见于刻意规避,判别力强、低误报。
@@ -146,6 +150,16 @@ def _hexd(blob: str) -> str:
         return ""
 
 
+def _b32(blob: str) -> str:
+    """base32 解码;补足 '=' 到 8 的倍数。非 base32/解不出 → 返回 ''(由上层'解出物≠原文'丢弃)。"""
+    body = blob.rstrip("=")
+    try:
+        padded = body + "=" * (-len(body) % 8)
+        return base64.b32decode(padded, casefold=False).decode("utf-8", "ignore")
+    except (binascii.Error, ValueError):
+        return ""
+
+
 def _html_numref(s: str) -> str:
     """把 HTML 数字字符引用(&#105; / &#x69;)还原为字符;非法/越界引用原样保留。"""
 
@@ -158,6 +172,23 @@ def _html_numref(s: str) -> str:
         return chr(cp) if 0 <= cp <= 0x10FFFF else m.group(0)
 
     return _HTML_NUMREF.sub(repl, s)
+
+
+# 解码产物「可读文本」门:base32/base64/hex 命中真实大写/编码 token(AWS access key、TOTP、
+# DNSSEC 标签、hex 摘要)时解出的是二进制垃圾——常夹 C0/C1 控制字节,这些控制字节又给
+# `\bDAN\b`/`\bAIM\b` 这类短规则凑出词边界致误报(复审 #96:`DNSEC3R2KZN23534`→`\x1bdAn:V[|`)。
+# 真实隐藏载荷解出的是干净可读文本。故解码产物须先过本门才作为复扫变体:无 C0/C1 控制字符
+# (\t\n\r 除外)且可打印/文字字符占比够高;否则当二进制垃圾丢弃,堵「编码 token→噪声→短规则」。
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+_CLEAN_MIN_RATIO = 0.9
+
+
+def _is_clean_text(s: str) -> bool:
+    """解码产物是否为可读文本(供复扫的前置门):无控制噪声、可打印占比 ≥ 阈值。"""
+    if not s or _CTRL.search(s):
+        return False
+    printable = sum(1 for ch in s if ch.isprintable() or ch in "\t\n\r")
+    return printable / len(s) >= _CLEAN_MIN_RATIO
 
 
 def _untag(text: str) -> str:
@@ -186,6 +217,8 @@ def decode_variants(text: str, depth: int = 2) -> list[str]:
     """抽取并解码文本里的编码块(base64/hex/URL/ROT13),递归至多 depth 层。
 
     解不出可读文本 / 无意义则丢弃,故正常 base64(图片、随机令牌)不会刷出垃圾命中。
+    解码产物还须过 `_is_clean_text` 可读门:二进制垃圾(真实大写/编码 token 解出的控制字节
+    噪声)不作为复扫变体,避免撞上短规则误报(复审 #96)。
     """
     out: list[str] = []
     seen: set[str] = set()
@@ -195,6 +228,10 @@ def decode_variants(text: str, depth: int = 2) -> list[str]:
         for s in frontier:
             cands: list[str] = [_b64(m.group(0)) for m in _B64.finditer(s)]
             cands += [_hexd(m.group(0)) for m in _HEX.finditer(s)]
+            cands += [_b32(m.group(0)) for m in _B32.finditer(s)]
+            if "-" in s or "_" in s:  # URL-safe base64 兜底:-_→+/ 后按标准 base64 再抽
+                su = s.translate(_URLSAFE_B64)
+                cands += [_b64(m.group(0)) for m in _B64.finditer(su)]
             if "%" in s:
                 cands.append(unquote(s))
             if "&#" in s:
@@ -206,7 +243,7 @@ def decode_variants(text: str, depth: int = 2) -> list[str]:
                 pass
             for c in cands:
                 c = (c or "").strip()
-                if c and c != s and c not in seen:
+                if c and c != s and c not in seen and _is_clean_text(c):
                     seen.add(c)
                     out.append(c)
                     nxt.append(c)
