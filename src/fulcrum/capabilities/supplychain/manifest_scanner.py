@@ -28,6 +28,7 @@ from urllib.parse import urlparse
 
 from ...core.domain import Context, Disposition, Finding, ScanReport
 from ...core.registry import capability
+from .embedded_payload import scan_embedded
 
 # 严重度 → 分值 / 排序;rating 由最严重项映射。
 _SEV_SCORE = {"low": 0.3, "medium": 0.5, "high": 0.7, "critical": 0.9}
@@ -391,6 +392,9 @@ class ManifestScanner:
                         command=cmd[:200],
                     )
                 )
+
+        # 6) 嵌入式载荷扫描(DDIPE 面):任意字段代码块/配置模板里的危险载荷,独立 embedded.* kinds。
+        risks.extend(scan_embedded(manifest, ctx))
 
         rating = self._rating(risks)
         return ScanReport(component_id=component_id, rating=rating, risks=risks)
