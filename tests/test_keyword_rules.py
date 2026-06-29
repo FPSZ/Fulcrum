@@ -296,6 +296,8 @@ def test_realistic_benign_phrasing_not_flagged(text: str) -> None:
     """形似攻击的真实良性话术:三类动作型风险均不得命中(零误报硬门)。"""
     kinds = _kinds(text)
     assert not (kinds & {"jailbreak", "data_poisoning", "injection"}), f"FP on: {text} -> {kinds}"
+
+
 # ---- base32(RFC4648 A-Z2-7)编码注入:解码后复扫命中 → obfuscated_injection critical ----
 
 
