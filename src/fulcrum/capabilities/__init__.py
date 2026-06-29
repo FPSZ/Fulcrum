@@ -15,6 +15,7 @@ def load_builtin_capabilities() -> None:
     # injection_cascade=灰区级联(keyword_rules 快路径 + llm_judge 灰区兜底,在线降延迟)。
     from .detectors import (  # noqa: F401
         disclosure_egress,
+        exfil_channel,
         injection_cascade,
         keyword_rules,
         llm_judge,
