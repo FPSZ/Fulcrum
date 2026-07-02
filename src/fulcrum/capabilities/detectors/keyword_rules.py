@@ -62,8 +62,10 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             r"===\s*(结束|end|完)\s*===",
             # 配置块伪装 / policy puppetry
             r"<\s*interaction-config|allowed-modes|blocked-(strings|modes)",
-            # 拒绝抑制
-            r"不(要|许|得)(说|出现|使用|加|有).{0,14}(无法|不能|抱歉|不便|免责|政策|权限|拒绝)",
+            # 拒绝抑制:目标是"压掉模型的拒绝/免责话术"。尾词只留**拒绝语**(无法/不能/抱歉/
+            # 不便/免责/拒绝);移除"政策/权限"——它们是策略名词非拒绝语,"请不要使用未授权的权限"
+            # 这类良性合规句会被误命中(真攻击说"不要说你无法/拒绝",不会说"不要用权限")。
+            r"不(要|许|得)(说|出现|使用|加|有).{0,14}(无法|不能|抱歉|不便|免责|拒绝)",
             r"(do not|don'?t)\s+(apologize|refuse|warn|mention)|no\s+(disclaimer|warning|refusal)",
             r"禁止出现.{0,12}(无法|不能|抱歉|拒绝)",
             # 前缀诱导

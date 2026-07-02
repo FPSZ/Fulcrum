@@ -169,6 +169,35 @@ class SecurityPipeline:
 
         await self.detect_inputs(ctx, ctx.spans)
 
+        # 输入闸门:据检测结论决定是否转发给模型。此前 detect_inputs 的结果被**丢弃**、无条件转发,
+        # 经此端点进来的高危注入照样喂模型;且多来源分片规避(gateway._effective_score)因唯一的多
+        # span 入口不过闸而形同死逻辑。现改为**仅转发 ALLOW 档**:安全网关只代理"闸门放行"的请求,
+        # 凡该被拦(BLOCK)或该挂人工(APPROVE,含分片聚合升档)的一律短路,不请求模型、不产工具调用。
+        verdict = screen(ctx.findings)
+        if verdict.decision != Disposition.ALLOW:
+            if verdict.decision == Disposition.BLOCK:
+                await self._emit(
+                    ctx,
+                    AuditEventType.TOOL_BLOCKED,
+                    subject_id=req.request_id,
+                    decision=verdict.decision,
+                    evidence={"reason": verdict.reason, "stage": "input_gateway"},
+                )
+                content = "[输入安全策略:检出高危注入/越狱,已拦截,未转发模型]"
+            else:
+                await self._emit(
+                    ctx,
+                    AuditEventType.TOOL_PENDING_APPROVAL,
+                    subject_id=req.request_id,
+                    decision=verdict.decision,
+                    evidence={"reason": verdict.reason, "stage": "input_gateway"},
+                )
+                content = "[输入安全策略:命中可疑输入,已挂起人工复核,暂不转发模型]"
+            return PipelineResult(
+                session_id=req.session_id,
+                response=ModelResponse(request_id=req.request_id, content=content),
+            )
+
         resp = await self._model.chat(req)
         await self._emit(ctx, AuditEventType.MODEL_FORWARDED, subject_id=resp.response_id)
 

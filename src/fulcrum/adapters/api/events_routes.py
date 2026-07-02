@@ -190,7 +190,9 @@ def register_events_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthD
         """
         sink = pipeline.audit  # all_events()/append() 经端口暴露,任意 sink(内存/SQLite)同口径
         original = next((e for e in sink.all_events() if e.event_id == event_id), None)
-        if original is None:
+        # 团队级数据隔离(P2):与读路径同判据。跨团队事件对本人本就不可见,处置路径亦须挡;
+        # 用 404(而非 403)保持"不可见=不存在"口径,不因错误码泄露他团队事件的存在性。
+        if original is None or not event_team_visible(original, principal):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="事件不存在")
         if (original.decision or Disposition.ALLOW) != Disposition.APPROVE:
             raise HTTPException(
