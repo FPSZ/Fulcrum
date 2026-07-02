@@ -35,6 +35,9 @@ def connect(path: str | Path) -> Iterator[sqlite3.Connection]:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        # 并发写等锁而非立刻抛 "database is locked":WAL 下写仍互斥,登录高峰/审计高频写
+        # 会撞锁。给 5s 忙等窗口,让并发写排队重试而不是直接 500。
+        conn.execute("PRAGMA busy_timeout=5000")
         yield conn
     finally:
         conn.close()

@@ -27,8 +27,26 @@ import re
 from urllib.parse import urlparse
 
 from ...core.domain import Context, Disposition, Finding, ScanReport
+from ...core.normalize import decode_variants, match_variants
 from ...core.registry import capability
 from .embedded_payload import scan_embedded
+
+
+def _regex_hits(pattern: re.Pattern[str], text: str, *, decode: bool = False) -> list[str]:
+    """在归一化/去leet(+可选解码)多副本上跑正则,抹平全角/同形/零宽(+base64/hex)绕过。
+
+    与 keyword_rules / embedded_payload 同口径:此前 manifest 三大正则只在**原始**字段文本上跑
+    ASCII 正则,离线 CLI(python -m fulcrum.scan)路径无任何归一化 → 全角/同形字/编码混淆可绕过。
+    decode=True 追加 decode_variants(指令/描述字段用,抓藏在 base64/hex 里的注入语)。
+    """
+    variants = match_variants(text)
+    if decode:
+        variants = variants + decode_variants(text)
+    hits: set[str] = set()
+    for variant in variants:
+        hits.update(m.group(0) for m in pattern.finditer(variant))
+    return sorted(hits)
+
 
 # 严重度 → 分值 / 排序;rating 由最严重项映射。
 _SEV_SCORE = {"low": 0.3, "medium": 0.5, "high": 0.7, "critical": 0.9}
@@ -226,9 +244,18 @@ _VER_MAJOR = re.compile(r"^\D*(\d+)")
 
 
 def _abnormal_version(spec: str) -> bool:
-    """主版本号畸高(≥50)→ 依赖混淆典型信号(攻击者发超高版本抢解析,如 99.0.1 / ^100.0.0)。"""
+    """主版本号畸高(≥50)→ 依赖混淆典型信号(攻击者发超高版本抢解析,如 99.0.1 / ^100.0.0)。
+
+    排除日历版本(CalVer):`pytz==2024.1`、`certifi==2024.2.2`、`tzdata==2024.1` 等正规包主版本
+    是四位年份,不该判异常。年份区间(1900–2100)一律豁免;真·抢解析用的是 99/100/9999 等非年份畸高值。
+    """
     m = _VER_MAJOR.match(spec.strip())
-    return bool(m) and int(m.group(1)) >= 50
+    if not m:
+        return False
+    major = int(m.group(1))
+    if 1900 <= major <= 2100:  # CalVer 年份,正规
+        return False
+    return major >= 50
 
 
 def _nested_descriptions(manifest: dict) -> list[str]:
@@ -280,7 +307,7 @@ class ManifestScanner:
         description = "\n".join(
             [str(manifest.get("description") or manifest.get("desc") or ""), *nested_desc]
         )
-        hits = sorted({m.group(0) for m in _DESC_SUSPICIOUS.finditer(description)})
+        hits = _regex_hits(_DESC_SUSPICIOUS, description, decode=True)
         if hits:
             risks.append(
                 _finding(
@@ -293,7 +320,7 @@ class ManifestScanner:
         instr_parts: list[str] = list(nested_desc)  # 子工具描述也是指令注入面(rug-pull)
         for field in _INSTRUCTION_FIELDS:
             instr_parts.extend(_as_list(manifest.get(field)))
-        inj = sorted({m.group(0) for m in _MANIFEST_INJECTION.finditer("\n".join(instr_parts))})
+        inj = _regex_hits(_MANIFEST_INJECTION, "\n".join(instr_parts), decode=True)
         if inj:
             risks.append(
                 _finding(
@@ -308,7 +335,7 @@ class ManifestScanner:
         #      指名要碰 SSH/云密钥、服务令牌、系统凭据库的载体(工具描述投毒 / 凭据窃取面)。
         perm_text = _gather(manifest, "permissions", "scopes", "capabilities")
         sens_surface = "\n".join([description, *instr_parts, *perm_text])
-        sens = sorted({m.group(0) for m in _SENSITIVE_ACCESS.finditer(sens_surface)})
+        sens = _regex_hits(_SENSITIVE_ACCESS, sens_surface)
         if sens:
             risks.append(
                 _finding(

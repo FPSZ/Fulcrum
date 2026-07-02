@@ -92,9 +92,16 @@ _RUN_SINK = re.compile(
     r"(?:;|&&|\|\|)\s*(?:sudo\s+)?(?:\./|/|~/)|"  # && /tmp/x.sh   ; ./x   ~/x
     r"(?:;|&&|\|\|)\s*(?:sudo\s+)?python\d?\b|"
     r"(?:;|&&|\|\|)\s*powershell\b|"
+    # 多步·换行分隔的执行落点:README/setup 代码块常以换行(而非 ;/&&)分隔多条命令,
+    # 行首直接运行**下载到临时/家目录的产物**(curl -O /tmp/p → 换行 → /tmp/p)。只认 /tmp、~/
+    # 这类瞬时下载落点,不认 ./configure、/usr/bin/... 等常见良性构建路径(保 0 FP)。
+    r"(?:^|\n)\s*(?:sudo\s+)?(?:/tmp/|~/)|"
     r"\biex\b|invoke-expression",
     re.IGNORECASE,
 )
+# chmod +x / chmod 7xx:把刚取到的文件置为可执行 —— 「下载即执行链」的强信号(良性文档极少
+# 对 curl 下来的东西 chmod +x)。与 fetch 共现即认定 DDIPE 链,无需再等显式运行落点。
+_CHMOD_EXEC = re.compile(r"chmod\s+(?:\+?x\b|[0-7]*[1357][0-7]{2}\b)", re.IGNORECASE)
 
 
 def _embedded_rce(text: str) -> bool:
@@ -104,8 +111,9 @@ def _embedded_rce(text: str) -> bool:
     # argv 注入(`tar --checkpoint-action=`、`find -exec`、`ssh -o ProxyCommand=` …)无条件危险。
     if argrisk.command_arg_injection({"command": text}):
         return True
-    # 下载即执行链:取/解码 verb 与执行落点同块共现。
-    return bool(_FETCH_DECODE.search(text) and _RUN_SINK.search(text))
+    # 下载即执行链:取/解码 verb 与「执行落点」或「chmod +x 置可执行」同块共现
+    # (换行分隔的多步 fetch→chmod→run 亦覆盖,见 _RUN_SINK/_CHMOD_EXEC)。
+    return bool(_FETCH_DECODE.search(text) and (_RUN_SINK.search(text) or _CHMOD_EXEC.search(text)))
 
 
 # ── L3:行为类同义指示符(多语言/多工具,与具体载荷字符串解耦)──────────────────

