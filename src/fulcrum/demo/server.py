@@ -1,7 +1,8 @@
 """政务智能体安全沙盘 · Web 服务 —— 给评委看的可交互演示。
 
-启动:  uv run python -m fulcrum.demo.server   (默认 http://127.0.0.1:8800)
+启动:  uv run python -m fulcrum.demo.server   (默认 http://127.0.0.1:8801)
 依赖:  .env 内 FULCRUM_MODEL_*(MiMo)。本服务独立于主控制台与登录鉴权,互不影响。
+端口:  默认 8801(与企业智能体 8800 错开,避免同机对跑时抢端口);FULCRUM_DEMO_PORT 可改。
 """
 
 from __future__ import annotations
@@ -55,7 +56,10 @@ app = create_demo_app()
 
 
 if __name__ == "__main__":
+    import os
+
     import uvicorn
 
-    print("枢衡政务安全沙盘:打开 http://127.0.0.1:8800")
-    uvicorn.run(app, host="127.0.0.1", port=8800, log_level="warning")
+    port = int(os.environ.get("FULCRUM_DEMO_PORT", "8801"))
+    print(f"枢衡政务安全沙盘(演示前端):打开 http://127.0.0.1:{port}")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

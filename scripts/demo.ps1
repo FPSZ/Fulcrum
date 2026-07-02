@@ -15,6 +15,20 @@ $env:FULCRUM_PORT = "8099"
 $env:FULCRUM_FRONTEND_DIR = "console/dist"
 $env:FULCRUM_BOOTSTRAP_ADMIN_PASSWORD = "Fulcrum@2026"   # 仅空库时生效,不改写已存在的 admin
 
+# ── 依赖源加速(国内干净机的最后一公里)──
+# uv 默认从 pypi.org 拉依赖、从 GitHub 下 Python 3.11 运行时,国内干净机极易卡死或超时。
+# 这里给出国内镜像默认值,但**仅在用户未自行配置时**才设(尊重已有 UV_* / 公司内网源),
+# 且可整体跳过:设 FULCRUM_NO_MIRROR=1(如境外机器或镜像故障)即用官方源。
+if (-not $env:FULCRUM_NO_MIRROR) {
+    if (-not $env:UV_DEFAULT_INDEX -and -not $env:UV_INDEX_URL) {
+        $env:UV_DEFAULT_INDEX = "https://pypi.tuna.tsinghua.edu.cn/simple"
+    }
+    if (-not $env:UV_PYTHON_INSTALL_MIRROR) {
+        # python-build-standalone 的国内镜像(替换 GitHub releases 前缀)。
+        $env:UV_PYTHON_INSTALL_MIRROR = "https://mirror.nju.edu.cn/github-release/astral-sh/python-build-standalone/releases/download"
+    }
+}
+
 function Have($cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 function Step($m) { Write-Host "  > $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "  [OK] $m" -ForegroundColor Green }

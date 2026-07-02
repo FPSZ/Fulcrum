@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import httpx
@@ -24,6 +25,11 @@ _SYSTEM = (
     "请用简洁中文回复,如实告知执行结果。"
 )
 _MAX_ITERS = 5
+# 单轮墙钟预算:必须 < 网关转发超时(GatewayConfig.timeout_seconds 默认 60s),否则模型稍慢或
+# 连发几轮工具调用即越过网关超时,用户看到"企业智能体不可达"而上游其实仍在正常工作。
+# 取 50s 留足余量;单次模型调用另设 25s 上限,使一次卡顿也吃不完整轮预算。
+_TURN_BUDGET_SECONDS = 50.0
+_CALL_TIMEOUT_SECONDS = 25.0
 
 
 class EnterpriseAgent:
@@ -44,7 +50,9 @@ class EnterpriseAgent:
             self._sessions[session_id] = [{"role": "system", "content": _SYSTEM}]
         return self._sessions[session_id]
 
-    async def _call_model(self, history: list[dict[str, Any]]) -> dict[str, Any]:
+    async def _call_model(
+        self, history: list[dict[str, Any]], timeout: float = _CALL_TIMEOUT_SECONDS
+    ) -> dict[str, Any]:
         if not self._key:
             return self._stub_reply(history)
         payload = {
@@ -55,7 +63,7 @@ class EnterpriseAgent:
         }
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self._key}"}
         url = f"{self._base}/chat/completions"
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
@@ -74,9 +82,15 @@ class EnterpriseAgent:
 
         tool_trace: list[dict[str, Any]] = []
         reply = ""
+        deadline = time.monotonic() + _TURN_BUDGET_SECONDS
         for _ in range(_MAX_ITERS):
+            # 墙钟预算耗尽:停止继续调模型/工具,返回已得的部分结果,确保整轮在网关转发超时内收口。
+            remaining = deadline - time.monotonic()
+            if remaining <= 1.0:
+                reply = reply or "[企业智能体] 本轮处理超时,已返回当前进展。"
+                break
             try:
-                msg = await self._call_model(history)
+                msg = await self._call_model(history, timeout=min(_CALL_TIMEOUT_SECONDS, remaining))
             except Exception as exc:  # noqa: BLE001 —— 上游模型异常如实回报
                 reply = f"[企业智能体] 模型调用失败:{type(exc).__name__}: {exc}"
                 break
