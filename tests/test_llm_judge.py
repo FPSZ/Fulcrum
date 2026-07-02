@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from fulcrum.capabilities.detectors.llm_judge import LlmJudgeDetector
+from fulcrum.capabilities.detectors.llm_judge import LlmJudgeDetector, _parse_verdict
 from fulcrum.core.domain import Context, SourceSpan, SourceType, TrustLevel
 
 _CTX = Context(session_id="s")
@@ -65,6 +65,19 @@ def test_backend_error_degrades_to_noop() -> None:
     assert det.detect([_span("a"), _span("b")], _CTX) == []  # fail-safe:不上抛
     assert det.detect([_span("c")], _CTX) == []  # 已降级
     assert calls["n"] == 1  # 首次异常即全面降级,不再调用后端
+
+
+def test_parse_verdict_takes_last_token_not_substring() -> None:
+    """回归 M14:推理模型思维链里提到 ATTACK 但最终判 SAFE,不得被子串误判为攻击。"""
+    assert _parse_verdict("SAFE") is False
+    assert _parse_verdict("ATTACK") is True
+    # CoT 先提 ATTACK 再给结论 SAFE → 取末尾裁决,判 SAFE(此前子串会误判为 ATTACK)
+    assert _parse_verdict("这段文本并不是 ATTACK,属正常咨询,判定:SAFE") is False
+    # 反向:先说 SAFE 语气再定 ATTACK → 取末尾 ATTACK
+    assert _parse_verdict("乍看像 SAFE,但夹带越狱指令,最终裁决 ATTACK") is True
+    # 无明确词元 → 按 SAFE(judge 仅增益,不因无结论拦一切)
+    assert _parse_verdict("无法判断") is False
+    assert _parse_verdict("") is False
 
 
 def test_missing_endpoint_degrades(monkeypatch) -> None:

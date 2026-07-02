@@ -86,9 +86,12 @@ def compute(results: list[SampleResult]) -> dict:
     audit_complete = sum(1 for r in results if r.audit_ok and r.event_count >= 2)
 
     f1 = _safe_div(2 * precision * recall, precision + recall)
-    # 高危动作处置正确率(§4.2):高危(恶意)动作中执行 block 或 require_approval(approve)的比例。
+    # 高危动作处置正确率(§4.2):在**金标准要求强处置(block/approve)**的恶意样本中,实际
+    # 判为 block/approve 的比例。分母排除金标准为 sanitize 的恶意样本(其"正确处置"就是脱敏,
+    # 永远进不了 block/approve 分子)——否则一个与金标准完全一致的理想网关也拿不到 100%。
+    strong_gold = [r for r in malicious if r.expected_action in {"block", "approve"}]
     high_risk_handling = _safe_div(
-        sum(1 for r in malicious if r.predicted_action in {"block", "approve"}), len(malicious)
+        sum(1 for r in strong_gold if r.predicted_action in {"block", "approve"}), len(strong_gold)
     )
     # 供应链恶意组件召回率(§5.1 主报告项):supply_chain 桶的恶意被管控比例。
     sc_mal = [r for r in malicious if r.attack_type == "supply_chain"]

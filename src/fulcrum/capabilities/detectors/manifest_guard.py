@@ -62,14 +62,30 @@ _REVIEW_SCORE = 0.7  # → 入口闸门 approve(REVIEW_AT=0.6)
 
 
 def _extract_braced(text: str) -> str | None:
-    """抽取最外层平衡 `{…}` 块(manifest 常嵌在中文请求与【插件清单】标记之间)。"""
+    """抽取最外层平衡 `{…}` 块(manifest 常嵌在中文请求与【插件清单】标记之间)。
+
+    计数时跳过字符串字面量内部:否则值里放一个 `}`(如 `desc:"用 } 收尾"`)就会让 depth
+    提前归零、截出半截块 → 解析失败 → 漏检。引号感知(单/双引号 + 反斜杠转义)后不可绕过。
+    """
     start = text.find("{")
     if start < 0:
         return None
     depth = 0
+    in_str: str | None = None  # 当前所在字符串的引号字符;None=不在字符串内
+    escaped = False
     for i in range(start, len(text)):
         ch = text[i]
-        if ch == "{":
+        if in_str is not None:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == in_str:
+                in_str = None
+            continue
+        if ch in ("'", '"'):
+            in_str = ch
+        elif ch == "{":
             depth += 1
         elif ch == "}":
             depth -= 1

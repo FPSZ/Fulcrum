@@ -27,6 +27,7 @@ registry,在 fulcrum.yml `detectors` 启用并于 `options.llm_judge` 配 endpoi
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 
 from ...core.domain import Context, Finding, SourceSpan, TrustLevel
@@ -81,6 +82,22 @@ def _severity(score: float) -> str:
     return "low"
 
 
+_VERDICT_RE = re.compile(r"\b(ATTACK|SAFE)\b")
+
+
+def _parse_verdict(content: str) -> bool:
+    """从裁决文本判是否 ATTACK。取**最后一个**独立 ATTACK/SAFE 词元为准。
+
+    推理模型会先走思维链(如"这不是 ATTACK,应判 SAFE")再给结论,子串 `"ATTACK" in ...`
+    会被 CoT 里的提及误命中而假阳;结论恒在末尾,故取最后一次 `\\b` 匹配。两者都没有 →
+    无明确结论,按 SAFE 计(judge 仅作增益,不因自身无结论而拦一切)。
+    """
+    verdict = None
+    for m in _VERDICT_RE.finditer(content.upper()):
+        verdict = m.group(1)
+    return verdict == "ATTACK"
+
+
 def _build_messages(text: str) -> list[dict[str, str]]:
     msgs: list[dict[str, str]] = [{"role": "system", "content": _SYSTEM}]
     for q, a in _SHOTS:
@@ -128,7 +145,7 @@ def _load_default_backend(
             # 记日志后按"非攻击"处理(judge 仅作增益,不因自身无结论而拦一切);调大 max_tokens 可消除。
             _LOG.warning("llm_judge 裁决为空(model=%s,疑 max_tokens 不足),本条按 SAFE 计", model)
             return False
-        return "ATTACK" in content.upper()
+        return _parse_verdict(content)
 
     return judge
 
