@@ -22,6 +22,7 @@ import yaml
 from ...core.domain import Context, Disposition, PolicyDecision, RiskLevel, ToolIntent, TrustLevel
 from ...core.errors import ConfigError
 from ...core.registry import capability
+from ...core.trust import intent_worst_trust
 from ..toolguard import argrisk
 
 _DEFAULT_POLICY = Path("data/policies/default.yml")
@@ -184,16 +185,7 @@ class YamlPolicyEngine:
                     best_score, best_kind = f.score, f.kind
         return best_kind
 
-    @staticmethod
-    def _worst_trust(intent: ToolIntent, ctx: Context) -> str | None:
-        by_id = {s.source_id: s for s in ctx.spans}
-        trusts = [by_id[sid].trust_level for sid in intent.derived_from_sources if sid in by_id]
-        if trusts:
-            return max(trusts, key=lambda t: _TRUST_RANK[t]).value
-        # 有声明来源却无 span 可核验(工具网关路径)→ fail-closed 视为不可信。
-        if intent.derived_from_sources:
-            return TrustLevel.UNTRUSTED.value
-        return None
+    _worst_trust = staticmethod(intent_worst_trust)  # 与 core.pipeline 共用单一真源(评审 M1)
 
     def _matches(self, when: dict[str, Any], facts: dict[str, Any]) -> bool:
         return all(self._check(key, expected, facts) for key, expected in when.items())

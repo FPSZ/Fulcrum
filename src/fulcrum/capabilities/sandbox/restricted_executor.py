@@ -10,7 +10,9 @@ MVP 边界(对齐 arch §6.3,诚实声明降级):
   且 URL 协议须为 http/https,file/gopher/dict/ftp 等(借工具读本地文件/打内部协议)一律拒。
 - **载荷**:出站参数体积设上限——即便目标域名在白名单内,超大参数体(批量数据)一律拒,
   堵"经允许通道批量外泄"。与执行后输出截断对称:入口防灌出、出口防批量回。
-- **超时**:工具调用放进线程并设墙钟超时,超时即判失败返回(不阻塞管线)。
+- **超时**:工具调用放进线程并设墙钟超时,超时即解除管线等待、判失败返回(不阻塞管线)。
+  注意:超时**不杀线程**(Python 无法安全强杀),工具会在后台跑完、副作用照发;真正阻止副作用
+  须靠可取消的子进程/容器(P3)。此处只保证管线不被慢工具拖住。
 - **资源(CPU/内存)/ 进程级隔离**:需容器或受限子进程,属 P3 增强,本 MVP 不覆盖,
   在此明确标注边界,不夸大为"完全隔离"。
 
@@ -202,7 +204,11 @@ class RestrictedExecutor:
         if _payload_size(args) > self._max_input:
             return _deny(f"出站载荷超体积上限({self._max_input} 字符),拒绝执行(防批量外泄)")
 
-        # ---- 超时受限执行:工具调用入线程 + 墙钟超时,超时不阻塞管线 ----
+        # ---- 超时受限执行:工具调用入线程 + 墙钟超时 ----
+        # 诚实边界(P3):超时只**解除管线等待**、让本次调用即刻判失败返回,并**不**能杀死底层
+        # 工作线程——Python 无法安全强杀线程,tool.call 会在后台跑完,其副作用(写盘/外联)照发,
+        # 且连续超时会占满默认线程池。真正的"超时即终止副作用"须靠可取消的子进程/容器执行
+        # (进程隔离,见模块头 P3)。此处仅保证管线不被单个慢工具拖住。
         loop = asyncio.get_running_loop()
         try:
             result = await asyncio.wait_for(
@@ -210,7 +216,7 @@ class RestrictedExecutor:
                 timeout=self._timeout,
             )
         except TimeoutError:
-            return _deny(f"执行超时(> {self._timeout:g}s),强制终止")
+            return _deny(f"执行超时(> {self._timeout:g}s),已解除管线等待(工具线程可能仍在后台运行)")
         except Exception as exc:  # noqa: BLE001 —— 执行异常不外泄细节给调用方,统一判失败
             return ExecResult(ok=False, error=f"执行异常:{type(exc).__name__}")
 

@@ -30,6 +30,7 @@ from .domain import (
 )
 from .gateway import GateVerdict, screen, screen_output
 from .redaction import redact
+from .trust import intent_worst_trust
 
 if TYPE_CHECKING:  # 仅类型注解,避免运行时耦合
     from .ports import (
@@ -75,20 +76,8 @@ def _sanitize_args(arguments: dict) -> tuple[dict, list[str]]:
     return sanitized, changed
 
 
-def _intent_source_trust(intent: ToolIntent, ctx: Context) -> str | None:
-    """本次调用所依据来源的最坏信任级(worst-first);无可核验来源则 None。
-
-    与策略引擎判信任同口径:取 intent 归因到的各来源 span 里最不可信的一档;有声明来源
-    却无 span 可核验(工具网关路径)→ 视为不可信(fail-closed)。
-    """
-    by_id = {s.source_id: s for s in ctx.spans}
-    trusts = {by_id[sid].trust_level for sid in intent.derived_from_sources if sid in by_id}
-    for level in (TrustLevel.UNTRUSTED, TrustLevel.SEMI_TRUSTED, TrustLevel.TRUSTED):
-        if level in trusts:
-            return level.value
-    if intent.derived_from_sources:
-        return TrustLevel.UNTRUSTED.value
-    return None
+# 来源最坏信任级归约:与 yaml_policy 共用 core.trust 单一真源(消除口径漂移,评审 M1)。
+_intent_source_trust = intent_worst_trust
 
 
 @dataclass(slots=True)
