@@ -291,7 +291,7 @@ async function reset(){
   document.getElementById("chainTag").style.display="none";
 }
 sendBtn.onclick=send;document.getElementById("reset").onclick=reset;
-input.addEventListener("keydown",e=>{if(e.key==="Enter")send();});
+input.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing)send();});
 loadFiles();renderPresets();renderRedteam();
 </script>
 </body>

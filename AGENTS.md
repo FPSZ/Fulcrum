@@ -64,7 +64,8 @@ Fulcrum/
 │   ├── arch/              架构、模块设计、接口契约
 │   ├── eval/              评测方案、指标定义、实验记录
 │   └── reference/         赛题资料、外部参考、调研材料
-├── src/                   源代码
+├── src/                   后端源代码
+├── console/               前端控制台(Vue + TS 工程)
 ├── tests/                 测试
 ├── scripts/               可复现运行、部署、评测脚本
 ├── deploy/                部署相关资产

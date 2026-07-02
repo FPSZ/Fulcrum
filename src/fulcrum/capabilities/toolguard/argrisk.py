@@ -229,7 +229,9 @@ def path_outside_workspace(arguments: dict, workspace: str) -> bool:
     if not raw:
         return False
     norm = raw.replace("\\", "/")
-    if ".." in norm:
+    # 只认**路径段**恰为 `..` 的上级穿越,不把含 `..` 子串的合法文件名(如 `..hidden`、
+    # `my..notes.txt`)误判为越界。
+    if ".." in norm.split("/"):
         return True
     ws = workspace.replace("\\", "/").rstrip("/")
     if norm == ws or norm.startswith(ws + "/"):

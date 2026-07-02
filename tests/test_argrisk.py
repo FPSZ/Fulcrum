@@ -230,6 +230,21 @@ def test_encoded_benign_path_inside_workspace_ok() -> None:
     )
 
 
+@pytest.mark.parametrize("name", ["..hidden", "my..notes.txt", "v1..2.log"])
+def test_filename_containing_dotdot_substring_not_flagged(name: str) -> None:
+    # 回归:含 `..` 子串的合法文件名(路径段本身不等于 `..`)不应误判越界。
+    assert (
+        argrisk.path_outside_workspace({"path": f"data/workspace/{name}"}, "data/workspace")
+        is False
+    )
+
+
+def test_real_dotdot_segment_still_flagged() -> None:
+    # 真·上级穿越(路径段恰为 `..`)仍须判越界。
+    out = argrisk.path_outside_workspace({"path": "data/workspace/../etc"}, "data/workspace")
+    assert out is True
+
+
 @pytest.mark.parametrize(
     "args",
     [

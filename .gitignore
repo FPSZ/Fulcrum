@@ -8,7 +8,7 @@ secrets/
 *.key
 *.crt
 credentials.json
-docs\secrets
+docs/secrets/
 # ───────────────────────────── Python ─────────────────────────────
 __pycache__/
 *.py[cod]
@@ -105,4 +105,5 @@ shot.json
 .DS_Store
 Thumbs.db
 desktop.ini
-try
+# 早期静态原型归档目录(仅根目录);不写成裸 `try` 以免忽略任意层级的 try/ 目录。
+/try/

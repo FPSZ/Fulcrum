@@ -1,7 +1,7 @@
 """`python -m fulcrum.eval` —— 回放攻击样例集,产出 P0 主结果表 + JSON 报告(对应赛题目标④)。
 
 用法:python -m fulcrum.eval [--dataset 样例集.jsonl] [--out 报告.json]
-默认样例集 samples/eval/govoffice.jsonl;默认报告写 docs/eval/results/latest.json。
+默认样例集 samples/eval/corpus(目录递归合并);默认报告写 docs/eval/results/latest.json。
 """
 
 from __future__ import annotations

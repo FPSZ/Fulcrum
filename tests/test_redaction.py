@@ -28,6 +28,14 @@ def test_redacts_phone_and_email() -> None:
     assert "zhangsan@gov.cn" not in out and "@gov.cn" in out
 
 
+def test_redacts_phone_with_separators() -> None:
+    # 回归:带空格/短横的手机号也须打码(此前只认 11 位连写,分隔符形式明文漏过)。
+    for raw in ("138 1234 5678", "138-1234-5678"):
+        out = redact(f"电话 {raw} 请保存")
+        assert "1234" not in out, f"中段未打码:{out}"
+        assert "138" in out and "5678" in out
+
+
 def test_redacts_explicit_secret_and_long_token() -> None:
     assert "hunter2secret" not in redact("密码: hunter2secret")
     assert "AKIA1234567890ABCDEFGHIJ" not in redact("key=AKIA1234567890ABCDEFGHIJ")
