@@ -111,7 +111,8 @@ def _span(source_type: SourceType, trust: TrustLevel, text: str) -> SourceSpan:
         source_type=source_type,
         trust_level=trust,
         content_hash=_hash(text),
-        excerpt=text[:200],
+        excerpt=text[:200],  # 审计/展示摘要
+        content=text,  # 检测看全文:长文档靠后的间接注入也不漏检
     )
 
 

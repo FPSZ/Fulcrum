@@ -126,7 +126,7 @@ class DisclosureEgressDetector:
         findings: list[Finding] = []
         for span in spans:
             # 在归一化文本上匹配(NFKC + 剥不可见 + 同形字折叠),抹平全角/零宽/同形字绕过。
-            text = normalize(span.excerpt)
+            text = normalize(span.content)
 
             if _POLICY_FRAME.search(text):
                 markers = [p.pattern for p in _POLICY_MARKERS if p.search(text)]

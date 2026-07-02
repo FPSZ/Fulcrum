@@ -13,9 +13,21 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
 from urllib.parse import urlparse
 
 _METADATA_HOSTS = {"metadata", "metadata.google.internal"}
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """链路本地(含 169.254.169.254 云元数据)/ 组播 / 保留 → 拦。loopback/私网按本地私有化放行。
+
+    loopback 需显式豁免:IPv6 `::1` 在 Python 里 `is_reserved=True`,不豁免会误伤本地模型
+    (`http://localhost` / `http://[::1]`),而本地私有化恰恰要放行 loopback。169.254 是链路本地
+    (非 loopback),仍被拦。"""
+    if ip.is_loopback:
+        return False
+    return ip.is_link_local or ip.is_multicast or ip.is_reserved
 
 
 def validate_endpoint(endpoint: str) -> str:
@@ -35,7 +47,22 @@ def validate_endpoint(endpoint: str) -> str:
         ip = ipaddress.ip_address(host)
     except ValueError:
         ip = None
-    if ip is not None and (ip.is_link_local or ip.is_multicast or ip.is_reserved):
-        # 链路本地含 169.254.169.254 云元数据。loopback/私网按本地私有化需要放行。
-        raise ValueError("端点不得指向链路本地 / 元数据 / 保留地址")
+    if ip is not None:
+        if _is_blocked_ip(ip):
+            raise ValueError("端点不得指向链路本地 / 元数据 / 保留地址")
+        return endpoint
+    # 主机名:解析到 IP 再判定 —— 否则指向"解析到 169.254.169.254 的自定义域名"可绕过元数据闸
+    # (只查 IP 字面量 + 两个固定元数据名并不够)。解析失败不硬拒:本地私有化部署可能填暂不可达的
+    # 内网名,硬拒会误伤;残留的 DNS 重绑定面由连接侧/出口白名单兜。
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return endpoint
+    for info in infos:
+        try:
+            resolved = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if _is_blocked_ip(resolved):
+            raise ValueError("端点主机名解析到链路本地 / 元数据 / 保留地址,拒绝")
     return endpoint

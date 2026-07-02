@@ -157,7 +157,8 @@ class GovRuntime:
                 source_type=SourceType.DOCUMENT,
                 trust_level=TrustLevel.UNTRUSTED,
                 content_hash=_hash(output),
-                excerpt=output[:600],
+                excerpt=output[:600],  # 审计/展示摘要
+                content=output,  # 检测看全文
             )
             ctx.spans.append(span)
             doc_findings = await self.pipeline.detect_inputs(ctx, [span])

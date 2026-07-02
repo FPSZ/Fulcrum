@@ -338,7 +338,7 @@ class KeywordRuleDetector:
     def detect(self, spans: list[SourceSpan], ctx: Context) -> list[Finding]:
         findings: list[Finding] = []
         for span in spans:
-            text = span.excerpt
+            text = span.content
             # 匹配前归一化:在 原文/归一化(NFKC+剥不可见+同形字折叠)/去leet 多副本上跑规则,
             # 抹平 全角/同形字/零宽/双向/leetspeak 绕过(原文不动,仅用于匹配)。
             variants = match_variants(text)

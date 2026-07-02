@@ -104,26 +104,9 @@ export function EvidenceChain({ event: e }: { event: SecurityEvent }) {
 
       <Stage tone={e.verified ? 'accent' : 'block'} label={t('events.chain.hashchain')} last>
         {e.verified ? (
-          <div>
-            <div className="flex flex-col gap-1.5">
-              {[
-                ['#3', 'e3a1…7b'],
-                ['#4 ←', '9fc2…41'],
-                ['#5 ←', '7b08…d9'],
-              ].map(([k, v]) => (
-                <div
-                  key={k}
-                  className="font-data flex items-center gap-2.5 rounded-sm bg-inset px-[9px] py-1.5 text-[13px]"
-                >
-                  <span className="text-ink-mute">{k}</span>
-                  <span className="text-accent-ink">{v}</span>
-                </div>
-              ))}
-            </div>
-            <span className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-ok">
-              <Check className="h-[13px] w-[13px]" /> {t('events.chain.verified')}
-            </span>
-          </div>
+          <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-ok">
+            <Check className="h-[13px] w-[13px]" /> {t('events.chain.verified')}
+          </span>
         ) : (
           <div className="flex items-start gap-2.5 rounded-sm bg-crit/12 px-3 py-2.5 text-crit">
             <AlertTriangle className="mt-px h-4 w-4 shrink-0" />

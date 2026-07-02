@@ -27,7 +27,8 @@ class PassthroughLabeler:
                     source_type=SourceType.USER if is_user else SourceType.TOOL_RETURN,
                     trust_level=TrustLevel.TRUSTED if is_user else TrustLevel.UNTRUSTED,
                     content_hash=_hash(msg.content),
-                    excerpt=msg.content[:200],
+                    excerpt=msg.content[:200],  # 审计/展示摘要
+                    content=msg.content,  # 检测看全文
                 )
             )
         return spans

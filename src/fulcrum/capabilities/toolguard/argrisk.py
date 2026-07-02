@@ -87,21 +87,53 @@ _ARG_INJECTION = re.compile(
 )
 _WIN_DRIVE = re.compile(r"^[A-Za-z]:")
 _GLOB = re.compile(r"[*?]")
-# 承载外联目的地的参数键(按优先级):`url` 先,其次 webhook / 回调 / 端点等。
-# 之所以不止看 `url` —— SSRF 不只走 http.request:webhook.send / external.post / notify 这类
-# 工具用 endpoint / webhook / callback 等键承载目标,只盯 `url` 会让它们打内网/元数据漏判。
-# 仅纳入**URL 形态**的键(不含 to/recipient/email 这类地址形态,避免 urlparse 误解析邮箱)。
+# 承载外联目的地的参数键 —— 全模块**单一真源**:沙箱协议白名单、域名白名单、内网/元数据判定、
+# 链分析都据此,避免"改键名塞地址"绕过(SSRF 不只走 http.request:webhook.send / external.post /
+# notify / forward 各用不同键)。分两类形态:
+#   • URL 形态键 `_DEST_URL_KEYS`:值就是 URL,即便省略 scheme(webhook=`evil.com/x`)也按 URL 判。
+#   • 地址形态键 `_DEST_ADDR_KEYS`:值可能是邮箱(to=`a@corp.com`)或 URL(to=`https://evil.com`)。
+#     **仅当带显式 `://` 时**才当外联目的地——否则邮箱会被 urlparse 误解析成主机而误报。
 _DEST_URL_KEYS = (
     "url",
     "endpoint",
     "webhook",
+    "webhook_url",
     "callback",
     "callback_url",
     "uri",
     "target",
+    "target_url",
     "dest",
     "destination",
+    "redirect_url",
 )
+_DEST_ADDR_KEYS = (
+    "to",
+    "recipient",
+    "forward_to",
+    "redirect",
+    "cc",
+    "bcc",
+    "address",
+    "addr",
+    "location",
+    "link",
+)
+# 协议白名单等"扫全部目的地键"的判定复用此并集(单一真源,供沙箱执行器导入)。
+DEST_KEYS = _DEST_URL_KEYS + _DEST_ADDR_KEYS
+
+
+def _dest_raw(arguments: dict) -> str:
+    """按优先级取外联目的地原始串:URL 形态键取值即可;地址形态键仅当带显式 `://` 时才算
+    (否则把邮箱 to=`a@corp.com` 误当外联主机)。无则空串。"""
+    for k in _DEST_URL_KEYS:
+        if arguments.get(k):
+            return str(arguments[k])
+    for k in _DEST_ADDR_KEYS:
+        v = arguments.get(k)
+        if v and "://" in str(v):
+            return str(v)
+    return ""
 # 公认的本机主机名(非 IP 字面量,ipaddress 解析不了,单列)。
 _INTERNAL_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
 
@@ -229,12 +261,13 @@ def destructive_action(arguments: dict) -> bool:
 
 
 def url_host(arguments: dict) -> str | None:
-    """从外联目的地参数(按 `_DEST_URL_KEYS` 优先级)取主机名;无则 None。
+    """从外联目的地参数(见 `_dest_raw` 的键优先级/形态规则)取主机名;无则 None。
 
-    `url` 优先以保持 http.request 既有行为不变;其后的 webhook/endpoint 等键让非 http.request
-    的对外工具(webhook.send / external.post …)也进入 SSRF / 白名单判定的视野。
+    `url` 优先以保持 http.request 既有行为不变;其后的 webhook/endpoint 及带 scheme 的
+    to/forward_to 等键让非 http.request 的对外工具(webhook.send / notify / forward …)
+    也进入 SSRF / 白名单判定的视野。
     """
-    url = next((str(arguments[k]) for k in _DEST_URL_KEYS if arguments.get(k)), "")
+    url = _dest_raw(arguments)
     if not url:
         return None
     host = urlparse(url if "://" in url else f"//{url}").hostname
@@ -258,7 +291,7 @@ def dest_is_url(arguments: dict) -> bool:
     带点域名 / IP / 内网名)才参与判定,守住「非 URL 字段不被误判为外联」的下界。
     `url_is_internal` 只对 IP 字面量为真,天然无此问题,故仅外联白名单规则需要本围栏。
     """
-    raw = next((str(arguments[k]) for k in _DEST_URL_KEYS if arguments.get(k)), "")
+    raw = _dest_raw(arguments)
     if not raw:
         return False
     if "://" in raw:

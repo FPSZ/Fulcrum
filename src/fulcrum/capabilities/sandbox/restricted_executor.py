@@ -61,34 +61,8 @@ _RISKY_OPAQUE_SCHEMES: frozenset[str] = frozenset(
     }
 )
 
-# 目的地参数键集(协议兜底覆盖面)。工具未必把地址放进 `url`——webhook.send 用 webhook、
-# external.post 用 endpoint、转发类用 to/recipient/forward_to……只校验 `url` 一个键,攻击者
-# 改键名塞 file:// / gopher:// 即绕过。故协议白名单对**所有目的地键**生效;此处集中定义便于扩。
-_DEST_URL_KEYS: frozenset[str] = frozenset(
-    {
-        "url",
-        "uri",
-        "endpoint",
-        "webhook",
-        "webhook_url",
-        "callback",
-        "callback_url",
-        "target",
-        "target_url",
-        "dest",
-        "destination",
-        "to",
-        "recipient",
-        "address",
-        "addr",
-        "host",
-        "forward_to",
-        "redirect",
-        "redirect_url",
-        "location",
-        "link",
-    }
-)
+# 目的地参数键集单一真源见 `argrisk.DEST_KEYS`(URL 形态 + 地址形态并集)。协议白名单、域名/内网
+# 判定共用同一键集,避免"协议检查覆盖某键、域名检查漏该键"的漂移(曾致 {to:https://…} 绕过白名单)。
 
 # 路径参数键集(软链容纳检查覆盖面)。与目的地键互斥:这些键承载文件系统路径,执行前对其
 # 真实路径(realpath,跟随软链)做工作区容纳判定。集中定义便于以后随工具形态扩。
@@ -120,11 +94,12 @@ def _disallowed_url_scheme(arguments: dict) -> tuple[str, str] | None:
     """扫描**所有目的地键**,返回首个带非 http/https 协议的 (键名, 协议);全合规返回 None。
 
     纵深兜底:`_url_scheme` 旧实现只读 `url` 键,协议白名单只护住一个键,改键名(endpoint=
-    `file:///etc/passwd`、webhook=`gopher://…`)即绕过。这里对 `_DEST_URL_KEYS` 全集判协议。
-    协议成立须满足"含 `://`(权威形 URL)或属 `_RISKY_OPAQUE_SCHEMES`(file:/jar:…)",据此把
-    `localhost:6379`/`12:30`/`user@host`/`C:/x` 这类带冒号的良性值排除在外(只做加法、不误伤)。
+    `file:///etc/passwd`、webhook=`gopher://…`)即绕过。这里对 `argrisk.DEST_KEYS` 全集判协议
+    (与域名/内网判定同一键集真源)。协议成立须满足"含 `://`(权威形 URL)或属
+    `_RISKY_OPAQUE_SCHEMES`(file:/jar:…)",据此把 `localhost:6379`/`12:30`/`user@host`/`C:/x`
+    这类带冒号的良性值排除在外(只做加法、不误伤)。
     """
-    for key in _DEST_URL_KEYS:
+    for key in argrisk.DEST_KEYS:
         raw = str(arguments.get(key) or "")
         if not raw:
             continue

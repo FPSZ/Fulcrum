@@ -158,7 +158,7 @@ class EvidenceAttributor:
         # 此前按 span 输入顺序追加,首位可能是低置信度的可信源,会让 hit@1 系统性偏低。
         hits: list[tuple[str, float, str]] = []
         for span in spans:
-            excerpt = span.excerpt.lower()
+            excerpt = span.content.lower()
             matched = next((v for v in arg_vals if v in excerpt), None)
             if matched is None:
                 continue

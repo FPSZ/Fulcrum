@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .enums import (
     AuditEventType,
@@ -27,14 +27,27 @@ class Message(BaseModel):
 
 
 class SourceSpan(BaseModel):
-    """一段输入及其来源与信任级别(来源归因总线的基本单元)。"""
+    """一段输入及其来源与信任级别(来源归因总线的基本单元)。
+
+    `content` 是**检测所需全文**(不截断、不脱敏),检测器一律读它;`excerpt` 是审计/展示摘要
+    (可截断、可脱敏落库)。二者分离:否则把检测输入与展示摘要混为一谈,会让检测器只看到被截断的
+    摘要 —— 攻击者把载荷放在摘要窗口之后即漏检。未显式给 content 时回退到 excerpt(旧构造点/测试
+    行为不变)。
+    """
 
     source_id: str = Field(default_factory=_uuid)
     source_type: SourceType
     trust_level: TrustLevel
     content_hash: str
     excerpt: str
+    content: str = ""
     risk_tags: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _default_content_to_excerpt(self) -> SourceSpan:
+        if not self.content:
+            self.content = self.excerpt
+        return self
 
 
 class ModelRequest(BaseModel):

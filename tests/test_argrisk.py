@@ -169,6 +169,24 @@ def test_url_key_takes_precedence_over_other_dest_keys() -> None:
     assert argrisk.url_is_internal(args) is False
 
 
+# ── 地址形态目的地键(to/recipient/forward_to…):带 scheme 才算外联 ──────────────
+@pytest.mark.parametrize("key", ["to", "recipient", "forward_to", "redirect", "cc", "bcc"])
+def test_addr_key_with_scheme_enters_domain_and_ssrf_judgement(key: str) -> None:
+    # 回归 H2:目的地键分裂曾让 {to: https://evil} 绕过域名白名单与内网判定。地址形态键带
+    # 显式 scheme 时必须进入白名单/SSRF 视野(与协议白名单同一键集真源)。
+    assert argrisk.domain_allowed({key: "https://evil.com/collect"}, ["corp.com"]) is False
+    assert argrisk.url_is_internal({key: "http://169.254.169.254/"}) is True
+
+
+@pytest.mark.parametrize("value", ["alice@corp.com", "第三章", "section3"])
+def test_addr_key_without_scheme_not_treated_as_external(value: str) -> None:
+    # 无 scheme 的地址形态值(邮箱/栏目名)不当外联目的地 —— 否则 urlparse 会把邮箱域名误判为
+    # 外联主机而误报(窄集合当初排除 to/recipient 的本意)。
+    assert argrisk.domain_allowed({"to": value}, ["corp.com"]) is True
+    assert argrisk.url_is_internal({"to": value}) is False
+    assert argrisk.url_host({"to": value}) is None
+
+
 @pytest.mark.parametrize(
     "url",
     [

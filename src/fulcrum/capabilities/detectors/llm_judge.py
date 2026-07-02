@@ -193,7 +193,7 @@ class LlmJudgeDetector:
             return []
         findings: list[Finding] = []
         for span in spans:
-            text = span.excerpt[: self._max_chars]
+            text = span.content[: self._max_chars]
             if not text.strip():
                 continue
             try:

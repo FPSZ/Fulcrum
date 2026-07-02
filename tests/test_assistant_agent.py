@@ -426,7 +426,9 @@ def test_chat_endpoint_runs_and_audits(tmp_path: Path) -> None:
     body = resp.json()
     assert not body["blocked"] and body["reply"]
     assert body["compressed"] is False  # 短对话不触发压缩
-    chain = client.get("/audit/h-chat")
+    # 会话记忆/审计键按登录者收敛(属主绑定,防跨用户读),响应回传实际 session_id。
+    assert body["session_id"] == "assistant:admin:h-chat"
+    chain = client.get(f"/audit/{body['session_id']}")
     types = [e["event_type"] for e in chain.json()["events"]]
     assert "assistant_chat" in types
 

@@ -204,7 +204,8 @@ class SecurityPipeline:
                 source_type=SourceType.USER,
                 trust_level=TrustLevel.UNTRUSTED,
                 content_hash=hashlib.sha256(message.encode("utf-8")).hexdigest(),
-                excerpt=message[:600],
+                excerpt=message[:600],  # 审计/展示摘要
+                content=message,  # 检测看全文:载荷放在 600 字符后也不漏检
             )
         ]
         await self._emit(
@@ -259,7 +260,8 @@ class SecurityPipeline:
                 source_type=SourceType.ASSISTANT,
                 trust_level=TrustLevel.UNTRUSTED,
                 content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
-                excerpt=text[:600],
+                excerpt=text[:600],  # 审计/展示摘要
+                content=text,  # 检测看全文:载荷放在 600 字符后也不漏检
             )
         ]
         await self.detect_inputs(ctx, ctx.spans)
@@ -303,7 +305,8 @@ class SecurityPipeline:
                 source_type=SourceType.TOOL_RETURN,
                 trust_level=TrustLevel.UNTRUSTED,
                 content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
-                excerpt=text[:600],
+                excerpt=text[:600],  # 审计/展示摘要
+                content=text,  # 检测看全文:载荷放在 600 字符后也不漏检
             )
         ]
         await self.detect_inputs(ctx, ctx.spans)

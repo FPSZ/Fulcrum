@@ -108,6 +108,16 @@ def register_assistant_routes(
     can_operate = deps.require("ai.operate")
     can_configure = deps.require("ai.configure")  # 配置模型接入:高敏,默认仅超管+系统管理员
 
+    def _scoped(principal: Principal, raw: str | None) -> str:
+        """把客户端会话 id 收敛进当前登录者命名空间:存储/审计键 = 用户名 + 客户端子键。
+
+        session_id 由客户端提供且格式可猜(默认 `assistant:<用户名>`)。若直接用它作存储键,
+        任意 ai.operate 用户传 `session_id="<他人>"` 即可读到/清空他人助手记忆(横向越权)。
+        服务端强制以已认证的 principal.username 作前缀:不同用户即便传同一 id 也落各自命名空间,
+        结构性杜绝跨用户读/清 —— 属主绑定。"""
+        sub = (raw or "").strip() or "default"
+        return f"assistant:{principal.username}:{sub}"
+
     def _model_not_ready() -> bool:
         """是否应因「模型未配置」拦截对话:仅在真后端(非测试注入假后端)下启用。"""
         return enforce_model_ready and model_store is not None and not model_store.load().is_ready
@@ -147,7 +157,7 @@ def register_assistant_routes(
         三道吃狗粮闸门(入口/工具返回/出口)由 AssistantAgent 内部强制;一次会话落一条
         ASSISTANT_CHAT 审计。agent 未装配(纯管线测试)时回 503 语义的诚实提示。
         """
-        session_id = body.session_id or f"assistant:{principal.username}"
+        session_id = _scoped(principal, body.session_id)
         if agent is None:
             return AssistantChatResponse(
                 session_id=session_id,
@@ -208,7 +218,7 @@ def register_assistant_routes(
 
         与 /assistant/chat 同语义、同三道闸门;事件 `data: {json}\\n\\n`,类型见 agent.run_stream。
         """
-        session_id = body.session_id or f"assistant:{principal.username}"
+        session_id = _scoped(principal, body.session_id)
 
         not_ready = _model_not_ready()
 
@@ -239,7 +249,7 @@ def register_assistant_routes(
     ) -> AssistantResetResponse:
         """清空某会话的多轮记忆(新建会话 / 显式清除上下文)。无记忆存储时静默成功。"""
         if conversation is not None:
-            conversation.reset(body.session_id)
+            conversation.reset(_scoped(principal, body.session_id))
         return AssistantResetResponse(ok=True)
 
     @app.post("/assistant/request-approval", response_model=AssistantRequestApprovalResponse)
@@ -253,6 +263,7 @@ def register_assistant_routes(
         提示,只有操作员**显式发起**才在此落 evidence.approval_requested=True 的判定点——
         事件墙据此放行展示(见 events_routes.is_feed_noise)。落同会话审计链,可溯源到发起人。
         """
+        # 仅审计关联键(不加载会话记忆,无跨用户读风险);沿用调用方 session_id。
         session_id = body.session_id or f"assistant:{principal.username}"
         is_output = body.stage == "output"
         await pipeline.audit.append(
@@ -382,6 +393,7 @@ def register_assistant_routes(
             return AssistantConfirmResponse(
                 ok=False, summary="助手执行器未装配。", error="no_actuator"
             )
+        # 授权由 action_token + actuator 内 RBAC 强制;session_id 仅审计关联键,沿用调用方值。
         session_id = body.session_id or f"assistant:{principal.username}"
         res = await actuator.confirm(body.action_token, body.edited_args, principal, session_id)
         if res.denied:
@@ -405,6 +417,7 @@ def register_assistant_routes(
             return AssistantUndoResponse(
                 ok=False, summary="助手执行器未装配。", error="no_actuator"
             )
+        # 授权由 action_id + actuator 内 RBAC 强制;session_id 仅审计关联键,沿用调用方值。
         session_id = body.session_id or f"assistant:{principal.username}"
         res = await actuator.undo(body.action_id, principal, session_id)
         if res.denied:
@@ -445,6 +458,7 @@ def register_assistant_routes(
         body: AssistantPlanRequest,
         principal: Principal = Depends(can_operate),
     ) -> AssistantPlanResponse:
+        # 仅网关判定 + 审计(不加载会话记忆);session_id 沿用调用方值作审计关联键。
         session_id = body.session_id or f"assistant:{principal.username}"
 
         # 吃自己的狗粮:助手的请求先过枢衡输入网关(检测/策略/审计,与企业智能体同一套)。

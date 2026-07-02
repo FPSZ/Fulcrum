@@ -137,7 +137,7 @@ class ManifestGuardDetector:
     def detect(self, spans: list[SourceSpan], ctx: Context) -> list[Finding]:
         findings: list[Finding] = []
         for span in spans:
-            blob = _extract_braced(span.excerpt)
+            blob = _extract_braced(span.content)
             if not blob:
                 continue
             manifest = _loads_lenient(blob)

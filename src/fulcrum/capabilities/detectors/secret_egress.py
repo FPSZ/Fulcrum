@@ -197,7 +197,7 @@ class SecretEgressDetector:
     def detect(self, spans: list[SourceSpan], ctx: Context) -> list[Finding]:
         findings: list[Finding] = []
         for span in spans:
-            text = span.excerpt
+            text = span.content
             trust_mul = _TRUST_MUL.get(span.trust_level, 1.0)
             for kind, base, labels in (
                 ("credential_egress", _CRED_BASE, _credential_labels(text)),
