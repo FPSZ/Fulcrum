@@ -15,7 +15,7 @@
 | `attack_type` | ✅ | str | 攻击大类(见 §4) |
 | `ground_truth_malicious` | ✅ | bool | 金标准:是否恶意 |
 | `expected_action` | ✅ | enum | 期望处置:`allow`/`sanitize`/`approve`/`block` |
-| `input` / `reply` / `target_tool`+`tool_args` | ✅(三选一) | — | 载荷;决定路由(见 §5) |
+| `input` / `reply` / `target_tool`+`tool_args` / `steps` | ✅(四选一) | — | 载荷;决定路由(见 §5)。`steps`=多步链式,主 corpus 不含,见 §5 说明 |
 | `scenario` | | str | 场景,默认 `govoffice` |
 | `source_type` | | str | 来源角色:`user`/`assistant`/… |
 | `expected_trace_source` | | str | 归因金标准来源(document/webpage/retrieval/memory/tool_return/plugin_manifest) |
@@ -44,9 +44,13 @@
 `unauthorized_tool` · `data_exfiltration` · `data_leak` · `data_poisoning` · `supply_chain` · `benign`。
 
 ## 5. 路由(由载荷决定,优先级从高到低)
-1. 有 `target_tool` → **工具级**,过 `evaluate_intent`(策略判定)。
-2. 否则有 `reply` → **出口级**,过 `screen_output`(出口闸门)。
-3. 否则 → **输入级**,过 `screen_input`(输入闸门)。
+
+1. 有 `steps`(多步工具意图序列)→ **链式**,顺序回放过 `evaluate_intent`,由 `sequence` 链分析器识别「敏感读取→对外发送」跨步外泄(取多步最强处置)。机读:`dataset.py::is_chain_sample`。
+2. 否则有 `target_tool` → **工具级**,过 `evaluate_intent`(策略判定)。
+3. 否则有 `reply` → **出口级**,过 `screen_output`(出口闸门)。
+4. 否则 → **输入级**,过 `screen_input`(输入闸门)。
+
+> **链式样例的位置与评测**:链式样例集在 `samples/eval/chains.jsonl`,**不在 `corpus/` 目录下**,故 `python -m fulcrum.eval`(默认 `--dataset samples/eval/corpus`)**不加载**它——链分析器在默认主报告里只见单步样本、不出 finding。要评测链式外泄链需单独指定:`python -m fulcrum.eval --dataset samples/eval/chains.jsonl`(样本量小,指标仅供链路验证,不并入 200 条主表)。
 
 ## 6. 严重度评级(severity)
 | 级别 | 判据 |
