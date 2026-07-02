@@ -6,6 +6,20 @@
  */
 import { t } from '@/lib/i18n'
 
+/**
+ * 携带 HTTP 状态码的 API 错误。让上层(如 Query 的 retry 判定)按**状态码**决策,
+ * 不必去匹配本地化后的错误文案(中文文案匹配在英文 locale 下会失效)。
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 // FastAPI 校验错误的 loc 首段是入参位置(body/query/path/...),对用户是噪音,去掉只留字段路径。
 const _LOC_PREFIXES = new Set(['body', 'query', 'path', 'header', 'cookie'])
 
@@ -47,11 +61,12 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     data = text ? JSON.parse(text) : undefined
   } catch {
     // 非 JSON 响应体(反代 502 的 HTML 页等)→ 给状态码兜底,而非抛出生硬的 SyntaxError。
-    throw new Error(res.ok ? t('lib.api.bad_response') : t('lib.api.server_error', { status: res.status }))
+    if (res.ok) throw new Error(t('lib.api.bad_response'))
+    throw new ApiError(res.status, t('lib.api.server_error', { status: res.status }))
   }
   if (!res.ok) {
     const detail = (data as { detail?: unknown })?.detail
-    throw new Error(errorMessage(detail))
+    throw new ApiError(res.status, errorMessage(detail))
   }
   return data as T
 }

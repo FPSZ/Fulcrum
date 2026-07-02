@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { ArrowDown, Bot, Send, Server, ShieldCheck, User } from 'lucide-react'
 import { Badge, type BadgeTone, Button, Card, Input, toast } from '@/components/ui'
 import { cn } from '@/lib/utils'
@@ -186,15 +186,15 @@ export function GatewayPage() {
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
   const [trials, setTrials] = useState<Trial[]>([])
-  const seq = useRef(0)
 
   const send = async (text: string) => {
     const message = text.trim()
     if (!message || pending) return
     setPending(true)
-    seq.current += 1
+    // 每次实测用全局唯一会话号:组件级自增(web-gw-0…)会因刷新归零、多人同用而撞号,
+    // 把不同操作员的流量记进同一审计会话。
     try {
-      const res = await sendGatewayChat(`web-gw-${seq.current}`, message)
+      const res = await sendGatewayChat(`web-gw-${crypto.randomUUID()}`, message)
       setTrials((prev) => [{ ...res, message }, ...prev].slice(0, 20))
       setInput('')
     } catch (e) {

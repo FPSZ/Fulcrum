@@ -220,7 +220,7 @@ export const PAGE_TO_FEATURE: Record<string, string> = {
   supply: 'supply',
   tools: 'tools',
   settings: 'settings',
-  users: 'users',
+  users: 'admin-users', // 后端 page 枚举 users → 实际功能页 id 是 admin-users(见 features/admin/module)
 }
 
 /** 工具类别短名(侧栏分组 + 轨迹标签)。在调用时解析当前语言(故为函数)。 */

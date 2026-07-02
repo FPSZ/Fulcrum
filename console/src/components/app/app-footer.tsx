@@ -15,7 +15,7 @@ export function AppFooter({
   const nav = [
     { id: 'overview', label: t('app.footer.nav.overview') },
     { id: 'events', label: t('app.footer.nav.events') },
-    { id: 'users', label: t('app.footer.nav.users') },
+    { id: 'admin-users', label: t('app.footer.nav.users') },
     { id: 'settings', label: t('app.footer.nav.settings') },
   ]
   const legal = [

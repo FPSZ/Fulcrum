@@ -1,5 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 
+import { ApiError } from '@/lib/api/client'
+
 /**
  * 全站 TanStack Query 客户端 —— 前后端对接的查询地基。
  *
@@ -12,8 +14,8 @@ export const queryClient = new QueryClient({
       staleTime: 10_000,
       refetchOnWindowFocus: false,
       retry: (failureCount, error) => {
-        const msg = error instanceof Error ? error.message : ''
-        if (msg.includes('无权限') || msg.includes('未登录')) return false
+        // 鉴权类(401 未登录 / 403 无权限)不重试 —— 按状态码判定,不匹配本地化文案。
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return false
         return failureCount < 2
       },
     },
