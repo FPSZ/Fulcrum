@@ -17,6 +17,7 @@ export const assistant = {
   // 输入框
   'assistant.composer.placeholder': '给助手下达任务…',
   'assistant.composer.send': '发送',
+  'assistant.composer.stop': '停止生成',
   'assistant.composer.hint.ready': 'Enter 发送 · Shift+Enter 换行',
   'assistant.composer.hint.unconfigured': '模型未配置 · 点左侧设置',
   'assistant.composer.hint.contact_admin': '模型未配置 · 请联系管理员',
@@ -40,6 +41,7 @@ export const assistant = {
   'assistant.turn.blocked': '已被安全网关拦截',
   'assistant.turn.trace': '执行过程 · {n} 步',
   'assistant.turn.error': '出错:{msg}',
+  'assistant.turn.stopped': '(已停止生成)',
 
   // 上下文压缩提示
   'assistant.compress.title': '已自动压缩较早的上下文',

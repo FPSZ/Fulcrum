@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
-import { ArrowUp, Loader2, Settings2 } from 'lucide-react'
+import { ArrowUp, Loader2, Settings2, Square } from 'lucide-react'
 import { useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 
 export function Composer({
   onSend,
+  onStop,
   busy,
   autoFocus,
   modelReady,
@@ -15,6 +16,8 @@ export function Composer({
   onOpenSettings,
 }: {
   onSend: (s: string) => void
+  /** 流式生成中的中止回调(M25):传入后 busy 期间发送键变为可点的「停止」。 */
+  onStop?: () => void
   busy: boolean
   autoFocus?: boolean
   modelReady: boolean
@@ -70,20 +73,34 @@ export function Composer({
                 : t('assistant.composer.hint.contact_admin')}
           </span>
         </div>
-        <motion.button
-          onClick={submit}
-          disabled={busy || !value.trim()}
-          aria-label={t('assistant.composer.send')}
-          whileTap={{ scale: 0.88 }}
-          transition={{ duration: 0.12 }}
-          className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-ink text-white transition-colors hover:bg-ink-2 disabled:bg-line-3 disabled:text-white"
-        >
-          {busy ? (
-            <Loader2 className="h-[18px] w-[18px] animate-spin" />
-          ) : (
-            <ArrowUp className="h-[18px] w-[18px]" />
-          )}
-        </motion.button>
+        {busy && onStop ? (
+          // 流式生成中:发送键变「停止」(M25)——网络挂起也能一键解除,不再锁死输入。
+          <motion.button
+            onClick={onStop}
+            aria-label={t('assistant.composer.stop')}
+            title={t('assistant.composer.stop')}
+            whileTap={{ scale: 0.88 }}
+            transition={{ duration: 0.12 }}
+            className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-ink text-white transition-colors hover:bg-ink-2"
+          >
+            <Square className="h-[13px] w-[13px]" fill="currentColor" />
+          </motion.button>
+        ) : (
+          <motion.button
+            onClick={submit}
+            disabled={busy || !value.trim()}
+            aria-label={t('assistant.composer.send')}
+            whileTap={{ scale: 0.88 }}
+            transition={{ duration: 0.12 }}
+            className="focus-ring grid h-9 w-9 place-items-center rounded-full bg-ink text-white transition-colors hover:bg-ink-2 disabled:bg-line-3 disabled:text-white"
+          >
+            {busy ? (
+              <Loader2 className="h-[18px] w-[18px] animate-spin" />
+            ) : (
+              <ArrowUp className="h-[18px] w-[18px]" />
+            )}
+          </motion.button>
+        )}
       </div>
     </div>
   )

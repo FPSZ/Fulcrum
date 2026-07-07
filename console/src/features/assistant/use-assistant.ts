@@ -129,17 +129,22 @@ export async function resetAssistant(sessionId: string): Promise<void> {
 /**
  * 流式真 Agent(SSE,POST /assistant/chat/stream)。逐帧回调:delta(逐字)/ step / ui /
  * proposal / done。fetch + ReadableStream 解析 `data: {json}\n\n`,边到边更新对话。
+ *
+ * `signal`(M25):调用方传 AbortController.signal 即可中止——fetch 连接与 reader.read()
+ * 都会以 AbortError 拒绝,网络挂起也能被用户主动解除(否则 busy 永真锁死输入)。
  */
 export async function sendChatStream(
   message: string,
   sessionId: string,
   onEvent: (ev: StreamEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch('/assistant/chat/stream', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, session_id: sessionId }),
+    signal,
   })
   if (!res.ok || !res.body) {
     let detail = t('assistant.error.request_failed')

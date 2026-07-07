@@ -19,6 +19,7 @@ export const assistant: Partial<Record<MessageKey, string>> = {
   // Composer
   'assistant.composer.placeholder': 'Give the assistant a task…',
   'assistant.composer.send': 'Send',
+  'assistant.composer.stop': 'Stop generating',
   'assistant.composer.hint.ready': 'Enter to send · Shift+Enter for a new line',
   'assistant.composer.hint.unconfigured': 'Model not configured · open settings on the left',
   'assistant.composer.hint.contact_admin': 'Model not configured · contact your admin',
@@ -42,6 +43,7 @@ export const assistant: Partial<Record<MessageKey, string>> = {
   'assistant.turn.blocked': 'Blocked by the security gateway',
   'assistant.turn.trace': 'Execution trace · {n} steps',
   'assistant.turn.error': 'Error: {msg}',
+  'assistant.turn.stopped': '(stopped)',
 
   // Context-compression notice
   'assistant.compress.title': 'Earlier context was automatically compressed',
