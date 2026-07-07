@@ -103,6 +103,10 @@ export function AssistantPage() {
   // 后台仍在流的会话不会因组件重挂而误判为空闲。
   const busy = messages.some((m) => m.role === 'assistant' && m.streaming)
 
+  // 每会话一个 AbortController(M25):停止按钮/网络挂起时用户可主动中止当前会话的流。
+  // 键为会话 id——切会话后各自的流互不干扰;组件卸载**不**中止(后台续写 store 是有意设计)。
+  const aborters = useRef(new Map<string, AbortController>())
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages])
@@ -248,22 +252,31 @@ export function AssistantPage() {
           approvals: [],
         },
       ])
+      const ac = new AbortController()
+      aborters.current.set(cid, ac)
       try {
-        await sendChatStream(text, cid, (ev) => applyEvent(cid, aid, ev))
+        await sendChatStream(text, cid, (ev) => applyEvent(cid, aid, ev), ac.signal)
       } catch (e) {
+        // M25:错误**追加**在已流出内容之后,绝不整体替换——流到一半断线时已有的回答不丢。
+        // 用户主动停止(abort)不是错误:已有内容原样保留;一字未出则标记「已停止」。
+        const aborted = ac.signal.aborted
         setMessagesOf(cid, (m) =>
-          m.map((x) =>
-            x.id === aid && x.role === 'assistant'
-              ? {
-                  ...x,
-                  pending: false,
-                  streaming: false,
-                  text: t('assistant.turn.error', { msg: (e as Error).message }),
-                }
-              : x,
-          ),
+          m.map((x) => {
+            if (x.id !== aid || x.role !== 'assistant') return x
+            if (aborted) {
+              return { ...x, pending: false, streaming: false, text: x.text || t('assistant.turn.stopped') }
+            }
+            const errText = t('assistant.turn.error', { msg: (e as Error).message })
+            return {
+              ...x,
+              pending: false,
+              streaming: false,
+              text: x.text ? `${x.text}\n\n${errText}` : errText,
+            }
+          }),
         )
       } finally {
+        aborters.current.delete(cid)
         // 收尾:无论如何把流式态落定(busy 由它派生)。即便组件已卸载,写的是模块 store,回答不丢。
         setMessagesOf(cid, (m) =>
           m.map((x) =>
@@ -274,6 +287,11 @@ export function AssistantPage() {
     },
     [busy, activeId, applyEvent, setMessagesOf, modelReady, canConfigure, t],
   )
+
+  // 停止当前会话的流式生成(M25)。abort 触发上方 catch:内容保留、streaming 落定、busy 解锁。
+  const stopStreaming = useCallback(() => {
+    aborters.current.get(activeId)?.abort()
+  }, [activeId])
 
   // 新建会话:开一条新草稿(空态)。旧会话记忆保留,侧栏点回去上下文还在。
   const startNew = useCallback(() => {
@@ -397,6 +415,7 @@ export function AssistantPage() {
               >
                 <Composer
                   onSend={send}
+                  onStop={stopStreaming}
                   busy={busy}
                   autoFocus
                   modelReady={modelReady}
@@ -464,6 +483,7 @@ export function AssistantPage() {
               <div className="mx-auto max-w-[768px]">
                 <Composer
                   onSend={send}
+                  onStop={stopStreaming}
                   busy={busy}
                   modelReady={modelReady}
                   canConfigure={canConfigure}
