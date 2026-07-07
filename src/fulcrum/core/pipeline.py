@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -95,6 +96,66 @@ class PipelineResult:
     outcomes: list[ToolOutcome] = field(default_factory=list)
 
 
+# 处置严重度序:judge 旁路只能升格、不能降格(gain-only)。
+_SEVERITY: dict[Disposition, int] = {
+    Disposition.ALLOW: 0,
+    Disposition.SANITIZE: 1,
+    Disposition.APPROVE: 2,
+    Disposition.BLOCK: 3,
+}
+
+
+def _more_severe(a: GateVerdict, b: GateVerdict) -> GateVerdict:
+    """取处置更严的一方(严重度相等取 a)。"""
+    return a if _SEVERITY[a.decision] >= _SEVERITY[b.decision] else b
+
+
+@dataclass
+class PendingJudge:
+    """异步 judge 旁路句柄(plan/14 P_c §4.1)。
+
+    judge 在助手**模型规划期间并行**跑(后台线程,因 `detect` 是阻塞式);裁决由调用方在
+    **下游收口点**(写提案落地前 / 最终回复前)`settle()` 合并进即时确定性裁决。judge(~0.8s)
+    在模型规划(数秒)内跑完 → 操作员 +0ms 等待、又不漏(对比同步级联 P95 ~575ms)。
+
+    语义红线:
+    - **只升格不降格**:judge 只能把 ALLOW 升到 APPROVE/BLOCK,绝不放松确定性已定的处置;
+    - **fail-safe**:judge 任务异常 / 未配端点 → 即时裁决**原样成立**(judge 只增益,绝不因其
+      故障 fail-open,也绝不 fail-closed 拦一切;降级语义同 `detector/llm_judge`);
+    - **幂等**:下游多点收口(写提案前 + 回复前)反复调 `settle()` 返回同一结果、只判一次。
+    """
+
+    _fast: GateVerdict
+    _pipeline: SecurityPipeline
+    _session_id: str
+    _task: asyncio.Task[list[Finding]] | None = None
+    _settled: GateVerdict | None = None
+
+    async def settle(self) -> GateVerdict:
+        """等 judge 跑完并合并;幂等。无 judge 任务或任务失败 → 即时裁决原样返回。"""
+        if self._settled is not None:
+            return self._settled
+        if self._task is None:
+            self._settled = self._fast
+            return self._fast
+        try:
+            findings = await self._task
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 —— judge 故障=降级,即时裁决成立(不 fail-open/closed)
+            findings = []
+        merged = _more_severe(self._fast, screen(findings))
+        if merged.decision != self._fast.decision:  # 仅升格时落可观测审计,避免噪声
+            await self._pipeline.emit_async_judge(self._session_id, self._fast, merged)
+        self._settled = merged
+        return merged
+
+    def cancel(self) -> None:
+        """确定性已定(拦截/审批)无需再判时取消后台 judge,不浪费算力。"""
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+
+
 class SecurityPipeline:
     """串联各能力的安全管线。M0 用桩实现端到端跑通。"""
 
@@ -111,6 +172,7 @@ class SecurityPipeline:
         tools: dict[str, Tool],
         audit: AuditSink,
         model_client: ModelClient,
+        async_judge: Detector | None = None,
     ) -> None:
         self._labeler = labeler
         self._detectors = detectors
@@ -122,6 +184,9 @@ class SecurityPipeline:
         self._tools = tools
         self._audit = audit
         self._model = model_client
+        # 异步 judge 旁路(plan/14 P_c):仅助手工具治理路径用,judge 与模型规划并行跑,
+        # 裁决在下游收口点 settle 合并。None=未配置,行为与今日完全一致(向后兼容)。
+        self._async_judge = async_judge
 
     @property
     def audit(self) -> AuditSink:
@@ -260,6 +325,57 @@ class SecurityPipeline:
         else:
             await self._emit(ctx, AuditEventType.MODEL_FORWARDED, subject_id=req.request_id)
         return verdict
+
+    # ---- 流程 1b':助手输入闸门 + 异步 judge 旁路(plan/14 P_c;**仅助手路径**)----
+    async def screen_input_async(
+        self, session_id: str, message: str, *, team_id: int | None = None
+    ) -> tuple[GateVerdict, PendingJudge]:
+        """助手工具治理路径的输入闸门:同步确定性裁决 + 后台并行 judge(P_c 异步旁路)。
+
+        先跑 `screen_input`(同步确定性检测)得**即时裁决**——明显恶意当场拦,与网关同保证、
+        同审计。若配了 `async_judge` 且即时裁决为放行(要进模型规划),把 judge 丢进后台线程与
+        模型规划**并行**跑,裁决由返回的 `PendingJudge` 在下游收口点 settle 合并。
+
+        **仅适用助手**:前置网关的 `screen_input`/`screen_output` 保持同步不变(异步会先转发
+        再判、削弱"恶意输入不进企业智能体"的核心保证,§4.1)。本方法不改任何同步闸门,网关零波及;
+        未配 `async_judge` 时 `PendingJudge` 退化为即时裁决的空壳,行为与直接调 `screen_input` 一致。
+        """
+        fast = await self.screen_input(session_id, message, team_id=team_id)
+        if self._async_judge is None or not fast.forwarded:
+            # 未配 judge,或即时已拦/待审(不再进模型规划)→ 无并行窗口,不启后台任务。
+            return fast, PendingJudge(fast, self, session_id)
+        span = SourceSpan(
+            source_type=SourceType.USER,
+            trust_level=TrustLevel.UNTRUSTED,
+            content_hash=hashlib.sha256(message.encode("utf-8")).hexdigest(),
+            excerpt=message[:600],
+            content=message,
+        )
+        judge_ctx = Context(session_id=session_id)  # judge 用独立 ctx,不与主路径共享可变态
+        judge_ctx.spans = [span]
+        # detect() 是阻塞式(judge 内部 httpx.post)→ 丢线程池,真正与模型规划(async I/O)并行,
+        # 顺带不再阻塞事件循环(同步装配时 judge 会卡住循环)。
+        task = asyncio.create_task(asyncio.to_thread(self._async_judge.detect, [span], judge_ctx))
+        return fast, PendingJudge(fast, self, session_id, task)
+
+    async def emit_async_judge(
+        self, session_id: str, fast: GateVerdict, merged: GateVerdict
+    ) -> None:
+        """异步 judge 升格了入口裁决 → 落一条可观测审计(供事件页溯源;仅升格时记)。"""
+        await self._emit(
+            Context(session_id=session_id),
+            AuditEventType.POLICY_DECIDED,
+            decision=merged.decision,
+            evidence={
+                "reason": f"异步语义研判升格({fast.decision.value}→{merged.decision.value}):"
+                + merged.reason,
+                "risk_level": merged.risk_level,
+                "max_score": merged.max_score,
+                "top_kind": merged.top_kind,
+                "stage": "async_judge",
+                "escalated_from": fast.decision.value,
+            },
+        )
 
     # ---- 流程 1c:出口闸门(/gateway/chat 收到企业智能体回复后)----
     async def screen_output(

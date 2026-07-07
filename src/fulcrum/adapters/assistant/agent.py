@@ -350,13 +350,16 @@ class AssistantAgent:
         result = AssistantRunResult(session_id=session_id, reply="")
 
         # ① 入口网关(吃狗粮):恶意意图根本不提交模型;判「待审批」则当面问操作员是否发起申请。
-        gate = await self._pipeline.screen_input(session_id, intent)
+        #    P_c:确定性即时裁决当场定;放行则 judge 并行后台跑,裁决下游收口(写提案前 + 回复前)。
+        gate, pending = await self._pipeline.screen_input_async(session_id, intent)
         if gate.decision == Disposition.BLOCK:
+            pending.cancel()
             result.blocked = True
             result.reply = f"你的意图被安全网关判为高危并拦截({gate.reason}),未提交模型。"
             await self._audit(session_id, principal, intent, result, gate)
             return result
         if gate.decision == Disposition.APPROVE:
+            pending.cancel()
             result.approval_requests.append(self._approval_request("input", gate, intent))
             result.reply = _APPROVAL_REPLY
             await self._audit(session_id, principal, intent, result, gate)
@@ -386,6 +389,7 @@ class AssistantAgent:
                     o = self._handle_search(tc, principal, tools, loaded)
                 else:
                     o = await self._execute_tool(tc, by_name.get(tc.name), principal, session_id)
+                    o = await self._gate_write_proposal(o, pending)  # P_c:写提案落地前收口
                 result.steps.append(o.step)
                 if o.ui is not None:
                     result.ui_directives.append(o.ui)
@@ -405,12 +409,15 @@ class AssistantAgent:
         final = final or "(已完成上述操作。)"
 
         out = await self._pipeline.screen_output(session_id, final)
-        if out.decision == Disposition.APPROVE:
+        judge_v = await pending.settle()  # P_c:并入异步入口 judge 裁决
+        decision = self._worse_decision(out.decision, judge_v.decision)
+        if decision == Disposition.APPROVE:
             # 回复需人工复核:不直接回传内容,当面问操作员是否发起审批申请。
-            result.approval_requests.append(self._approval_request("output", out, final))
+            src = out if out.decision == Disposition.APPROVE else judge_v
+            result.approval_requests.append(self._approval_request("output", src, final))
             result.reply = _APPROVAL_REPLY
         else:
-            result.reply = self._gate_output(final, out)
+            result.reply = self._gate_output(final, decision)
         result.compressed = await self._persist(session_id, messages, result.reply)
         await self._audit(session_id, principal, intent, result, gate, out)
         return result
@@ -443,8 +450,10 @@ class AssistantAgent:
             return
 
         result = AssistantRunResult(session_id=session_id, reply="")
-        gate = await self._pipeline.screen_input(session_id, intent)
+        # P_c:确定性即时裁决当场定;放行则 judge 并行后台跑,裁决下游收口(写提案前 + 回复前)。
+        gate, pending = await self._pipeline.screen_input_async(session_id, intent)
         if gate.decision == Disposition.BLOCK:
+            pending.cancel()
             result.blocked = True
             result.reply = f"你的意图被安全网关判为高危并拦截({gate.reason}),未提交模型。"
             await self._audit(session_id, principal, intent, result, gate)
@@ -457,6 +466,7 @@ class AssistantAgent:
             }
             return
         if gate.decision == Disposition.APPROVE:
+            pending.cancel()
             req = self._approval_request("input", gate, intent)
             result.approval_requests.append(req)
             result.reply = _APPROVAL_REPLY
@@ -498,6 +508,7 @@ class AssistantAgent:
                     o = self._handle_search(tc, principal, tools, loaded)
                 else:
                     o = await self._execute_tool(tc, by_name.get(tc.name), principal, session_id)
+                    o = await self._gate_write_proposal(o, pending)  # P_c:写提案落地前收口
                 result.steps.append(o.step)
                 yield _step_event(o.step)
                 if o.ui is not None:
@@ -519,13 +530,16 @@ class AssistantAgent:
             final = "我已尽力检索(达到单轮步数上限)。请缩小范围或分步再问。"
         final = final or "(已完成上述操作。)"
         out = await self._pipeline.screen_output(session_id, final)
-        if out.decision == Disposition.APPROVE:
-            req = self._approval_request("output", out, final)
+        judge_v = await pending.settle()  # P_c:并入异步入口 judge 裁决
+        decision = self._worse_decision(out.decision, judge_v.decision)
+        if decision == Disposition.APPROVE:
+            src = out if out.decision == Disposition.APPROVE else judge_v
+            req = self._approval_request("output", src, final)
             result.approval_requests.append(req)
             result.reply = _APPROVAL_REPLY
             yield _approval_event(req)
         else:
-            result.reply = self._gate_output(final, out)
+            result.reply = self._gate_output(final, decision)
         result.compressed = await self._persist(session_id, messages, result.reply)
         await self._audit(session_id, principal, intent, result, gate, out)
         yield {
@@ -537,13 +551,38 @@ class AssistantAgent:
         }
 
     @staticmethod
-    def _gate_output(final: str, out: Any) -> str:
+    def _gate_output(final: str, decision: Disposition) -> str:
         """出口闸门处置:拦截→替换、净化→脱敏、放行→原样。"""
-        if out.decision == Disposition.BLOCK:
-            return "[出口安全策略:答复疑似含敏感数据,已拦截不予返回]"
-        if out.decision == Disposition.SANITIZE:
+        if decision == Disposition.BLOCK:
+            return "[安全策略:本轮答复经研判高危,已拦截不予返回]"
+        if decision == Disposition.SANITIZE:
             return redact(final)
         return final
+
+    # ── P_c 异步 judge 旁路的下游收口 helper ──────────────────────────────
+    _DISP_SEVERITY = {
+        Disposition.ALLOW: 0,
+        Disposition.SANITIZE: 1,
+        Disposition.APPROVE: 2,
+        Disposition.BLOCK: 3,
+    }
+
+    async def _gate_write_proposal(self, o: _ToolOutcome, pending: Any) -> _ToolOutcome:
+        """写提案落地前收口:入口意图经异步 judge 判高危 → 不生成可确认提案(不签发 token),
+        防越狱意图借模型之手暂存写操作。读/ui 不在此拦(读有同步工具返回闸 + RBAC)。"""
+        if o.proposal is None:
+            return o
+        if (await pending.settle()).decision == Disposition.BLOCK:
+            s = o.step
+            return _ToolOutcome(
+                feed="[入口意图经异步语义研判为高危,已拒绝生成写操作提案]",
+                step=AssistantStep(s.tool, s.kind, s.label, False, "异步 judge 判高危,写提案已拒"),
+            )
+        return o
+
+    def _worse_decision(self, a: Disposition, b: Disposition) -> Disposition:
+        """两处置取更严者(judge 只升格,不降格)。"""
+        return a if self._DISP_SEVERITY[a] >= self._DISP_SEVERITY[b] else b
 
     async def _execute_tool(
         self, tc: ToolCallReq, tool: AssistantTool | None, principal: Any, session_id: str
