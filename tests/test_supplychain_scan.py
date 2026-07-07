@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from fulcrum.capabilities.supplychain.manifest_scanner import ManifestScanner
+from fulcrum.capabilities.supplychain.manifest_scanner import (
+    ManifestScanner,
+    _normalize_pkg,
+    _osa_distance,
+    _typosquat_target,
+)
 from fulcrum.core.domain import Context, Disposition
 from fulcrum.scan import format_report, load_manifest, scan_manifest
 
@@ -285,3 +290,100 @@ def test_cli_scans_poisoned_skill_sample_block() -> None:
     report = scan_manifest(manifest)
     assert report.rating == Disposition.BLOCK
     assert "manifest.prompt_injection" in {f.kind for f in report.risks}
+
+
+# ---- 依赖名 typosquatting(形近抢注):编辑距离 + PEP503 归一化 + 白名单 ----
+def test_typosquat_dependency_flagged_high() -> None:
+    # sc-07 形态:reqeusts↔requests、colourama↔colorama、python-dateutil2↔python-dateutil。
+    report = _scan(
+        {"deps": {"reqeusts": "2.31.0", "python-dateutil2": "1.0.0", "colourama": "0.4.6"}}
+    )
+    ts = [f for f in report.risks if f.kind == "dep.typosquat"]
+    assert ts, "应识别 typosquat 依赖名"
+    matched = ts[0].evidence["matched"]
+    assert any("requests" in m for m in matched)
+    assert any("colorama" in m for m in matched)
+    assert report.rating == Disposition.APPROVE  # high → 人工复核(非 block)
+
+
+def test_typosquat_exact_popular_names_safe() -> None:
+    # 精确的知名包名(0 FP 红线):不得判 typosquat,整体放行。
+    report = _scan(
+        {
+            "name": "svc",
+            "deps": {
+                "requests": "2.31.0",
+                "numpy": "1.26.4",
+                "pandas": "2.1.0",
+                "flask": "3.0.0",
+                "sqlalchemy": "2.0.0",
+            },
+        }
+    )
+    assert "dep.typosquat" not in _kinds(report)
+    assert report.rating == Disposition.ALLOW
+
+
+def test_typosquat_normalization_variants_safe() -> None:
+    # 大小写 / 分隔符(-_.)差异是 PEP 503 同包变体,不得误判为抢注。
+    report = _scan({"deps": {"python_dateutil": "2.8", "Requests": "2.31", "NumPy": "1.26"}})
+    assert "dep.typosquat" not in _kinds(report)
+
+
+def test_typosquat_scoped_name_not_flagged() -> None:
+    # npm scoped(@scope/pkg)属命名空间/依赖混淆面,不在 typosquat 判定内(交给 version_anomaly)。
+    report = _scan({"deps": {"@corp/audit-core": "1.0.0", "@myorg/utils": "2.0.0"}})
+    assert "dep.typosquat" not in _kinds(report)
+
+
+def test_typosquat_distant_legit_lookalikes_safe() -> None:
+    # 真实合法近亲包(仅前缀/后缀扩展,编辑距离 >2)不得误报。
+    report = _scan(
+        {
+            "name": "ui",
+            "deps": {
+                "requests-oauthlib": "1.3.1",
+                "types-requests": "2.31.0",
+                "markdown-it": "14.0.0",
+                "django-cors-headers": "4.0.0",
+            },
+        }
+    )
+    assert "dep.typosquat" not in _kinds(report)
+    assert report.rating == Disposition.ALLOW
+
+
+def test_typosquat_known_legit_pairs_both_safe() -> None:
+    # 成对合法包两端都在白名单:精确匹配即安全,不互判抢注(boto/boto3、psycopg/psycopg2 等)。
+    for name in ("boto", "boto3", "psycopg", "psycopg2", "request", "requests"):
+        assert _typosquat_target(name) is None, name
+
+
+def test_typosquat_transforms_all_caught() -> None:
+    # 变换体:换位/插入/删除/重复等不同编辑形态,只要形近知名包都应命中(能力非签名)。
+    assert _typosquat_target("reqeusts") == "requests"  # 相邻换位
+    assert _typosquat_target("requsets") == "requests"  # 相邻换位(另一处)
+    assert _typosquat_target("requestts") == "requests"  # 重复插入
+    assert _typosquat_target("coloramaa") == "colorama"  # 尾部重复
+    assert _typosquat_target("panndas") == "pandas"  # 中间插入
+    assert _typosquat_target("expres") == "express"  # 删除
+
+
+def test_typosquat_short_name_not_flagged() -> None:
+    # 归一名 <4 的短名编辑距离噪声大,不判(避免短名误报)。
+    assert _typosquat_target("abc") is None
+    assert _typosquat_target("np") is None
+
+
+def test_osa_distance_counts_transposition_as_one() -> None:
+    # Damerau/OSA:相邻换位算 1 步(纯 Levenshtein 会算 2),超上界早退返回 max+1。
+    assert _osa_distance("reqeusts", "requests") == 1
+    assert _osa_distance("colourama", "colorama") == 1
+    assert _osa_distance("requests", "requests") == 0
+    assert _osa_distance("requests", "lodash", 2) == 3  # 远超上界 → max_dist+1
+
+
+def test_normalize_pkg_pep503() -> None:
+    assert _normalize_pkg("Python_DateUtil") == "python-dateutil"
+    assert _normalize_pkg("python.dateutil") == "python-dateutil"
+    assert _normalize_pkg("socket.io") == "socket-io"
