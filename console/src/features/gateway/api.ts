@@ -1,7 +1,8 @@
 import { api, j } from '@/lib/api/client'
 
-/** 网关处置:放行 / 净化 / 人工审核 / 拦截。 */
-export type Disposition = 'allow' | 'sanitize' | 'approve' | 'block'
+/** 网关处置:放行 / 净化 / 人工审核 / 拦截。单一真源在 @/lib/disposition(M29)。 */
+import type { Disposition } from '@/lib/disposition'
+export type { Disposition }
 
 export interface GatewayFinding {
   kind: string

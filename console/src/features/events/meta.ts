@@ -22,13 +22,9 @@ const DISP_KEY: Record<Disposition, MessageKey> = {
 export function dispositionLabel(d: Disposition): string {
   return t(DISP_KEY[d])
 }
-export const DISPOSITION_ORDER: Disposition[] = ['block', 'approve', 'sanitize', 'allow']
-export const DISPOSITION_TONE: Record<Disposition, BadgeTone> = {
-  block: 'crit',
-  approve: 'high',
-  sanitize: 'info',
-  allow: 'ok',
-}
+// 顺序/色调单一真源在 @/lib/disposition(M29);此处再导出,既有 `./meta` 导入不受影响。
+// 注:sanitize 色调随之从本页独有的 'info' 归一为全站口径 'med'(其余六页与总览硬编码均 'med')。
+export { DISPOSITION_ORDER, DISPOSITION_TONE } from '@/lib/disposition'
 
 const LEVEL_KEY: Record<RiskLevel, MessageKey> = {
   critical: 'events.level.critical',

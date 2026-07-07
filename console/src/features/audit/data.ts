@@ -2,7 +2,9 @@
 // 数据走真后端 /audit;离线预览的演示数据经备份系统载入(public/demo-backup.json),不在此硬编码。
 import { type MessageKey, t } from '@/lib/i18n'
 
-export type Disposition = 'block' | 'approve' | 'sanitize' | 'allow'
+// 处置类型单一真源在 @/lib/disposition(M29);再导出保持既有导入面。
+import type { Disposition } from '@/lib/disposition'
+export type { Disposition }
 
 export interface AuditEvent {
   index: number
