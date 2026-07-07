@@ -9,7 +9,9 @@
    再于描述/指令/权限里认出**指名访问敏感凭据载体**(~/.ssh/id_rsa、.aws/credentials、.env、
    AWS_/GITHUB_TOKEN、/etc/shadow…)的窃取意图(工具描述投毒 / 凭据窃取面)→critical;
 3. 外联端点:裸 IP、明文 http、可疑 TLD / 动态域名 / 短链;
-4. 依赖来源:从 URL / git+ 直接安装(绕过仓库审核);
+4. 依赖来源:从 URL / git+ 直接安装(绕过仓库审核);版本号畸高(依赖混淆抢解析);
+   依赖名与知名包**形近抢注**(typosquatting——如 reqeusts/colourama/python-dateutil2;
+   PEP 503 归一后仍与白名单知名包相差 1~2 个编辑 → high 人工复核,而非精确同名的安全变体);
 5. 安装期钩子:postinstall / preinstall / scripts.install / hooks 等**装载时自动执行**的
    命令(npm postinstall 投毒面),含危险动作→critical,仅声明自动执行→high。
 
@@ -258,6 +260,107 @@ def _abnormal_version(spec: str) -> bool:
     return major >= 50
 
 
+_PKG_SEP = re.compile(r"[-_.]+")
+
+
+def _normalize_pkg(name: str) -> str:
+    """PEP 503 风格归一:小写 + 连续 `-_.` 收敛为单个 `-` + 去首尾 `-`。
+
+    使 `Python_DateUtil`、`python.dateutil`、`python-dateutil` 归一为同一串 → 视作同包(安全变体,
+    不算 typosquat);而 `python-dateutil2` 归一后仍多一个字符 → 保留差异供编辑距离判定。
+    """
+    return _PKG_SEP.sub("-", name.strip().lower()).strip("-")
+
+
+# 依赖名 typosquatting(形近抢注):攻击者发布与知名包**视觉/拼写极近**的包名(reqeusts↔requests、
+# colourama↔colorama、python-dateutil2↔python-dateutil),诱导误装。检测=对每个依赖名与下方
+# 精选知名包白名单比对**归一化后的编辑距离**:精确匹配(含大小写/分隔符变体)= 安全;相差 1~2 个
+# 编辑但非零 = 疑似抢注 → high(人工复核,非 block——编辑距离是启发式,极少数可能是合法新包)。
+# 白名单只收**确实高下载量**的目标包(PyPI/npm 头部),名字彼此分得开;已知成对合法包(boto/boto3、
+# psycopg/psycopg2、request/requests)两端都收,精确匹配即安全、不互判抢注。统一存归一化形式。
+# 空格分隔的原始清单(经 _normalize_pkg 归一后入 frozenset;紧凑且 ruff format 稳定)。
+_POPULAR_RAW = (
+    # ── PyPI 头部 ──
+    "requests request urllib3 setuptools certifi charset-normalizer idna wheel python-dateutil "
+    "pyyaml numpy pandas boto boto3 botocore s3transfer packaging typing-extensions click "
+    "jinja2 markupsafe colorama cryptography importlib-metadata protobuf flask werkzeug "
+    "itsdangerous sqlalchemy pydantic pydantic-core fastapi starlette uvicorn httpx httpcore "
+    "anyio sniffio aiohttp aiosignal frozenlist multidict yarl django djangorestframework "
+    "celery redis pymongo psycopg psycopg2 psycopg2-binary pymysql pillow matplotlib scipy "
+    "scikit-learn tensorflow torch keras transformers tqdm rich typer poetry virtualenv pipenv "
+    "pytest pytest-cov coverage mypy flake8 black isort pylint ruff bandit pre-commit sphinx "
+    "docutils babel markdown beautifulsoup4 soupsieve lxml html5lib openpyxl pyarrow dask numba "
+    "sympy networkx gunicorn gevent greenlet opencv-python imageio seaborn plotly bokeh "
+    "statsmodels nltk spacy gensim xgboost lightgbm joblib cloudpickle tabulate termcolor wrapt "
+    "decorator cachetools pygments prompt-toolkit paramiko fabric invoke ansible docker "
+    "kubernetes google-auth oauthlib requests-oauthlib pyjwt cffi pycparser bcrypt pynacl "
+    "passlib python-dotenv marshmallow jsonschema more-itertools grpcio opentelemetry-api "
+    "elasticsearch prometheus-client sentry-sdk boltons "
+    # ── npm 头部 ──
+    "lodash react react-dom axios express chalk commander debug moment webpack typescript "
+    "eslint prettier jest mocha chai vue rxjs redux next nuxt jquery bootstrap tailwindcss "
+    "postcss autoprefixer dotenv cors body-parser mongoose sequelize mysql2 node-fetch "
+    "cross-env rimraf glob minimist yargs inquirer semver uuid nanoid classnames "
+    "styled-components formik yup zod immer dayjs date-fns ramda underscore markdown-it "
+    "socket.io vite rollup esbuild babel-core core-js knex"
+)
+_POPULAR_PACKAGES: frozenset[str] = frozenset(_normalize_pkg(n) for n in _POPULAR_RAW.split())
+
+
+def _osa_distance(a: str, b: str, max_dist: int = 2) -> int:
+    """Optimal String Alignment(Damerau-Levenshtein 限相邻换位)编辑距离,带上界早退。
+
+    相比纯 Levenshtein 多认「相邻两字符换位」为一步(reqeusts↔requests 的 `ue`↔`eu` = 1 步而非 2),
+    正是 typosquat 高频形态。距离一旦超过 `max_dist` 即返回 `max_dist+1`(不必算精确值,只用于阈值)。
+    """
+    la, lb = len(a), len(b)
+    if abs(la - lb) > max_dist:
+        return max_dist + 1
+    prev2: list[int] = []
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        cur = [i] + [0] * lb
+        row_min = cur[0]
+        for j in range(1, lb + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+            row_min = min(row_min, cur[j])
+        if row_min > max_dist:
+            return max_dist + 1
+        prev2, prev = prev, cur
+    return prev[lb]
+
+
+def _typosquat_target(name: str) -> str | None:
+    """依赖名疑似 typosquat 时返回被仿冒的知名包名,否则 None。
+
+    护栏(0 FP 导向,均在此收口):
+    - npm scoped 名(`@scope/pkg`、含 `/`)属命名空间/依赖混淆面,不在 typosquat 判定内 → None;
+    - 归一化后本身即知名包(含大小写/分隔符变体)→ None(安全,非抢注);
+    - 归一名过短(<4)不判(短名编辑距离噪声大);
+    - dist==1 需目标名长度 ≥4;dist==2 仅当目标名长度 ≥7 才判(长名才容双编辑,压短名误报)。
+    """
+    raw = name.strip()
+    if not raw or raw.startswith("@") or "/" in raw:
+        return None
+    norm = _normalize_pkg(raw)
+    if len(norm) < 4 or norm in _POPULAR_PACKAGES:
+        return None
+    best: str | None = None
+    best_d = 3
+    for pop in _POPULAR_PACKAGES:
+        if abs(len(pop) - len(norm)) > 2:
+            continue
+        d = _osa_distance(norm, pop, 2)
+        if d < 1 or d >= best_d:
+            continue
+        if (d == 1 and len(pop) >= 4) or (d == 2 and len(pop) >= 7):
+            best, best_d = pop, d
+    return best
+
+
 def _nested_descriptions(manifest: dict) -> list[str]:
     """抽取嵌套工具/能力的描述文本(`tools:[{name,desc}]` 等),供描述/注入面扫描。
 
@@ -364,12 +467,17 @@ class ManifestScanner:
                     )
                 )
 
-        # 4) 依赖来源(兼容 dict{名:版本} / list / 字符串):未版本化 URL 源、版本畸高(依赖混淆)
+        # 4) 依赖来源(兼容 dict{名:版本} / list / 字符串):未版本化 URL 源、版本畸高(依赖混淆)、
+        #    依赖名 typosquatting(形近知名包抢注,独立按名判,与源/版本无关)。
         seen_dep_kinds: set[str] = set()
+        typosquats: list[str] = []
         for dep_name, spec in _dep_items(manifest):
             # URL/源 既可能在版本位(dict 形 名:'git+…'),也可能整条就是 URL(list 形),两处都查。
             blob = f"{dep_name} {spec}".lower()
             label = f"{dep_name}@{spec}" if spec else dep_name
+            target = _typosquat_target(dep_name)
+            if target:
+                typosquats.append(f"{dep_name}→{target}")
             if (
                 "://" in blob
                 or "git+" in blob
@@ -396,6 +504,16 @@ class ManifestScanner:
                         dependency=label,
                     )
                 )
+        if typosquats:
+            matched = sorted(set(typosquats))
+            risks.append(
+                _finding(
+                    "dep.typosquat",
+                    "high",
+                    f"依赖名疑似 typosquatting(形近知名包,需人工核对):{matched}",
+                    matched=matched,
+                )
+            )
 
         # 5) 安装期生命周期钩子(自动执行,绕过审查):命中危险命令→critical,否则记 high。
         for hook_name, cmd in _install_hooks(manifest):
