@@ -14,7 +14,10 @@ from fulcrum.core.trust import intent_worst_trust
 
 def _span(sid: str, trust: TrustLevel) -> SourceSpan:
     return SourceSpan(
-        source_id=sid, source_type=SourceType.DOCUMENT, trust_level=trust, content_hash="x",
+        source_id=sid,
+        source_type=SourceType.DOCUMENT,
+        trust_level=trust,
+        content_hash="x",
         excerpt="x",
     )
 
