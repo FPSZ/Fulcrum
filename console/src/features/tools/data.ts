@@ -2,7 +2,9 @@
 // (对应 SecurityPipeline.evaluate_intent / GovRuntime 的 step:归因→评分→链→策略→沙箱执行)
 // 数据走真后端 /tools/calls;离线预览的演示数据经备份系统载入(public/demo-backup.json),不在此硬编码。
 
-export type Disposition = 'block' | 'approve' | 'sanitize' | 'allow'
+// 处置类型单一真源在 @/lib/disposition(M29);再导出保持既有导入面。
+import type { Disposition } from '@/lib/disposition'
+export type { Disposition }
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low'
 export type Trust = 'untrusted' | 'semi' | 'trusted'
 

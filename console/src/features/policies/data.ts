@@ -1,7 +1,9 @@
 // 策略中心类型 —— 结构镜像后端 data/policies/*.yml(YamlPolicyEngine 加载的声明式策略)。
 // 数据走真后端 /policies(后端在跑即非空);不在此硬编码 seed。
 
-export type Disposition = 'block' | 'approve' | 'sanitize' | 'allow'
+// 处置类型单一真源在 @/lib/disposition(M29);再导出保持既有导入面。
+import type { Disposition } from '@/lib/disposition'
+export type { Disposition }
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low'
 
 export interface PolicyRule {

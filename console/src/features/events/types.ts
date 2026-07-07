@@ -1,6 +1,8 @@
 export type TrustLevel = 'untrusted' | 'semi' | 'trusted'
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low'
-export type Disposition = 'block' | 'approve' | 'sanitize' | 'allow'
+// 处置类型单一真源在 @/lib/disposition(M29);此处再导出,页内既有 `./types` 导入不受影响。
+import type { Disposition } from '@/lib/disposition'
+export type { Disposition }
 export type SourceType =
   | '文档'
   | '网页'

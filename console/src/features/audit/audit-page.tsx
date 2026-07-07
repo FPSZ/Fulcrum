@@ -1,18 +1,14 @@
 import { useState } from 'react'
 import { FileSearch, Link2, ShieldCheck } from 'lucide-react'
-import { Badge, type BadgeTone, Card, EmptyState } from '@/components/ui'
+import { Badge, Card, EmptyState } from '@/components/ui'
 import { useResource } from '@/lib/backup'
+import { DISPOSITION_TONE as DISP_TONE } from '@/lib/disposition'
 import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { type AuditSession, type Disposition, eventLabel } from './data'
 import { useAuditSessions } from './use-audit'
 
-const DISP_TONE: Record<Disposition, BadgeTone> = {
-  block: 'crit',
-  approve: 'high',
-  sanitize: 'med',
-  allow: 'ok',
-}
+// 色调单一真源 @/lib/disposition(M29);文案按本页语境留在 audit.* 命名空间。
 const DISP_KEY: Record<Disposition, MessageKey> = {
   block: 'audit.disp.block',
   approve: 'audit.disp.approve',

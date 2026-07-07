@@ -2,17 +2,14 @@ import { useState } from 'react'
 import { Package, ShieldAlert } from 'lucide-react'
 import { Badge, type BadgeTone, Card, EmptyState } from '@/components/ui'
 import { useResource } from '@/lib/backup'
+import { DISPOSITION_TONE as RATING_TONE } from '@/lib/disposition'
 import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { type Rating, type ScanReport, type Severity } from './data'
 import { useSupplyScans } from './use-supply'
 
-const RATING_TONE: Record<Rating, BadgeTone> = {
-  block: 'crit',
-  approve: 'high',
-  sanitize: 'med',
-  allow: 'ok',
-}
+// 评级色调单一真源 @/lib/disposition(M29,Rating 与 Disposition 同值域);
+// 文案按本页语境(「需复核」)留在 supply.rating.* 命名空间。
 const RATING_KEY: Record<Rating, MessageKey> = {
   block: 'supply.rating.block',
   approve: 'supply.rating.approve',

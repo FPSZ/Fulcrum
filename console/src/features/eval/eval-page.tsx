@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Check, FlaskConical, X } from 'lucide-react'
-import { Badge, type BadgeTone, Card, EmptyState, Segmented } from '@/components/ui'
+import { Badge, Card, EmptyState, Segmented } from '@/components/ui'
+import { dispositionTone } from '@/lib/disposition'
 import { cn } from '@/lib/utils'
 import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { METRIC_ROWS } from './data'
@@ -8,12 +9,8 @@ import { useEvalReport } from './use-eval'
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
 
-const DISP_TONE: Record<string, BadgeTone> = {
-  block: 'crit',
-  approve: 'high',
-  sanitize: 'med',
-  allow: 'ok',
-}
+// 色调单一真源 @/lib/disposition(M29);样例处置来自报告 JSON(未收窄字符串),
+// 走宽入口 dispositionTone(未知值回退 neutral,口径同旧 `?? 'neutral'`)。
 // 处置标签 key(在调用时经 t() 解析当前语言)。
 const DISP_KEY: Record<string, MessageKey> = {
   block: 'eval.disp.block',
@@ -132,10 +129,10 @@ export function EvalPage() {
                   </Badge>
                 </td>
                 <td className="px-4 py-2.5">
-                  <Badge tone={DISP_TONE[s.expected] ?? 'neutral'}>{dispLabel(s.expected)}</Badge>
+                  <Badge tone={dispositionTone(s.expected)}>{dispLabel(s.expected)}</Badge>
                 </td>
                 <td className="px-4 py-2.5">
-                  <Badge tone={DISP_TONE[s.predicted] ?? 'neutral'}>{dispLabel(s.predicted)}</Badge>
+                  <Badge tone={dispositionTone(s.predicted)}>{dispLabel(s.predicted)}</Badge>
                 </td>
                 <td className="px-4 py-2.5">
                   <span
