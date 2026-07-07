@@ -2,16 +2,12 @@ import { useMemo, useState } from 'react'
 import { Plug } from 'lucide-react'
 import { Badge, type BadgeTone, Card, EmptyState, Segmented } from '@/components/ui'
 import { useResource } from '@/lib/backup'
+import { DISPOSITION_TONE as DISP_TONE } from '@/lib/disposition'
 import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { type Disposition, type ToolCall, type Trust } from './data'
 import { useToolCalls } from './use-tools'
 
-const DISP_TONE: Record<Disposition, BadgeTone> = {
-  block: 'crit',
-  approve: 'high',
-  sanitize: 'med',
-  allow: 'ok',
-}
+// 色调单一真源 @/lib/disposition(M29);文案按本页语境留在 tools.* 命名空间。
 const DISP_KEY: Record<Disposition, MessageKey> = {
   block: 'tools.disp.block',
   approve: 'tools.disp.approve',

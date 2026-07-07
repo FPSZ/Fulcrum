@@ -2,7 +2,10 @@
 // 评级:critical→block / high→approve / medium→sanitize / 否则 allow。
 // 数据走真后端 /supply/scans;离线预览的演示数据经备份系统载入(public/demo-backup.json),不在此硬编码。
 
-export type Rating = 'block' | 'approve' | 'sanitize' | 'allow'
+import type { Disposition } from '@/lib/disposition'
+
+// 评级与处置同值域(后端 ScanReport.rating 即 Disposition);单一真源在 @/lib/disposition(M29)。
+export type Rating = Disposition
 export type Severity = 'critical' | 'high' | 'medium' | 'low'
 
 export interface ScanRisk {

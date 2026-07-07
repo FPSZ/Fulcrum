@@ -1,16 +1,12 @@
 import { useMemo, useState } from 'react'
 import { ArrowRight, Scale } from 'lucide-react'
 import { Badge, type BadgeTone, Card, EmptyState, Segmented } from '@/components/ui'
+import { DISPOSITION_TONE as DISP_TONE } from '@/lib/disposition'
 import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { type Disposition } from './data'
 import { usePolicies } from './use-policies'
 
-const DISP_TONE: Record<Disposition, BadgeTone> = {
-  block: 'crit',
-  approve: 'high',
-  sanitize: 'med',
-  allow: 'ok',
-}
+// 色调单一真源 @/lib/disposition(M29);文案按本页语境留在 policies.* 命名空间。
 const DISP_KEY: Record<Disposition, MessageKey> = {
   block: 'policies.disp.block',
   approve: 'policies.disp.approve',

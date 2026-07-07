@@ -1,16 +1,12 @@
 import { type ReactNode, useState } from 'react'
 import { ArrowDown, Bot, Send, Server, ShieldCheck, User } from 'lucide-react'
-import { Badge, type BadgeTone, Button, Card, Input, toast } from '@/components/ui'
+import { Badge, Button, Card, Input, toast } from '@/components/ui'
+import { DISPOSITION_TONE as DISP_TONE } from '@/lib/disposition'
 import { cn } from '@/lib/utils'
 import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { type Disposition, type GatewayChatResult, sendGatewayChat } from './api'
 
-const DISP_TONE: Record<Disposition, BadgeTone> = {
-  block: 'crit',
-  approve: 'high',
-  sanitize: 'med',
-  allow: 'ok',
-}
+// 色调单一真源 @/lib/disposition(M29);文案按本页语境留在 gateway.* 命名空间。
 // 处置标签 key(在调用时经 t() 解析当前语言)。
 const DISP_KEY: Record<Disposition, MessageKey> = {
   block: 'gateway.disp.block',
