@@ -15,6 +15,7 @@ all_events/prune_to_recent),哈希链口径共用 `hashchain` 模块 → 同一�
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from pathlib import Path
 
@@ -61,7 +62,14 @@ class SqliteAuditSink:
 
     # ── 写入 ──────────────────────────────────────────────────────
     async def append(self, event: AuditEvent) -> AuditEvent:
-        """在一次写事务内算链尾 → 盖戳 → 落库(并发追加同一会话由写锁串行化)。"""
+        """在一次写事务内算链尾 → 盖戳 → 落库(并发追加同一会话由写锁串行化)。
+
+        同步 sqlite 经 `asyncio.to_thread` 卸载 —— 落库不阻塞事件循环(M14):
+        审计写在每次判定的 await 路径上,阻塞即拖慢全部并发请求。
+        """
+        return await asyncio.to_thread(self._append_sync, event)
+
+    def _append_sync(self, event: AuditEvent) -> AuditEvent:
         with connect(self._path) as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
@@ -99,6 +107,10 @@ class SqliteAuditSink:
 
     # ── per-session 读 ────────────────────────────────────────────
     async def events(self, session_id: str) -> list[AuditEvent]:
+        """读取 + JSON 反序列化经 to_thread 卸载,长链读取不阻塞事件循环(M14)。"""
+        return await asyncio.to_thread(self._events_sync, session_id)
+
+    def _events_sync(self, session_id: str) -> list[AuditEvent]:
         with connect(self._path) as conn:
             rows = conn.execute(
                 "SELECT body FROM audit_events WHERE session_id = ? ORDER BY idx",
@@ -107,11 +119,17 @@ class SqliteAuditSink:
         return [AuditEvent.model_validate_json(r["body"]) for r in rows]
 
     async def verify_chain(self, session_id: str) -> bool:
-        return locate_break(await self.events(session_id)) is None
+        """全链重算校验(读+哈希都在工作线程)。**不缓存结果**:校验的意义正是发现
+        落库后被篡改的留痕,缓存布尔值会把事后篡改掩盖到进程重启——防篡改语义优先。
+        """
+        return await asyncio.to_thread(self._locate_break_sync, session_id) is None
 
     async def locate_break(self, session_id: str) -> int | None:
         """定位会话链首处断裂位置(防篡改取证);完好返回 None。逻辑见 hashchain。"""
-        return locate_break(await self.events(session_id))
+        return await asyncio.to_thread(self._locate_break_sync, session_id)
+
+    def _locate_break_sync(self, session_id: str) -> int | None:
+        return locate_break(self._events_sync(session_id))
 
     # ── 跨会话聚合读(端口契约;供总览/事件/工具/审计列表)──────────────
     def session_ids(self) -> list[str]:

@@ -12,11 +12,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 
 from ...core.domain import AuditEvent, AuditEventType, Disposition
+from ..audit.hashchain import locate_break
 from ..auth import Principal
 from .deps import AuthDeps
 from .schemas import EventResolveRequest, EventResolveResponse, SecurityEventDTO
@@ -152,17 +154,24 @@ def register_events_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthD
         limit: int = Query(default=200, ge=1, le=1000),
         principal: Principal = Depends(can_view),
     ) -> list[SecurityEventDTO]:
-        sink = pipeline.audit  # 跨会话聚合走端口方法(内存遍历 / SQLite 按 created_at 查询)
+        # M14:此前 all_events() 取两遍 + 每会话 verify_chain 再各自全量重读,同步 sqlite
+        # 直接跑在事件循环上。现单遍取全量(经 to_thread 卸载)、按会话分组就地校验 ——
+        # 哈希仍逐事件全量重算(防篡改新鲜度不降级,故意不缓存校验结果),只消重复读库。
+        sink = pipeline.audit
+        all_ev = await asyncio.to_thread(sink.all_events)
+        chains: dict[str, list[AuditEvent]] = {}
+        for e in all_ev:
+            chains.setdefault(e.session_id, []).append(e)
         # 已被处置的待审工单(存在一条 evidence.resolves=该 id 的处置事件)→ 不再挂在待审批,
         # 由处置结果(放行/阻断)那一行取而代之。append-only:原工单仍留在审计链中可溯源。
         resolved: set[str] = {
             str(e.evidence["resolves"])
-            for e in sink.all_events()
+            for e in all_ev
             if e.event_type == AuditEventType.POLICY_DECIDED and e.evidence.get("resolves")
         }
         verified_cache: dict[str, bool] = {}
         rows: list[SecurityEventDTO] = []
-        for e in sink.all_events():
+        for e in all_ev:
             if e.event_type != AuditEventType.POLICY_DECIDED:
                 continue
             if e.event_id in resolved:  # 待审工单已处置,隐去原行
@@ -172,7 +181,8 @@ def register_events_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthD
             if not event_team_visible(e, principal):  # 团队级数据隔离:跨团队看不到(P2)
                 continue
             if e.session_id not in verified_cache:
-                verified_cache[e.session_id] = await sink.verify_chain(e.session_id)
+                chain = sorted(chains[e.session_id], key=lambda x: x.index)  # 同 ORDER BY idx
+                verified_cache[e.session_id] = locate_break(chain) is None
             rows.append(to_security_event(e, verified_cache[e.session_id]))
         rows.sort(key=lambda r: r.time, reverse=True)  # 最新在前
         return rows[:limit]
