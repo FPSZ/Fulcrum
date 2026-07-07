@@ -7,12 +7,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI
 
 from ...core.domain import AuditEvent, AuditEventType
+from ..audit.hashchain import locate_break
 from ..auth import Principal
 from .deps import AuthDeps
 from .schemas import OverviewStatsResponse
@@ -68,9 +70,18 @@ def register_overview_routes(app: FastAPI, pipeline: SecurityPipeline, deps: Aut
 
     @app.get("/overview/stats", response_model=OverviewStatsResponse)
     async def overview_stats(_: Principal = Depends(can_view)) -> OverviewStatsResponse:
-        sink = pipeline.audit  # 跨会话聚合走端口方法(内存遍历 / SQLite 聚合查询,口径一致)
+        # M14:此前 per-session `verify_chain`(每次全量重读该会话)+ `all_events()` = N+1 趟
+        # 全量读,且同步 sqlite 直接跑在事件循环上 —— 前端轮询即认证后 DoS。现单遍取全量
+        # (经 to_thread 卸载),按会话分组后就地 `locate_break` 校验:每事件仍全量重算哈希
+        # (防篡改新鲜度不降级,故意不缓存校验结果),只是不再重复读库。
+        sink = pipeline.audit
+        events = await asyncio.to_thread(sink.all_events)
+        chains: dict[str, list[AuditEvent]] = {}
+        for e in events:
+            chains.setdefault(e.session_id, []).append(e)
         verified = 0
-        for sid in sink.session_ids():
-            if await sink.verify_chain(sid):
+        for chain in chains.values():
+            chain.sort(key=lambda e: e.index)  # 与 sink 读路径 ORDER BY idx 同口径
+            if locate_break(chain) is None:
                 verified += 1
-        return summarize(sink.all_events(), verified_sessions=verified)
+        return summarize(events, verified_sessions=verified)
