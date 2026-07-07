@@ -134,6 +134,8 @@ def _dest_raw(arguments: dict) -> str:
         if v and "://" in str(v):
             return str(v)
     return ""
+
+
 # 公认的本机主机名(非 IP 字面量,ipaddress 解析不了,单列)。
 _INTERNAL_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
 
