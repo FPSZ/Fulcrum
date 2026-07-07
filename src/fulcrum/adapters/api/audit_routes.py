@@ -7,11 +7,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI
 
 from ...core.domain import AuditEvent, AuditEventType
+from ..audit.hashchain import locate_break
 from ..auth import Principal
 from .deps import AuthDeps
 from .schemas import AuditChainEventDTO, AuditResponse, AuditSessionDTO
@@ -57,21 +59,23 @@ def register_audit_routes(app: FastAPI, pipeline: SecurityPipeline, deps: AuthDe
 
     @app.get("/audit", response_model=list[AuditSessionDTO])
     async def audit_sessions(_: Principal = Depends(can_view)) -> list[AuditSessionDTO]:
-        sink = pipeline.audit  # 列全部会话走端口聚合方法(内存遍历 / SQLite 聚合查询)
+        # M14:此前每会话读两遍(events + verify_chain 内部重读);现一遍取回、就地
+        # locate_break 校验 —— 哈希仍逐事件全量重算(防篡改新鲜度不降),读库次数减半。
+        sink = pipeline.audit
         out: list[AuditSessionDTO] = []
-        for sid in sink.session_ids():
-            events = await sink.events(sid)
-            verified = await sink.verify_chain(sid)
-            out.append(to_session_dto(sid, events, verified))
+        for sid in await asyncio.to_thread(sink.session_ids):
+            events = await sink.events(sid)  # ORDER BY idx,可直接校验
+            out.append(to_session_dto(sid, events, locate_break(events) is None))
         return out
 
     @app.get("/audit/{session_id}", response_model=AuditResponse)
     async def audit_detail(session_id: str, _: Principal = Depends(can_view)) -> AuditResponse:
         # 单条会话链(全事件 + 哈希校验);与 /audit 列表同口径鉴权(audit.view),
         # 不再裸奔 —— 审计链含判定证据,未授权读取等于把溯源数据泄露出去。
+        # M14:校验直接对已取回的事件列表跑,不再第二次全量重读。
         events = await pipeline.audit.events(session_id)
         return AuditResponse(
             session_id=session_id,
-            verified=await pipeline.audit.verify_chain(session_id),
+            verified=locate_break(events) is None,
             events=[e.model_dump(mode="json") for e in events],
         )
