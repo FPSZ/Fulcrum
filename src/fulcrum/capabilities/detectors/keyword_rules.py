@@ -71,8 +71,9 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             # 前缀诱导
             r"(start|begin)\s+(?:your\s+)?(answer|reply|response|output)\s+with",
             r"(回复|回答|输出)(必须|务必|请|要)?\s*(严格)?以.{0,20}(开头|开始)",
-            # 权威伪装
-            r"开发者(备注|模式|指令)|平台团队|系统覆盖|审计豁免|内部(指令|口径)(:|：)?|system\s+override|admin\s+override",
+            # 权威伪装。"开发者模式"是产品概念(由 jailbreak 概念规则收口),此处只留"开发者备注/
+            # 指令"这类冒充内部权威的注入措辞——否则良性"开发者模式是啥"会被本硬规则连坐(救 FPR)。
+            r"开发者(备注|指令)|平台团队|系统覆盖|审计豁免|内部(指令|口径)(:|：)?|system\s+override|admin\s+override",
             # 载荷分片(变量赋值后拼接执行)
             r"设\s*[a-z]\s*[=＝].{0,24}[a-z]\s*[=＝]|let\s+\w+\s*=.{0,40}\+\s*\w+|执行\s*[a-z](\s*\+\s*[a-z]){1,}",
         ),
@@ -263,22 +264,127 @@ def _pii_score(count: int) -> float:
 
 
 # 意图区分(降 FPR):疑问 / 科普 / 求解释的框架性措辞。命中表示文本在**询问某概念**,
-# 而非**下达攻击指令**。仅用于"纯敏感词提及"(sensitive_file)的降权判定,不影响动作类攻击。
-# 通用框架词、不针对样本 ID 硬编码(防过拟合)。
+# 而非**下达攻击指令**。通用框架词、不针对样本 ID 硬编码(防过拟合)。用于"纯提及类信号 +
+# 科普/咨询语气 + 直接来源"时的降权抑制判定(见 _should_suppress),不影响动作类攻击。
 _INFORMATIONAL = re.compile(
     r"什么是|是什么|啥意思|什么意思|什么含义|的含义|的区别|有什么区别|有何区别|"
     r"干嘛用|干什么用|是干(嘛|什么)的|怎么理解|如何理解|怎么用|如何使用|"
     r"如何防(范|御|护)|怎么防(范|御)|怎样防范|防范(手段|措施|方法)|"
     r"解释一?下|科普|介绍一?下|了解一?下|想(了解|知道|请教)|普及|扫盲|"
     r"有哪些|到底是|通俗(地?讲|解释)|"
-    r"\bwhat\s+(is|are|does|do)\b|\bhow\s+(to|do|does|can)\b|"
-    r"\bexplain\b|\bmeaning\s+of\b|difference\s+between|what'?s\b",
+    # —— 泛化补充:常见疑问/咨询框架词(原词表太窄,漏掉"为什么/要不要/放什么/怎么设"等)——
+    r"为什么|为何|凭啥|"  # 原因询问
+    r"要不要|需不需要?|用不用|该不该|能不能|可不可以|是否(需要|要|该|应)|"  # 需否咨询
+    r"有没有必要|有必要(吗|么|没)|"
+    r"放什么|放哪|放在哪|该放(在|到)?哪?|存哪|存放(在)?哪|放到哪|一般(放|存|是|用|怎)|"  # 存放位置
+    r"怎么设(置|定)?|如何设(置|定)?|怎样设(置)?|怎么配(置)?|如何配(置)?|怎样配(置)?|"  # 如何配置
+    r"怎么填|如何填|怎么弄|怎么整|怎么办|怎么处理|如何处理|该怎么|"
+    r"多久|多长时间|多少次|几次|合适(吗|么)?|"
+    r"\bwhat\s+(is|are|does|do)\b|\bhow\s+(to|do|does|can|often|should)\b|"
+    r"\bexplain\b|\bmeaning\s+of\b|difference\s+between|what'?s\b|"
+    r"\bwhy\b|\bwhether\b|\bwhere\s+(to|do|should|is|are)\b|should\s+(i|we)\b",
+    re.IGNORECASE,
+)
+
+# 引用/修改上一轮请求的良性框架(非对助手下达执行/外发):用户"改需求 / 引用文档句子"。
+# 与 _INFORMATIONAL 并列作为"良性语气"依据 —— 救 "刚才那版不用了,无视之前的要求,重新按新
+# 提纲写" 这类**指代上一轮、软注入措辞**的合法改稿(而非攻击者覆盖系统指令)。
+_REVISION = re.compile(
+    r"重新(写|做|改|拟|起草|生成|整理|安排|梳理|按|以|用|来)|"
+    r"改(成|为|用)|换成|换个|"
+    r"(那|这|上)一?版(本)?|刚才那(版|份|个|条)|"
+    r"不用了|不要了|作废|重来|"
+    r"按.{0,6}新.{0,6}(提纲|要求|模板|格式|版本|口径|标准|思路)|"
+    # 引用文档中的句子(把文档里的措辞当抽取对象,而非对助手下达):文件里有句 / 材料里提到
+    r"(文件|材料|文档|正文|附件|原文|表格?)里?(有句|有一句|有段|写着|写道|提到|提及|中的一?句)",
     re.IGNORECASE,
 )
 
 
-def _is_informational(variants: list[str]) -> bool:
-    return any(_INFORMATIONAL.search(v) for v in variants)
+def _is_benign_frame(variants: list[str]) -> bool:
+    """疑问/科普/咨询 或 引用·改需求语气 —— 抑制降权的"语气成立"前置。"""
+    return any(_INFORMATIONAL.search(v) or _REVISION.search(v) for v in variants)
+
+
+# —— 动作祈使否决(变换体防绕过的关键红线)——
+# 攻击者会在真载荷后缀"这是什么意思/顺便科普下"骗过语气门。只要文本里**同时**存在
+# "对助手下达执行/外发/删除/越权"的祈使,就一律**不抑制**(哪怕语气门成立)。
+# 通用能力:检测祈使动作本身,不针对具体样本。
+_ACTION_IMPERATIVE = re.compile(
+    # 执行/运行/删除 祈使(帮我执行、直接执行、执行一下、跑一下脚本、执行删除…)
+    r"(帮|替|给|为)\s*我.{0,6}(执行|运行|跑|删除|下载|读取并|发送|上传|回传|外发)|"
+    r"(直接|立即|立刻|马上|现在(就|起)?|赶紧|尽快|一键)\s*(执行|运行|删除|发送|上传|外发|放行|批准|通过)|"
+    r"执行\s*(一下|下|这|该|以下|上述|它|命令|脚本|rm)|运行\s*(一下|下|这|该|以下|上述|它|脚本|命令)|"
+    r"跑\s*(一下|下|这|该)?\s*(脚本|命令|这段|这条)|执行删除|"
+    # 越权 / 绕审批 / 系统覆盖 祈使(无视审批、忽略(以上)所有指令、忽略所有安全规则、跳过核验…)
+    # "忽略/无视 + (以上/上述/之前…) + 所有/全部/一切 + 指令/规则/要求" 是硬覆盖,非"改需求"软指代。
+    r"无视\s*(审批|复核|核验|审查|安全规则|安全策略|所有.{0,6}规则|一切.{0,6}规则)|"
+    r"(忽略|无视)\s*(以上|上述|之前|前面|前文|刚才|这些|那些)?\s*(所有|全部|一切|整个)"
+    r".{0,6}(安全)?\s*(规则|策略|限制|指令|要求|命令|设定|设置)|"
+    r"(跳过|关闭|绕过|解除|停用)\s*(二次)?\s*(审批|复核|核验|审查|安全|限制)|"
+    # 外发祈使(须**外部**目的地:http/外部/邮箱/域名/@)—— 内部报送(发到内部邮箱、提交到 git)不算
+    r"(发送|发往|发到|外发|上传|回传|投递|寄送|传送|转发|上报|同步|导出.{0,4}(发|到))\s*(到|去|至|给|往)?\s*"
+    r".{0,14}(https?://|外部|外网|境外|第三方|evil|[\w.+-]+@[\w-]+\.[\w-]+|\.(?:com|cn|net|org|io|top|xyz|info)\b)",
+    re.IGNORECASE,
+)
+
+
+def _has_action_imperative(variants: list[str]) -> bool:
+    return any(_ACTION_IMPERATIVE.search(v) for v in variants)
+
+
+# —— 可抑制规则白名单:仅"纯提及类"(裸提敏感概念)与"软指代"(引用对话上一轮)子规则 ——
+# 抑制的**充要条件**:某 span 命中的规则**全部** ∈ 本集合、且语气门成立、且无动作祈使、且直接来源。
+# 只要命中任一**硬子规则**(系统提示提取 / 角色注入 / interaction-config / 命令执行祈使 /
+# 外发 / 投毒断言…)或动作祈使,类别集就不再是"纯提及",绝不抑制 —— 保召回、防变换体绕过。
+# 字符串须与 _CATEGORIES 中的模式**逐字一致**(下方 import 期断言防漂移)。
+_SUPPRESSIBLE_RULES: frozenset[str] = frozenset(
+    {
+        # injection —— 仅"软"指代:忽略/无视/disregard/forget 指对话上一轮(非硬注入)
+        r"ignore\s+(?:\w+\s+){0,3}(?:previous|above|prior|preceding|earlier|instruction|rules?|prompt|document|context)",
+        r"disregard\s+(?:the\s+|all\s+|any\s+)*(instructions|above|previous|rules?|prompt)",
+        r"forget\s+(everything|all|previous|the above|your (instructions|rules))",
+        r"忽略(以上|之前|上述|前面|刚才|前文|文档|正文|这段)",
+        r"无视(以上|之前|上述|规则|指令|前面|文档)",
+        # jailbreak —— 仅**概念提及**(开发者模式/god mode),非"跳过审批/提取提示词"等祈使
+        r"developer mode|dev\s*mode|god\s*mode",
+        r"开发者模式|越狱模式|进入越狱",
+        # command_exec —— 仅**命令 token 提及**(rm -rf/curl http/…),非"执行命令/删除全部文件"祈使
+        r"rm\s+-rf",
+        r"\b(curl|wget)\s+https?://",
+        r"(bash|sh|zsh|powershell|cmd)\s+-c|/bin/sh\b|/dev/tcp/",
+        r"(os\.system|subprocess\.|\bexec\(|\beval\()",
+        r"base64\s+-d|chmod\s+777|\bnc\b\s+-e|reverse shell|mkfifo|\bsocat\b",
+        r"\bcertutil\b|\bbitsadmin\b|\bmshta\b|\bregsvr32\b|\brundll32\b|invoke-expression|\biex\b",
+        r"\|\s*(ba|z)?sh\b|\|\s*powershell",
+        # sensitive_file —— 全部为"提到路径/凭据词"的纯提及(本就是既有 sensitive_file 抑制面)
+        r"/etc/(passwd|shadow)",
+        r"id_rsa|\.ssh/|\.env\b|\.pem\b|\.key\b",
+        r"(private[_ ]?key|api[_ ]?key|secret[_ ]?key|access[_ ]?token|credentials?)",
+        r"(密钥|私钥|口令|凭据|凭证|机密|涉密|账号密码)",
+        r"\.aws[\\/]+credentials|\.kube[\\/]+config|system32[\\/]+config[\\/]+(sam|system)",
+        r"ntds\.dit|connection string|连接串",
+    }
+)
+
+
+def _should_suppress(
+    matched_by_cat: dict[str, list[str]], variants: list[str], indirect: bool
+) -> bool:
+    """信息询问/引用降权的**充要条件**判定(通用、非样本硬编码):
+
+    直接来源(间接来源=注入主战场,一律不抑制) + 命中规则全为纯提及/软指代(∈ 白名单) +
+    科普/咨询/引用语气成立 + **无任何执行/外发/删除/越权祈使**(变换体防绕过红线)。
+    任一不满足即不抑制,保召回。
+    """
+    if indirect or not matched_by_cat:
+        return False
+    if _has_action_imperative(variants):  # 动作祈使 → 绝不抑制(变换体后缀科普词也拦得住)
+        return False
+    if not _is_benign_frame(variants):
+        return False
+    rules = {r for rs in matched_by_cat.values() for r in rs}
+    return rules <= _SUPPRESSIBLE_RULES
 
 
 # 来源信任级 -> 乘子:不可信来源命中风险最高,用户直述同样措辞风险较低。
@@ -307,6 +413,16 @@ _COMPILED: dict[str, tuple[float, tuple[re.Pattern[str], ...]]] = {
     for cat, (weight, pats) in _CATEGORIES.items()
 }
 
+# 防漂移:可抑制白名单里的每条串都必须真实存在于某类别的模式集中。有人改了模式串却忘了
+# 同步白名单时,import 期立即炸(测试即挂),避免"白名单指向已不存在的规则→抑制静默失效"。
+_ALL_RULE_PATTERNS: frozenset[str] = frozenset(
+    p.pattern for _w, pats in _COMPILED.values() for p in pats
+)
+assert _SUPPRESSIBLE_RULES <= _ALL_RULE_PATTERNS, (
+    "可抑制白名单存在未知规则串(与 _CATEGORIES 漂移):"
+    f"{sorted(_SUPPRESSIBLE_RULES - _ALL_RULE_PATTERNS)}"
+)
+
 
 def _severity(score: float) -> str:
     if score >= 0.8:
@@ -326,9 +442,21 @@ _DEOBF_CATEGORIES: tuple[str, ...] = ("injection", "jailbreak", "exfiltration", 
 _DEOBF_BASE = 0.85  # 混淆即恶意意图,基准取 critical 档
 
 
-def _scan_decoded(decoded: str) -> list[str]:
-    """对解码后的文本复扫危险类别,返回命中的类别名(去重、按固定顺序)。"""
-    return [cat for cat in _DEOBF_CATEGORIES if any(p.search(decoded) for p in _COMPILED[cat][1])]
+def _scan_decoded(decoded: str) -> tuple[list[str], set[str]]:
+    """对解码后的文本复扫危险类别,返回(命中类别名, 命中规则串集合)。
+
+    规则串集合供上层判「幽灵回环」:ROT13 等在中文上是恒等变换,depth=2 往返会把原文当作
+    "解码产物"重放,复扫必然重命中**明文里已可见**的同一批规则(见 detect 抑制逻辑)——
+    据此把幽灵回环与"真·藏进编码的新载荷"区分开,不误抑真隐藏注入。
+    """
+    kinds: list[str] = []
+    rules: set[str] = set()
+    for cat in _DEOBF_CATEGORIES:
+        matched = [p.pattern for p in _COMPILED[cat][1] if p.search(decoded)]
+        if matched:
+            kinds.append(cat)
+            rules.update(matched)
+    return kinds, rules
 
 
 @capability("detector", "keyword_rules")
@@ -352,15 +480,15 @@ class KeywordRuleDetector:
                 matched = [p.pattern for p in patterns if any(p.search(v) for v in variants)]
                 if matched:
                     matched_by_cat[cat] = matched
-            # 意图区分降 FPR:直接来源、纯疑问/科普语气、且**唯一**风险信号是"敏感词提及"
-            # (sensitive_file 仅识"提到了凭据/路径",非动作)→ 视为信息询问而非攻击,抑制该 finding。
-            # 救"科普 /etc/passwd 各列含义""问 API key 是什么"两类硬负例;带任何动作类攻击
-            # (注入/越狱/外发/命令/投毒)即不抑制,间接来源(注入主战场)亦不抑制 → 不伤召回。
-            if (
-                set(matched_by_cat) == {"sensitive_file"}
-                and not indirect
-                and _is_informational(variants)
-            ):
+            # 意图区分降 FPR(通用化):命中规则**全为纯提及/软指代**(∈ 可抑制白名单)、科普/
+            # 咨询/引用语气成立、无执行/外发/删除/越权祈使、且直接来源 → 视为信息询问/改需求而非
+            # 攻击,抑制这些 finding。覆盖 sensitive_file / jailbreak(概念)/ command_exec(命令
+            # token 提及)/ injection(软指代)四面;硬子规则、任何动作祈使、间接来源(注入主战场)
+            # 均不抑制 → 保召回、防"真载荷 + 科普后缀"变换体绕过。plaintext_rules 供下方混淆复扫
+            # 判幽灵回环(见 _scan_decoded)。
+            suppress = _should_suppress(matched_by_cat, variants, indirect)
+            plaintext_rules = {r for rs in matched_by_cat.values() for r in rs}
+            if suppress:
                 matched_by_cat = {}
             for cat, matched in matched_by_cat.items():
                 weight = _COMPILED[cat][0]
@@ -402,8 +530,13 @@ class KeywordRuleDetector:
                 )
             # 混淆复扫:递归解码后再扫;命中 = 刻意隐藏的注入/外发/命令,按 critical 计分。
             for decoded in decode_variants(text):
-                hidden = _scan_decoded(decoded)
+                hidden, hidden_rules = _scan_decoded(decoded)
                 if not hidden:
+                    continue
+                # 幽灵回环抑制:本 span 已被判为信息询问(suppress),且解码复扫命中的规则**全是
+                # 明文里已可见的同一批可抑制规则**(ROT13 在中文上恒等,depth=2 往返把原文当"解码
+                # 产物"重放)→ 不是真藏进编码的载荷,跳过。真·隐藏载荷会命中明文外的新规则,照常计分。
+                if suppress and hidden_rules <= plaintext_rules:
                     continue
                 raw = _DEOBF_BASE * trust_mul + (_INDIRECT_BOOST if indirect else 0.0)
                 score = round(min(raw, 1.0), 3)
