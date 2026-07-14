@@ -63,7 +63,7 @@ def _eval_config(policy_path: str, *, judge: str | None = None) -> dict[str, Any
     端点不可达 → judge 自动降级,确定性规则照常,绝不 fail-open。
     """
     options: dict[str, Any] = {"yaml": {"path": policy_path}}
-    egress = ["secret_egress", "manifest_guard", "disclosure_egress"]
+    egress = ["secret_egress", "manifest_guard", "disclosure_egress", "false_authority"]
     if judge == "cascade":
         detectors = ["injection_cascade", *egress]
         options["injection_cascade"] = {
