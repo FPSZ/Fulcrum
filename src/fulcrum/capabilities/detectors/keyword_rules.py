@@ -551,7 +551,15 @@ class KeywordRuleDetector:
                     )
                 )
             # 混淆复扫:递归解码后再扫;命中 = 刻意隐藏的注入/外发/命令,按 critical 计分。
+            seed = text.strip()
             for decoded in decode_variants(text):
+                # rot13 是对合:depth=2 往返(rot13∘rot13)把**原文明文**当作"解码产物"重放。
+                # decode_variants 产物已 strip,故 `decoded == seed` 精确命中该回环种子——此时是
+                # 在明文上跑解码放宽规则(如 _DECODED_EXFIL 裸 sink),会把良性明文外发误判为混淆外泄。
+                # 幽灵回环抑制仅在 suppress 分支生效、且 _DECODED_EXFIL.pattern 不在
+                # plaintext_rules,拦不住本路径,故在此直接跳过回环种子。真载荷 ≠ 种子,不受影响。
+                if decoded == seed:
+                    continue
                 hidden, hidden_rules = _scan_decoded(decoded)
                 if not hidden:
                     continue

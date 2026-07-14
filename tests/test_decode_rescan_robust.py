@@ -202,6 +202,31 @@ def test_benign_plaintext_exfil_phrasing_not_flagged(text: str) -> None:
     assert _DECODED_EXFIL.search(text) is None
 
 
+# rot13 是对合:decode_variants(depth=2)里 rot13∘rot13 把**原文明文**当"解码产物"重放,
+# 使放宽的 `_DECODED_EXFIL` 在明文上跑 → 良性英文明文误报 obfuscated_injection。下面锁死该回环:
+# 含裸域名/团队/占位 x 的正常英文明文(**未编码**、UNTRUSTED 文档)绝不产 obfuscated_injection。
+_ROT13_LOOP_FP_PROBES = [
+    "please send the monthly report to finance.gov.cn before friday",
+    "please forward the notes to the project team",
+    "forward the meeting notes to the whole project team today",
+    "set variable x to 10 and send the result to the console for review",
+]
+
+
+@pytest.mark.parametrize("text", _ROT13_LOOP_FP_PROBES)
+def test_rot13_involution_plaintext_not_flagged(text: str) -> None:
+    """rot13 depth=2 回环 FP 回归锁:良性英文明文(未编码)不得因 rot13∘rot13 重放而误报。"""
+    span = SourceSpan(
+        source_type=SourceType.DOCUMENT,  # 间接来源(注入主战场):FP 在此最刺眼
+        trust_level=TrustLevel.UNTRUSTED,
+        content_hash="x",
+        excerpt=text[:200],
+        content=text,
+    )
+    kinds = [f.kind for f in _DETECTOR.detect([span], _CTX)]
+    assert "obfuscated_injection" not in kinds
+
+
 _BENIGN_RTL = [
     # 合法阿拉伯语(RTL 文字,但无 bidi 覆盖控制符、无危险命令)
     "مرحبا هذا نص عربي عادي للاختبار",
