@@ -139,16 +139,53 @@ def _dest_raw(arguments: dict) -> str:
 # 公认的本机主机名(非 IP 字面量,ipaddress 解析不了,单列)。
 _INTERNAL_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
 
+# overlong UTF-8 编码的分隔符 / 点:把 `/`(U+002F)、`.`(U+002E)、`\`(U+005C)用超过必要
+# 字节数的畸形序列表达(2/3/4 字节)。这些字节序列在 UTF-8 里**永远是非法的**——任何合法
+# 路径/URL 都不会出现——故直接规范回 ASCII 是安全的(不会误伤良性输入)。
+# **必须在 unquote 之前规范**:`urllib.unquote` 把非法 overlong 字节有损解成替换字符 �,吞掉后
+# `..`/`/` 不再独立成路径段,`".." in norm.split("/")` 看不到独立 `..` → 遍历判定漏放。
+# 只规范 overlong 百分号序列,**不碰** Unicode 同形斜杠(如全角 `／`/U+FF0F,有 FP 风险,不在本次范围)。
+_OVERLONG_UTF8: tuple[tuple[str, str], ...] = (
+    # `/` U+002F(0x2F):2 / 3 / 4 字节 overlong
+    ("%c0%af", "/"),
+    ("%e0%80%af", "/"),
+    ("%f0%80%80%af", "/"),
+    # `.` U+002E(0x2E)
+    ("%c0%ae", "."),
+    ("%e0%80%ae", "."),
+    ("%f0%80%80%ae", "."),
+    # `\` U+005C(0x5C):含两种 2 字节前导(0xC0/0xC1)
+    ("%c0%9c", "\\"),
+    ("%c1%9c", "\\"),
+    ("%e0%80%9c", "\\"),
+    ("%f0%80%80%9c", "\\"),
+)
+_OVERLONG_MAP = {seq: ascii_ch for seq, ascii_ch in _OVERLONG_UTF8}
+_OVERLONG_RX = re.compile("|".join(re.escape(seq) for seq, _ in _OVERLONG_UTF8), re.IGNORECASE)
+
+
+def _normalize_overlong(text: str) -> str:
+    """把 overlong UTF-8 百分号序列规范回 ASCII 的 `/` `.` `\\`(大小写不敏感)。
+
+    见 `_OVERLONG_UTF8`:这些序列畸形非法、良性输入绝不出现,故规范安全无 FP。必须先于
+    unquote 调用(unquote 会有损吞掉 overlong 字节)。无 `%` 直接早退(零开销)。
+    """
+    if "%" not in text:
+        return text
+    return _OVERLONG_RX.sub(lambda m: _OVERLONG_MAP[m.group(0).lower()], text)
+
 
 def _unquote_recursive(text: str, max_depth: int = 3) -> str:
-    """递归 URL 解码(限深),救双重/多重百分号编码(`%252e`→`%2e`→`.`)。
+    """递归 URL 解码(限深),救双重/多重百分号编码(`%252e`→`%2e`→`.`)与 overlong UTF-8 分隔符。
 
     路径围栏只看字面 `..`/绝对前缀,攻击者用 `%252e%252e%252f` 可让 `..` 不以字面出现而绕过。
     在匹配副本上逐层解码到稳定不动点(或触顶),再判定;限深防构造的解码炸弹。
+    **每一层先规范 overlong**(见 `_normalize_overlong`),使双重编码的 overlong(如 `%25c0%25af`
+    → 解一层出 `%c0%af` → 下一轮规范成 `/`)也能救;种子亦先规范一次。
     """
-    prev = text
+    prev = _normalize_overlong(text)
     for _ in range(max_depth):
-        cur = unquote(prev)
+        cur = _normalize_overlong(unquote(prev))
         if cur == prev:
             break
         prev = cur
