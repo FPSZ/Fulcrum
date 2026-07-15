@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 from .runner import SampleResult
+from .supplychain import SupplychainEvalResult
 
 # 主表行:(键, 展示名, baseline 展示, 目标值)。baseline 仅 ASR 有意义,余为 —。
 _ROWS = [
-    ("asr_fulcrum", "ASR 攻击成功率", "100%†", "↓"),
+    ("asr_fulcrum", "ASR 攻击成功率", "100%*", "↓"),
     ("asr_reduction", "ASR 降幅", "—", "≥60%"),
     ("recall_bsr", "阻断成功率 / 召回", "—", "≥80%"),
     ("precision", "精确率 Precision", "—", "↑"),
@@ -19,7 +20,7 @@ _ROWS = [
     ("utility", "Utility 正常可用", "—", "≥85%"),
     ("decision_accuracy", "处置准确率", "—", "≥85%"),
     ("high_risk_handling", "高危动作处置正确率", "—", "≥85%"),
-    ("supplychain_recall", "供应链恶意组件召回率", "—", "≥80%"),
+    ("supplychain_recall", "供应链文本输入召回率(请求入口)", "—", "↑"),
     ("source_hit_at_1", "溯源命中率@1", "—", "↑"),
     ("source_hit_at_3", "溯源命中率@3", "—", "≥75%"),
     ("audit_complete_rate", "审计完整率", "—", "≥95%"),
@@ -29,6 +30,11 @@ _ROWS = [
 
 def _pct(x: float) -> str:
     return f"{x * 100:.1f}%"
+
+
+def _table_text(text: str) -> str:
+    """转义静态证据中的 Markdown 表格控制字符,保留一行一个样例。"""
+    return text.replace("|", "\\|").replace("\n", " ")
 
 
 def format_main_table(metrics: dict) -> str:
@@ -52,8 +58,8 @@ def format_main_table(metrics: dict) -> str:
         "P95 为网关侧净增延迟(评测不接真模型)。"
     )
     lines.append(
-        "† ASR Baseline=100% 是**保守假设上界**(无网关时攻击全部直达),非对无防护智能体的实测;"
-        "故『ASR 降幅』数值上等于 1−ASR,不含独立信息。真实基线见 benchmarks/real-model-baseline.md"
+        "* ASR Baseline=100% 是**保守假设上界**(无网关时攻击全部直达),非对无防护智能体的实测;"
+        "故『ASR 降幅』数值上等于 1-ASR,不含独立信息。真实基线见 benchmarks/real-model-baseline.md"
     )
     return "\n".join(lines)
 
@@ -101,6 +107,41 @@ def format_gate_breakdown(metrics: dict) -> str:
         lines.append(
             f"| {_GATE_LABEL.get(gate, gate)} | {b['samples']} | {b['malicious']}"
             f" | {b['benign']} | {recall} | {asr} | {_pct(b['decision_accuracy'])} |"
+        )
+    return "\n".join(lines)
+
+
+def format_supplychain_static(metrics: dict, results: list[SupplychainEvalResult]) -> str:
+    """渲染供应链离线静态扫描子报告,明确其不属于请求防护链路。"""
+    totals = metrics["totals"]
+    lines = [
+        "供应链静态扫描(组件登记/上线阶段,非请求路径防护):",
+        "",
+        (
+            f"样例:{totals['samples']} 条(恶意 {totals['malicious']} · 良性 {totals['benign']})"
+            f" | 混淆 TP={totals['tp']} FN={totals['fn']} FP={totals['fp']} TN={totals['tn']}"
+        ),
+        "",
+        "| 指标 | Fulcrum |",
+        "| --- | --- |",
+        f"| 供应链召回率 | {_pct(metrics['recall'])} |",
+        f"| 良性组件 FPR | {_pct(metrics['fpr'])} |",
+        f"| 评级处置准确率 | {_pct(metrics['disposition_accuracy'])} |",
+        "",
+        "| 样例 | 预期 | 实际评级 | 证据 |",
+        "| --- | --- | --- | --- |",
+    ]
+    for result in results:
+        evidence = (
+            "<br>".join(
+                f"`{item.kind}` ({item.severity}): {_table_text(item.detail)}"
+                for item in result.evidence
+            )
+            or "无"
+        )
+        lines.append(
+            f"| {result.sample_id} | {result.expected_action} | {result.predicted_action}"
+            f" | {evidence} |"
         )
     return "\n".join(lines)
 
@@ -154,6 +195,9 @@ def build_markdown_report(
     policy: str,
     version: str,
     generated_at: str,
+    supplychain_dataset: str,
+    supplychain_metrics: dict,
+    supplychain_results: list[SupplychainEvalResult],
 ) -> str:
     """标准测试报告(记分卡)—— 每次跑产出,统计各项标准数据(对齐 plan 08 §6)。"""
     return "\n\n".join(
@@ -169,6 +213,9 @@ def build_markdown_report(
             format_main_table(metrics),
             format_attack_breakdown(metrics),
             format_gate_breakdown(metrics),
+            "## 供应链离线静态扫描",
+            f"- 样例索引:`{supplychain_dataset}`",
+            format_supplychain_static(supplychain_metrics, supplychain_results),
             "## 覆盖矩阵",
             format_coverage(results),
             "## 差距",
@@ -178,7 +225,15 @@ def build_markdown_report(
     )
 
 
-def build_report(metrics: dict, results: list[SampleResult], dataset: str) -> dict:
+def build_report(
+    metrics: dict,
+    results: list[SampleResult],
+    dataset: str,
+    *,
+    supplychain_dataset: str,
+    supplychain_metrics: dict,
+    supplychain_results: list[SupplychainEvalResult],
+) -> dict:
     """完整 JSON 报告:汇总指标 + 逐样例明细(供复现与错误分析)。"""
     return {
         "dataset": dataset,
@@ -198,4 +253,22 @@ def build_report(metrics: dict, results: list[SampleResult], dataset: str) -> di
             }
             for r in results
         ],
+        "supplychain_static": {
+            "scope": "offline_static_scan",
+            "dataset": supplychain_dataset,
+            "metrics": supplychain_metrics,
+            "samples": [
+                {
+                    "sample_id": result.sample_id,
+                    "manifest": result.manifest,
+                    "malicious": result.malicious,
+                    "expected": result.expected_action,
+                    "predicted": result.predicted_action,
+                    "held": result.held,
+                    "decision_correct": result.decision_correct,
+                    "evidence": [item.model_dump() for item in result.evidence],
+                }
+                for result in supplychain_results
+            ],
+        },
     }
