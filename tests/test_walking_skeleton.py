@@ -18,6 +18,7 @@ def _make_client(tmp_path: Path) -> TestClient:
         auth_db_path=str(tmp_path / "auth.sqlite"),
         bootstrap_admin_password=_ADMIN_PW,
         gateway_config_path=str(tmp_path / "gateway.json"),
+        security_config_path=str(tmp_path / "security.json"),
         audit_db_path=str(tmp_path / "audit.sqlite"),
         frontend_dir="",
     )

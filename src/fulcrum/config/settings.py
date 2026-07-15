@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     gateway_config_path: str = "data/runtime/gateway.json"
     # 控制台实例元信息落盘路径(JSON);同上挂卷即持久化。
     console_settings_path: str = "data/runtime/console.json"
+    # 分级安全预设与按区覆盖落盘路径(JSON);保存后热替换运行中的检测器配置。
+    security_config_path: str = "data/runtime/security.json"
     # 操作助手多轮对话记忆目录(一会话一文件);落盘故重启不丢,挂卷即持久化。
     conversation_dir: str = "data/runtime/conversations"
     # 操作助手模型接入配置落盘路径(JSON;协议/端点/密钥/模型名);设置页可改、热加载。

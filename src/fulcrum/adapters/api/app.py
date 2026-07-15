@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import secrets
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.requests import Request
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from ..assistant.planner import ModelComplete
     from ..auth import AuthBundle
     from ..gateway import GatewayConfigStore, UpstreamForwarder
+    from ..security_config import SecurityConfigStore
 
 
 def _output_of(result: object | None) -> str | None:
@@ -80,6 +82,9 @@ def build_api(
     scanner: SupplyChainScanner | None = None,
     assistant_complete: ModelComplete | None = None,
     assistant_model_turn: ModelTurn | None = None,
+    security_store: SecurityConfigStore | None = None,
+    capability_config: dict[str, Any] | None = None,
+    pipeline_factory: Callable[[dict[str, Any]], SecurityPipeline] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="枢衡 Fulcrum API", version=__version__)
 
@@ -136,6 +141,21 @@ def build_api(
 
         console_store = ConsoleSettingsStore(settings.console_settings_path)
         register_console_settings_routes(app, console_store, settings, deps)
+        if (
+            security_store is not None
+            and capability_config is not None
+            and pipeline_factory is not None
+        ):
+            from .security_config_routes import register_security_config_routes
+
+            register_security_config_routes(
+                app,
+                pipeline,
+                security_store,
+                capability_config,
+                pipeline_factory,
+                deps,
+            )
         # AI 操作助手:模型后端默认从 .env(endpoint/key/name)装配,组装根可覆盖(测试注入假后端)。
         complete = assistant_complete or make_model_backend(
             settings.model_endpoint, settings.model_api_key, settings.model_name

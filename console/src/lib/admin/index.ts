@@ -229,3 +229,32 @@ export interface ConsoleSettings extends ConsoleSettingsWrite {
 export const getConsoleSettings = () => api<ConsoleSettings>('/admin/settings')
 export const saveConsoleSettings = (b: ConsoleSettingsWrite) =>
   api<ConsoleSettings>('/admin/settings', { method: 'PUT', body: JSON.stringify(b) })
+
+// ── 分级安全配置(四区检测器 + 预设档；judge 密钥只写不回)────────────
+export type SecurityProfile = 'lightweight' | 'standard' | 'strict' | 'air_gapped'
+export type DetectorZone = 'gateway_input' | 'gateway_output' | 'tool_return' | 'assistant_intent'
+
+export interface SecurityConfig {
+  profile: SecurityProfile
+  detector_zones: Record<DetectorZone, string[]>
+  available_detectors: string[]
+  judge_endpoint: string
+  judge_model: string
+  judge_api_key_masked: string
+  judge_api_key_set: boolean
+  judge_timeout_seconds: number
+}
+
+export interface SecurityConfigWrite {
+  profile: SecurityProfile
+  zone_overrides: Partial<Record<DetectorZone, string[]>>
+  judge_endpoint: string
+  judge_model: string
+  /** null 保留后端现有密钥；空串明确清除。 */
+  judge_api_key: string | null
+  judge_timeout_seconds: number
+}
+
+export const getSecurityConfig = () => api<SecurityConfig>('/admin/security-config')
+export const saveSecurityConfig = (b: SecurityConfigWrite) =>
+  api<SecurityConfig>('/admin/security-config', { method: 'PUT', body: JSON.stringify(b) })
