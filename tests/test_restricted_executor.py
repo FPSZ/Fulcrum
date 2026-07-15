@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 import time
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from fulcrum.capabilities.sandbox.restricted_executor import (
     _disallowed_url_scheme,
     _realpath_escapes,
 )
+from fulcrum.capabilities.tools.file_tools import FileWriteTool
 from fulcrum.core.domain import Context, ExecResult, ToolIntent
 
 
@@ -43,6 +45,47 @@ class _BigTool:
 
     def call(self, arguments: dict, ctx: Context) -> ExecResult:
         return ExecResult(ok=True, output="A" * 5000)
+
+
+class _ProcessIdTool:
+    name = "pid"
+    base_risk = 0.1
+    model_schema = None
+
+    def call(self, arguments: dict, ctx: Context) -> ExecResult:
+        return ExecResult(ok=True, output=str(os.getpid()))
+
+
+class _WorkingDirectoryTool:
+    name = "cwd"
+    base_risk = 0.1
+    model_schema = None
+
+    def call(self, arguments: dict, ctx: Context) -> ExecResult:
+        return ExecResult(ok=True, output=str(Path.cwd()))
+
+
+class _SocketTool:
+    name = "socket"
+    base_risk = 0.1
+    model_schema = None
+
+    def call(self, arguments: dict, ctx: Context) -> ExecResult:
+        # 仅构造 socket,不连接任何地址;验证默认网络闸门。
+        socket.socket()
+        return ExecResult(ok=True, output="unexpected")
+
+
+class _DelayedWriteTool:
+    name = "delayed-write"
+    base_risk = 0.1
+    model_schema = None
+
+    def call(self, arguments: dict, ctx: Context) -> ExecResult:
+        Path("started.txt").write_text("started", encoding="utf-8")
+        time.sleep(2)
+        Path("late.txt").write_text("late", encoding="utf-8")
+        return ExecResult(ok=True, output="late")
 
 
 def _run(tool: object, args: dict, **kw: object) -> ExecResult:
@@ -113,6 +156,52 @@ def test_schemeless_url_falls_through_to_domain_check() -> None:
 def test_timeout_enforced() -> None:
     r = _run(_SlowTool(), {"path": "notice.txt"}, timeout_seconds=0.05)
     assert not r.ok and "超时" in (r.error or "")
+
+
+def test_tool_runs_in_independent_process() -> None:
+    r = _run(_ProcessIdTool(), {"path": "notice.txt"})
+    assert r.ok
+    assert int(r.output or "0") != os.getpid()
+
+
+def test_worker_uses_workspace_as_current_directory(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    r = _run(_WorkingDirectoryTool(), {"path": "notice.txt"}, workspace=str(workspace))
+    assert r.ok
+    assert Path(r.output or "").resolve() == workspace.resolve()
+
+
+def test_file_tool_uses_the_executor_workspace_once(tmp_path: Path) -> None:
+    """子进程切换 CWD 后，既有文件工具仍应写入同一受控工作区而非嵌套目录。"""
+    workspace = tmp_path / "workspace"
+    r = _run(
+        FileWriteTool(),
+        {"path": "notice.txt", "content": "ok"},
+        workspace=str(workspace),
+    )
+    assert r.ok
+    assert (workspace / "notice.txt").read_text(encoding="utf-8") == "ok"
+    assert not (workspace / "data" / "workspace" / "notice.txt").exists()
+
+
+def test_network_is_blocked_inside_worker_by_default() -> None:
+    r = _run(_SocketTool(), {"path": "notice.txt"})
+    assert not r.ok
+    assert "PermissionError" in (r.error or "")
+
+
+def test_timeout_terminates_worker_before_delayed_write(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    r = _run(
+        _DelayedWriteTool(),
+        {"path": "notice.txt"},
+        workspace=str(workspace),
+        timeout_seconds=0.8,
+    )
+    assert not r.ok and "子进程已终止" in (r.error or "")
+    assert (workspace / "started.txt").exists()  # worker 已开始执行,非仅启动超时。
+    time.sleep(0.2)
+    assert not (workspace / "late.txt").exists()
 
 
 def test_oversized_output_truncated() -> None:

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ...core.domain import Context, ExecResult
@@ -16,6 +17,12 @@ _MAX_READ = 4000  # 回显截断,避免超大文件灌爆上下文
 _MAX_WRITE = 1_000_000  # 单次写入字符上限(防被诱导批量落盘:磁盘耗尽 / 把外泄数据暂存进工作区)
 
 
+def _workspace_root() -> Path:
+    """受限子进程显式传入绝对工作区；普通进程保持既有仓库相对根目录。"""
+    configured = os.environ.get("FULCRUM_RESTRICTED_WORKSPACE")
+    return Path(configured).resolve() if configured else _WORKSPACE.resolve()
+
+
 def _resolve(raw: str) -> Path | None:
     """把工具参数路径解析到工作区内的真实路径;越界返回 None。
 
@@ -23,7 +30,7 @@ def _resolve(raw: str) -> Path | None:
     """
     if not raw:
         return None
-    base = _WORKSPACE.resolve()
+    base = _workspace_root()
     cand = Path(raw)
     candidates = (
         [cand.resolve()]
