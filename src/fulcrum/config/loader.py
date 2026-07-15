@@ -73,7 +73,7 @@ def _validate_detector_names(value: Any, field: str) -> list[str]:
         raise ConfigError(f"{field} 必须是检测器名称列表")
     if any(not isinstance(name, str) or not name.strip() for name in value):
         raise ConfigError(f"{field} 只能包含非空检测器名称")
-    return list(value)
+    return [name.strip() for name in value]
 
 
 def load_capability_config(path: str | None = None) -> dict[str, Any]:
