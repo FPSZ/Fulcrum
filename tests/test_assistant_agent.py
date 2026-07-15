@@ -89,6 +89,139 @@ def test_read_orchestration_runs_and_audits(tmp_path: Path) -> None:
     assert any(e.event_type.value == "assistant_chat" for e in events)
 
 
+def test_tool_result_is_refilled_with_original_tool_call_id(tmp_path: Path) -> None:
+    """下一轮规划必须看到与 assistant tool_calls 成对的 tool_call_id。"""
+    pipeline = _pipeline(tmp_path)
+    seen: list[list[dict]] = []
+
+    async def turn(messages: list[dict], _tools: list[dict]) -> ModelReply:
+        seen.append(list(messages))
+        if len(seen) == 1:
+            return ModelReply(
+                tool_calls=[ToolCallReq(id="call-42", name="get_overview_stats", arguments={})]
+            )
+        tool_result = messages[-1]
+        assert tool_result["role"] == "tool"
+        assert tool_result["tool_call_id"] == "call-42"
+        assert tool_result["name"] == "get_overview_stats"
+        return ModelReply(content="已基于工具结果完成下一轮规划。")
+
+    agent = AssistantAgent(pipeline, _services(tmp_path, pipeline), turn)
+    res = asyncio.run(agent.run("查看总览", _principal(ALL_PERMISSION_KEYS), "s-tool-result"))
+    assert res.reply == "已基于工具结果完成下一轮规划。"
+    assert res.model_rounds == 2 and res.tool_calls == 1
+
+
+def test_budget_exhaustion_is_audited_and_stops_before_model(tmp_path: Path) -> None:
+    """令牌预算不足时不请求模型，且以 ASSISTANT_CHAT 留下收口证据。"""
+    pipeline = _pipeline(tmp_path)
+    calls = 0
+
+    async def turn(_messages: list[dict], _tools: list[dict]) -> ModelReply:
+        nonlocal calls
+        calls += 1
+        return ModelReply(content="不应调用")
+
+    agent = AssistantAgent(pipeline, _services(tmp_path, pipeline), turn, max_session_tokens=1)
+    res = asyncio.run(agent.run("查看总览", _principal(ALL_PERMISSION_KEYS), "s-token-limit"))
+    assert calls == 0 and res.termination_reason == "token_limit"
+    event = asyncio.run(pipeline.audit.events("s-token-limit"))[-1]
+    assert event.evidence["termination_reason"] == "token_limit"
+
+
+def test_round_limit_stops_followup_planning_and_is_audited(tmp_path: Path) -> None:
+    pipeline = _pipeline(tmp_path)
+    agent = AssistantAgent(
+        pipeline,
+        _services(tmp_path, pipeline),
+        _scripted(
+            ModelReply(
+                tool_calls=[ToolCallReq(id="only-round", name="get_overview_stats", arguments={})]
+            ),
+            ModelReply(content="不应开始第二轮。"),
+        ),
+        max_steps=1,
+    )
+    res = asyncio.run(agent.run("查看总览", _principal(ALL_PERMISSION_KEYS), "s-round-limit"))
+    assert res.termination_reason == "round_limit"
+    assert res.model_rounds == 1 and res.tool_calls == 1
+    event = asyncio.run(pipeline.audit.events("s-round-limit"))[-1]
+    assert event.evidence["termination_reason"] == "round_limit"
+
+
+def test_model_timeout_is_audited_and_fails_closed(tmp_path: Path) -> None:
+    pipeline = _pipeline(tmp_path)
+
+    async def slow_turn(_messages: list[dict], _tools: list[dict]) -> ModelReply:
+        await asyncio.sleep(0.05)
+        return ModelReply(content="不应返回")
+
+    agent = AssistantAgent(
+        pipeline, _services(tmp_path, pipeline), slow_turn, max_session_seconds=0.001
+    )
+    res = asyncio.run(agent.run("查看总览", _principal(ALL_PERMISSION_KEYS), "s-model-timeout"))
+    assert res.termination_reason in {"time_limit", "model_timeout"}
+    assert "安全停止" in res.reply
+    event = asyncio.run(pipeline.audit.events("s-model-timeout"))[-1]
+    assert event.evidence["termination_reason"] == res.termination_reason
+
+
+def test_tool_exception_is_audited_and_stops_followup_planning(tmp_path: Path) -> None:
+    pipeline = _pipeline(tmp_path)
+
+    async def broken(_args: dict, _principal: object, _services: object) -> OperationResult:
+        raise RuntimeError("fake tool failure")
+
+    operation_registry.register(
+        AssistantTool(
+            name="broken_read",
+            kind="read",
+            label="故障读取",
+            description="测试用：抛出无害异常",
+            requires=("overview.view",),
+            handler=broken,
+        )
+    )
+    try:
+        agent = AssistantAgent(
+            pipeline,
+            _services(tmp_path, pipeline),
+            _scripted(
+                ModelReply(
+                    tool_calls=[ToolCallReq(id="broken-1", name="broken_read", arguments={})]
+                ),
+                ModelReply(content="不应继续规划。"),
+            ),
+        )
+        res = asyncio.run(
+            agent.run("读取测试数据", _principal(ALL_PERMISSION_KEYS), "s-tool-error")
+        )
+        assert res.termination_reason == "tool_error"
+        assert res.model_rounds == 1 and res.tool_calls == 1
+        assert res.steps[-1].ok is False and "RuntimeError" in res.steps[-1].detail
+        event = asyncio.run(pipeline.audit.events("s-tool-error"))[-1]
+        assert event.evidence["termination_reason"] == "tool_error"
+    finally:
+        operation_registry._ops.pop("broken_read", None)
+
+
+def test_output_gate_exception_is_audited_and_does_not_leak_reply(tmp_path: Path) -> None:
+    pipeline = _pipeline(tmp_path)
+
+    async def broken_output(_session_id: str, _text: str):
+        raise RuntimeError("fake output gate failure")
+
+    pipeline.screen_output = broken_output  # type: ignore[method-assign]
+    agent = AssistantAgent(
+        pipeline, _services(tmp_path, pipeline), _scripted(ModelReply(content="模型原始答复"))
+    )
+    res = asyncio.run(agent.run("查看总览", _principal(ALL_PERMISSION_KEYS), "s-output-error"))
+    assert res.termination_reason == "output_gate_error"
+    assert "模型原始答复" not in res.reply and "已拦截" in res.reply
+    event = asyncio.run(pipeline.audit.events("s-output-error"))[-1]
+    assert event.evidence["termination_reason"] == "output_gate_error"
+
+
 def test_malicious_intent_blocked_before_model(tmp_path: Path) -> None:
     pipeline = _pipeline(tmp_path)
     # 若入口没拦住,脚本会驱动一次工具调用 → steps 非空;用它反证模型未被调用。
