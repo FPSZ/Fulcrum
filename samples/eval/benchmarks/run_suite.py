@@ -165,6 +165,18 @@ def _pct(x) -> str:
     return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "—"
 
 
+def _ms(x) -> str:
+    return f"{x:.1f}ms" if isinstance(x, (int, float)) else "—"
+
+
+def _judge_admission(r: dict) -> str:
+    """准入状态和理由保持同列，避免矩阵把失败原因藏进 JSON。"""
+    if r.get("eligible"):
+        return "通过"
+    reasons = r.get("reasons") or ["基准未给出原因"]
+    return "不通过: " + "; ".join(map(str, reasons))
+
+
 def _ok(val: float, target: float, le: bool = False) -> str:
     return "✓" if (val <= target if le else val >= target) else "✗"
 
@@ -311,13 +323,16 @@ def _format_models(results: dict[tuple[str, str], dict]) -> str:
              for mdl, r in rt.items()], rights={1, 2, 3, 4, 5, 6})
     jd = {m: r for (m, s), r in results.items() if s == "judge"}
     if jd:
-        o += ["", "[judge · LLM-judge 语义层 (semantic layer)] 召回 / FPR(规则+judge 融合)"]
+        o += ["", "[judge · LLM-judge 语义层] 召回/FPR、端到端延迟与准入（预热不计延迟）"]
         o += _mono_table(
-            ["模型 (Model)", "judge召回 (Recall)", "judgeFPR", "融合召回 (Fused)",
-             "融合FPR (Fused FPR)", "s/条 (s/item)"],
+            ["模型 (Model)", "judge召回", "judgeFPR", "融合召回", "融合FPR", "held-out FPR",
+             "P50/P95/P99", "失败/降级", "准入/原因"],
             [[mdl, _pct(r["judge_recall"]), _pct(r["judge_fpr"]), _pct(r["fused_recall"]),
-              _pct(r["fused_fpr"]), r["sec_per_item"]]
-             for mdl, r in jd.items()], rights={1, 2, 3, 4, 5})
+              _pct(r["fused_fpr"]), _pct(r.get("heldout_fpr")),
+              "/".join(_ms(r.get(k)) for k in ("latency_p50_ms", "latency_p95_ms", "latency_p99_ms")),
+              f"{r.get('failure_count', '—')}/{r.get('degraded_call_count', '—')}",
+              _judge_admission(r)]
+             for mdl, r in jd.items()], rights={1, 2, 3, 4, 5, 6, 7})
     return "\n".join(o)
 
 
@@ -370,13 +385,17 @@ def _md_models(results: dict[tuple[str, str], dict]) -> str:
                        for mdl, r in rt.items()])]
     jd = {m: r for (m, s), r in results.items() if s == "judge"}
     if jd:
-        parts += ["", "### judge · LLM-judge 语义层 (semantic layer) — 召回 / FPR", "",
-                  _md_table(
-                      ["模型 (Model)", "judge召回 (Recall)", "judgeFPR (Judge FPR)",
-                       "融合召回 (Fused)", "融合FPR (Fused FPR)", "s/条 (s/item)"],
-                      [[mdl, _pct(r["judge_recall"]), _pct(r["judge_fpr"]),
-                        _pct(r["fused_recall"]), _pct(r["fused_fpr"]), r["sec_per_item"]]
-                       for mdl, r in jd.items()])]
+        parts += ["", "### judge · LLM-judge 语义层 — 召回/FPR、端到端延迟与准入", "",
+            _md_table(
+              ["模型 (Model)", "judge召回 (Recall)", "judgeFPR (Judge FPR)",
+               "融合召回 (Fused)", "融合FPR (Fused FPR)", "held-out FPR", "P50/P95/P99 (ms)",
+               "失败/降级", "准入/原因"],
+              [[mdl, _pct(r["judge_recall"]), _pct(r["judge_fpr"]),
+                _pct(r["fused_recall"]), _pct(r["fused_fpr"]), _pct(r.get("heldout_fpr")),
+                "/".join(_ms(r.get(k)) for k in ("latency_p50_ms", "latency_p95_ms", "latency_p99_ms")),
+                f"{r.get('failure_count', '—')}/{r.get('degraded_call_count', '—')}",
+                _judge_admission(r)]
+               for mdl, r in jd.items()])]
     return "\n".join(parts)
 
 
