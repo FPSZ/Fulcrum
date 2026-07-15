@@ -214,7 +214,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
             _raise(exc)
         return _dept_dto(d, directory.department_member_count(d.id))
 
-    @app.delete("/admin/departments/{dept_id}", status_code=204)
+    @app.delete("/admin/departments/{dept_id}", status_code=204, response_model=None)
     async def delete_department(dept_id: int, _: Principal = Depends(can_manage_dept)) -> None:
         try:
             directory.delete_department(dept_id)
@@ -259,7 +259,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
             _raise(exc)
         return _role_dto(r, directory.role_member_count(r.id))
 
-    @app.delete("/admin/roles/{role_id}", status_code=204)
+    @app.delete("/admin/roles/{role_id}", status_code=204, response_model=None)
     async def delete_role(role_id: int, _: Principal = Depends(can_manage_roles)) -> None:
         try:
             directory.delete_role(role_id)
@@ -375,7 +375,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
             _raise(exc)
         return _user_dto(user)
 
-    @app.post("/admin/users/{user_id}/reject", status_code=204)
+    @app.post("/admin/users/{user_id}/reject", status_code=204, response_model=None)
     async def reject(user_id: int, principal: Principal = Depends(can_approve)) -> None:
         target = directory.get_user(user_id)
         if target is None:
@@ -425,7 +425,7 @@ def register_admin_routes(app: FastAPI, directory: DirectoryService, deps: AuthD
             user_id=m.user_id, team_id=m.team_id, team_role=m.team_role, is_lead=m.is_lead
         )
 
-    @app.delete("/admin/teams/{team_id}/members/{user_id}", status_code=204)
+    @app.delete("/admin/teams/{team_id}/members/{user_id}", status_code=204, response_model=None)
     async def remove_team_member(
         team_id: int, user_id: int, principal: Principal = Depends(can_admin_members)
     ) -> None:

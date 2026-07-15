@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from .chat import ToolCallRequest
+
 __all__ = [
     "AssistantActionDTO",
     "AssistantPlanRequest",
@@ -26,6 +28,7 @@ __all__ = [
     "AssistantRequestApprovalResponse",
     "AssistantConfirmRequest",
     "AssistantConfirmResponse",
+    "ToolCallProposalRequest",
     "AssistantUndoRequest",
     "AssistantUndoResponse",
     "AssistantModelConfigDTO",
@@ -179,6 +182,12 @@ class AssistantConfirmResponse(BaseModel):
     reversible: bool = False
     undo_preview: str = ""
     error: str | None = None
+
+
+class ToolCallProposalRequest(ToolCallRequest):
+    """控制台工具页创建待确认调用的请求；最终参数仍由 /assistant/confirm 复校。"""
+
+    session_id: str | None = Field(default=None, max_length=128)
 
 
 class AssistantUndoRequest(BaseModel):

@@ -2,6 +2,12 @@
 export const tools = {
   'tools.empty.title': '暂无工具调用',
   'tools.empty.hint': '工具调用穿过枢衡即在此显示。也可在「数据与备份」载入演示备份预览。',
+  'tools.execute.tool': '工具名',
+  'tools.execute.arguments': '参数 JSON',
+  'tools.execute.propose': '创建提案',
+  'tools.execute.confirm': '确认执行',
+  'tools.execute.invalid_args': '参数必须是 JSON 对象。',
+  'tools.execute.failed': '工具调用请求失败。',
 
   'tools.summary': '近 {total} 次调用,其中 {held} 次被管控(阻断 / 审批)',
 

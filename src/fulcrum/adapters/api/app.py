@@ -129,7 +129,6 @@ def build_api(
         register_eval_routes(app, settings.eval_report_path, deps)
         register_policies_routes(app, pipeline, deps)
         register_supply_routes(app, scanner, settings.supply_manifest_dir, deps)
-        register_tools_routes(app, pipeline, deps)
         # 控制台实例元信息:落盘持久化,设置页可读写。
         from ..console_settings import ConsoleSettingsStore
         from .settings_routes import register_console_settings_routes
@@ -213,6 +212,7 @@ def build_api(
         assistant_actuator = AssistantActuator(
             operation_registry, assistant_services, token_signer, undo_store
         )
+        register_tools_routes(app, pipeline, deps, assistant_actuator)
         register_assistant_routes(
             app,
             pipeline,

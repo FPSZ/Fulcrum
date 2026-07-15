@@ -9,9 +9,12 @@ to_policy_set/scan_directory/load_report),与 REST 端点同源同口径——�
 
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 
-from ...core.domain import AuditEventType
+from pydantic import ValidationError
+
+from ...core.domain import AuditEventType, Disposition
 from ...core.operations import AssistantTool, OperationResult, operation, operation_registry
 
 # 复用各路由的纯投影函数(adapters→adapters,允许;与 REST 端点同一份读法)。
@@ -19,6 +22,7 @@ from ..api.eval_routes import load_report
 from ..api.events_routes import to_security_event
 from ..api.overview_routes import summarize
 from ..api.policies_routes import to_policy_set
+from ..api.schemas import ToolCallRequest
 from ..api.supply_routes import scan_directory
 from ..api.tools_routes import build_tool_calls
 from ..auth.models import ROLE_SCOPE_TEAM
@@ -238,6 +242,78 @@ async def list_tool_calls(args: dict, principal: Any, services: Any) -> Operatio
     rows = build_tool_calls(sink.all_events())[:limit]
     summary = f"共 {len(rows)} 条工具调用记录。"
     return OperationResult(summary=summary, data=[r.model_dump() for r in rows])
+
+
+async def _call_tool(args: dict, principal: Any, services: Any) -> OperationResult:
+    """控制台写操作的最终执行点:复用 /tools/call 的 SecurityPipeline 语义。"""
+    try:
+        request = ToolCallRequest(
+            session_id=str(args.get("session_id") or ""),
+            tool_name=str(args.get("tool_name") or ""),
+            arguments=args.get("arguments", {}),
+            source_ids=args.get("source_ids", []),
+        )
+    except ValidationError as exc:
+        return OperationResult(summary="工具调用参数不合法。", ok=False, error=str(exc))
+
+    # 确认界面允许编辑参数，最终值必须再次经过输入闸，不能复用初始提案的判定。
+    intent = json.dumps(
+        {
+            "tool_name": request.tool_name,
+            "arguments": request.arguments,
+            "source_ids": request.source_ids,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    gate = await services.pipeline.screen_input(request.session_id, intent)
+    if gate.decision != Disposition.ALLOW:
+        return OperationResult(
+            summary=f"确认后的工具参数未通过输入安全闸:{gate.reason}",
+            ok=False,
+            error="input_gate",
+        )
+
+    outcome = await services.pipeline.handle_tool_call(
+        session_id=request.session_id,
+        tool_name=request.tool_name,
+        arguments=request.arguments,
+        source_ids=request.source_ids,
+    )
+    decision = outcome.decision.decision.value
+    executed = "已执行" if outcome.executed else "未执行"
+    return OperationResult(
+        summary=(
+            f"工具「{request.tool_name}」处置为 {decision}，{executed}: {outcome.decision.reason}"
+        ),
+        data={"decision": decision, "executed": outcome.executed},
+        ok=outcome.executed,
+        error=None if outcome.executed else f"policy_{decision}",
+    )
+
+
+operation_registry.register(
+    AssistantTool(
+        name="call_tool",
+        kind="write",
+        label="执行受控工具调用",
+        description="经人工确认后调用已注册工具。参数会进入 Fulcrum 工具策略与审计管线。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+                "tool_name": {"type": "string"},
+                "arguments": {"type": "object"},
+                "source_ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["session_id", "tool_name", "arguments"],
+        },
+        requires=("tools.execute",),
+        risk="high",
+        handler=_call_tool,
+    )
+)
 
 
 @operation(

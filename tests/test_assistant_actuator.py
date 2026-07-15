@@ -83,10 +83,13 @@ def _make_user(directory) -> int:
 # ───────────────────────── 令牌签发/校验 ─────────────────────────
 def test_token_roundtrip_and_tamper() -> None:
     s = ActionTokenSigner()
-    tok = s.issue(tool="set_user_status", actor="admin", now=1000.0)
+    tok = s.issue(tool="set_user_status", actor="admin", session_id="s-token", now=1000.0)
     payload = s.verify(tok, now=1001.0)
     assert (
-        payload is not None and payload["tool"] == "set_user_status" and payload["actor"] == "admin"
+        payload is not None
+        and payload["tool"] == "set_user_status"
+        and payload["actor"] == "admin"
+        and payload["session_id"] == "s-token"
     )
     assert s.verify(tok, now=1000.0 + 10_000) is None  # 过期
     assert s.verify(tok[:-2] + "zz", now=1001.0) is None  # 签名被篡改
@@ -101,12 +104,12 @@ def test_confirm_executes_and_undo_rolls_back(tmp_path: Path) -> None:
     act = AssistantActuator(operation_registry, services, signer, UndoStore())
     who = _principal(ALL_PERMISSION_KEYS)
 
-    token = signer.issue(tool="set_user_status", actor="tester")
-    res = asyncio.run(act.confirm(token, {"user_id": uid, "status": "disabled"}, who, "s-act"))
+    token = signer.issue(tool="set_user_status", actor="tester", session_id="s-act")
+    res = asyncio.run(act.confirm(token, {"user_id": uid, "status": "disabled"}, who))
     assert res.ok and res.action_id and res.reversible
     assert bundle.directory.get_user(uid).status == "disabled"  # 真改了底层服务
 
-    undo = asyncio.run(act.undo(res.action_id, who, "s-act"))
+    undo = asyncio.run(act.undo(res.action_id, who))
     assert undo.ok
     assert bundle.directory.get_user(uid).status == "active"  # 回滚到前态
 
@@ -119,10 +122,10 @@ def test_confirm_edited_args_take_effect(tmp_path: Path) -> None:
     uid = _make_user(bundle.directory)
     signer = ActionTokenSigner()
     act = AssistantActuator(operation_registry, services, signer, UndoStore())
-    token = signer.issue(tool="set_user_status", actor="tester")
+    token = signer.issue(tool="set_user_status", actor="tester", session_id="s")
     # 编辑后参数 status=left 生效(而非提案里的任何默认)。
     res = asyncio.run(
-        act.confirm(token, {"user_id": uid, "status": "left"}, _principal(ALL_PERMISSION_KEYS), "s")
+        act.confirm(token, {"user_id": uid, "status": "left"}, _principal(ALL_PERMISSION_KEYS))
     )
     assert res.ok
     assert bundle.directory.get_user(uid).status == "left"
@@ -134,8 +137,8 @@ def test_confirm_denied_when_missing_permission(tmp_path: Path) -> None:
     signer = ActionTokenSigner()
     act = AssistantActuator(operation_registry, services, signer, UndoStore())
     low = _principal(frozenset({"ai.operate"}))  # 缺 users.manage
-    token = signer.issue(tool="set_user_status", actor="tester")
-    res = asyncio.run(act.confirm(token, {"user_id": uid, "status": "disabled"}, low, "s"))
+    token = signer.issue(tool="set_user_status", actor="tester", session_id="s")
+    res = asyncio.run(act.confirm(token, {"user_id": uid, "status": "disabled"}, low))
     assert res.denied and not res.ok
     assert bundle.directory.get_user(uid).status == "active"  # 未被改动
 
@@ -145,11 +148,11 @@ def test_confirm_rejects_actor_mismatch(tmp_path: Path) -> None:
     uid = _make_user(bundle.directory)
     signer = ActionTokenSigner()
     act = AssistantActuator(operation_registry, services, signer, UndoStore())
-    token = signer.issue(tool="set_user_status", actor="someone_else")  # 令牌发给别人
+    token = signer.issue(
+        tool="set_user_status", actor="someone_else", session_id="s"
+    )  # 令牌发给别人
     res = asyncio.run(
-        act.confirm(
-            token, {"user_id": uid, "status": "disabled"}, _principal(ALL_PERMISSION_KEYS), "s"
-        )
+        act.confirm(token, {"user_id": uid, "status": "disabled"}, _principal(ALL_PERMISSION_KEYS))
     )
     assert res.denied and not res.ok
 
@@ -160,10 +163,10 @@ def test_undo_is_one_time(tmp_path: Path) -> None:
     signer = ActionTokenSigner()
     act = AssistantActuator(operation_registry, services, signer, UndoStore())
     who = _principal(ALL_PERMISSION_KEYS)
-    token = signer.issue(tool="set_user_status", actor="tester")
-    res = asyncio.run(act.confirm(token, {"user_id": uid, "status": "disabled"}, who, "s"))
-    assert asyncio.run(act.undo(res.action_id, who, "s")).ok
-    second = asyncio.run(act.undo(res.action_id, who, "s"))
+    token = signer.issue(tool="set_user_status", actor="tester", session_id="s")
+    res = asyncio.run(act.confirm(token, {"user_id": uid, "status": "disabled"}, who))
+    assert asyncio.run(act.undo(res.action_id, who)).ok
+    second = asyncio.run(act.undo(res.action_id, who))
     assert not second.ok  # 一次性,二次撤销被拒
 
 

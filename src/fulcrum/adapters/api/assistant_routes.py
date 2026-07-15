@@ -263,8 +263,7 @@ def register_assistant_routes(
         提示,只有操作员**显式发起**才在此落 evidence.approval_requested=True 的判定点——
         事件墙据此放行展示(见 events_routes.is_feed_noise)。落同会话审计链,可溯源到发起人。
         """
-        # 仅审计关联键(不加载会话记忆,无跨用户读风险);沿用调用方 session_id。
-        session_id = body.session_id or f"assistant:{principal.username}"
+        session_id = _scoped(principal, body.session_id)
         is_output = body.stage == "output"
         await pipeline.audit.append(
             AuditEvent(
@@ -393,9 +392,8 @@ def register_assistant_routes(
             return AssistantConfirmResponse(
                 ok=False, summary="助手执行器未装配。", error="no_actuator"
             )
-        # 授权由 action_token + actuator 内 RBAC 强制;session_id 仅审计关联键,沿用调用方值。
-        session_id = body.session_id or f"assistant:{principal.username}"
-        res = await actuator.confirm(body.action_token, body.edited_args, principal, session_id)
+        # 审计会话来自已签名令牌,不能由确认请求的客户端字段指定。
+        res = await actuator.confirm(body.action_token, body.edited_args, principal)
         if res.denied:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res.summary)
         return AssistantConfirmResponse(
@@ -417,9 +415,8 @@ def register_assistant_routes(
             return AssistantUndoResponse(
                 ok=False, summary="助手执行器未装配。", error="no_actuator"
             )
-        # 授权由 action_id + actuator 内 RBAC 强制;session_id 仅审计关联键,沿用调用方值。
-        session_id = body.session_id or f"assistant:{principal.username}"
-        res = await actuator.undo(body.action_id, principal, session_id)
+        # 审计会话随已执行动作保存,不能由撤销请求的客户端字段指定。
+        res = await actuator.undo(body.action_id, principal)
         if res.denied:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res.summary)
         return AssistantUndoResponse(ok=res.ok, summary=res.summary, error=res.error)
@@ -458,8 +455,8 @@ def register_assistant_routes(
         body: AssistantPlanRequest,
         principal: Principal = Depends(can_operate),
     ) -> AssistantPlanResponse:
-        # 仅网关判定 + 审计(不加载会话记忆);session_id 沿用调用方值作审计关联键。
-        session_id = body.session_id or f"assistant:{principal.username}"
+        # 仅网关判定 + 审计(不加载会话记忆),仍以当前登录主体隔离会话。
+        session_id = _scoped(principal, body.session_id)
 
         # 吃自己的狗粮:助手的请求先过枢衡输入网关(检测/策略/审计,与企业智能体同一套)。
         # 网关判恶意 → 拦截,**根本不提交给模型规划**;screen_input 已自落 input_gateway 审计链。

@@ -47,6 +47,7 @@ PERMISSIONS: tuple[PermissionDef, ...] = (
     # 或旧规划器退役前,本点暂留以支撑"高危需二次确认 / 越权即拒"的安全回归。见 plan/13 §4。
     PermissionDef("policies.manage", "编辑策略", "管控", "policies", "策略中心", "write"),
     PermissionDef("tools.view", "查看工具网关", "管控", "tools", "工具网关", "read"),
+    PermissionDef("tools.execute", "执行受控工具", "管控", "tools", "工具网关", "action"),
     PermissionDef("supply.view", "查看供应链", "管控", "supply", "供应链", "read"),
     # 取证
     PermissionDef("audit.view", "审计溯源", "取证", "audit", "审计溯源", "read"),

@@ -135,7 +135,8 @@ def test_approval_request_then_resolve_lifecycle(tmp_path: Path) -> None:
     )
     assert r.status_code == 200, r.text
     rows = client.get("/events").json()
-    tickets = [e for e in rows if e["sess"] == sess and e["disp"] == "approve"]
+    scoped_sess = f"assistant:admin:{sess}"
+    tickets = [e for e in rows if e["sess"] == scoped_sess and e["disp"] == "approve"]
     assert len(tickets) == 1, "发起后应有且仅有一条待审批工单上墙"
     ticket_id = tickets[0]["id"]
 
@@ -145,7 +146,7 @@ def test_approval_request_then_resolve_lifecycle(tmp_path: Path) -> None:
 
     rows2 = client.get("/events").json()
     assert all(e["id"] != ticket_id for e in rows2), "处置后原待审工单应从墙上隐去"
-    allow_rows = [e for e in rows2 if e["sess"] == sess and e["disp"] == "allow"]
+    allow_rows = [e for e in rows2 if e["sess"] == scoped_sess and e["disp"] == "allow"]
     assert allow_rows, "处置后应出现一条放行结果行"
 
 
