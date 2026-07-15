@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ArrowRight, Scale } from 'lucide-react'
 import { Badge, type BadgeTone, Card, EmptyState, Segmented } from '@/components/ui'
+import { useResource } from '@/lib/backup'
 import { DISPOSITION_TONE as DISP_TONE } from '@/lib/disposition'
 import { type MessageKey, useTranslation } from '@/lib/i18n'
-import { type Disposition } from './data'
+import { type Disposition, type PolicySet } from './data'
 import { usePolicies } from './use-policies'
 
 // 色调单一真源 @/lib/disposition(M29);文案按本页语境留在 policies.* 命名空间。
@@ -29,8 +30,10 @@ export function PoliciesPage() {
     { value: 'block', label: t('policies.filter.block') },
     { value: 'approve', label: t('policies.filter.approve') },
   ]
-  // 策略是后端装配的配置事实(/policies),后端在跑即非空;不可达/非 yaml 引擎 → 诚实空态(不塞假数据)。
-  const ps = usePolicies().data
+  // 三态:当前装配策略 → 真;否则用户导入的离线快照;都没有 → 诚实空态。
+  const live = usePolicies().data
+  const backup = useResource<PolicySet>('policies')
+  const ps = live ?? backup[0]
   const [filter, setFilter] = useState<Filter>('all')
   const rules = useMemo(
     () => (ps ? ps.rules.filter((r) => filter === 'all' || r.decision === filter) : []),

@@ -15,7 +15,7 @@ export interface ImportReport {
 
 const envelopeSchema = z.object({
   kind: z.literal('fulcrum.backup'),
-  schemaVersion: z.number(),
+  schemaVersion: z.number().int().positive(),
   meta: z
     .object({
       exportedAt: z.string().optional(),
@@ -45,6 +45,14 @@ export function parseBackup(text: string): { data: ResourceData; report: ImportR
     return fail(t('lib.backup.bad_file'))
   }
   const file = parsed.data
+  if (file.schemaVersion > BACKUP_SCHEMA_VERSION) {
+    return fail(
+      t('lib.backup.unsupported_version', {
+        version: file.schemaVersion,
+        supported: BACKUP_SCHEMA_VERSION,
+      }),
+    )
+  }
 
   const data: ResourceData = {}
   const imported: ImportReport['imported'] = []

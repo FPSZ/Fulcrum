@@ -38,6 +38,34 @@
         "protection": { "rate": 94.1, "blocked": 1070, "target": 1200 }
       }
     ],
+    "policies": [
+      {
+        "name": "政务智能体演示策略",
+        "version": 1,
+        "default": "allow",
+        "workspace": "/workspace",
+        "allow_domains": ["gov.example"],
+        "rules": [
+          {
+            "id": "block-untrusted-egress",
+            "when": [
+              { "key": "source_trust", "value": "untrusted" },
+              { "key": "domain_allowed", "value": "false" }
+            ],
+            "decision": "block",
+            "risk_level": "critical",
+            "reason": "不可信来源驱动的非白名单外联应阻断"
+          },
+          {
+            "id": "approve-shell",
+            "when": [{ "key": "tool_name", "value": "shell.exec" }],
+            "decision": "approve",
+            "risk_level": "high",
+            "reason": "命令执行需人工审批"
+          }
+        ]
+      }
+    ],
     "events": [
       {
         "id": "a7f3e1", "time": "14:02:18", "sess": "9f12c7", "srcType": "文档", "trust": "untrusted",

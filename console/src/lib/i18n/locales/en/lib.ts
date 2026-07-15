@@ -21,6 +21,7 @@ export const lib: Partial<Record<MessageKey, string>> = {
   'lib.backup.demo_missing': 'Demo backup file not found',
   'lib.backup.bad_json': 'The file is not valid JSON',
   'lib.backup.bad_file': 'Not a valid Fulcrum backup file',
+  'lib.backup.unsupported_version': 'Backup version v{version} is newer than the supported v{supported}',
   'lib.backup.unknown_resource': 'Unknown resource type (not supported in this version, skipped)',
   'lib.backup.validate_failed': '{label} data validation failed',
   'lib.backup.instance': 'Fulcrum Console',

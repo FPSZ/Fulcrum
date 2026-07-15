@@ -19,6 +19,7 @@ export const lib = {
   'lib.backup.demo_missing': '未找到演示备份文件',
   'lib.backup.bad_json': '文件不是合法的 JSON',
   'lib.backup.bad_file': '不是有效的枢衡备份文件',
+  'lib.backup.unsupported_version': '备份版本 v{version} 高于当前支持的 v{supported}',
   'lib.backup.unknown_resource': '未知资源类型(当前版本不支持,已忽略)',
   'lib.backup.validate_failed': '{label} 数据校验失败',
   'lib.backup.instance': '枢衡控制台',
