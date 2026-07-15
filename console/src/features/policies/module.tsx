@@ -1,6 +1,7 @@
 import { Scale } from 'lucide-react'
 import { defineFeature } from '@/lib/module'
 import { lazy } from 'react'
+import { policyResourceSpec } from './backup'
 
 export const policiesModule = defineFeature({
   id: 'policies',
@@ -11,6 +12,7 @@ export const policiesModule = defineFeature({
   order: 30,
   requires: 'policies.view',
   component: lazy(() => import('./policies-page').then((m) => ({ default: m.PoliciesPage }))),
+  resources: [policyResourceSpec],
   actions: [
     {
       id: 'nav.policies',
