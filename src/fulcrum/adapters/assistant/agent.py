@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import asyncio
+import json
+import time
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -144,6 +147,10 @@ class AssistantRunResult:
     proposed_actions: list[AssistantProposedAction] = field(default_factory=list)
     approval_requests: list[AssistantApprovalRequest] = field(default_factory=list)
     steps: list[AssistantStep] = field(default_factory=list)
+    termination_reason: str = ""  # 预算/异常导致的 fail-closed 收口原因
+    model_rounds: int = 0
+    tool_calls: int = 0
+    estimated_tokens: int = 0
 
 
 @dataclass(slots=True)
@@ -154,9 +161,23 @@ class _ToolOutcome:
     step: AssistantStep
     ui: AssistantUiDirective | None = None
     proposal: AssistantProposedAction | None = None
+    terminal: bool = False  # 异常/越权后停止后续规划，避免失败后继续扩权尝试
 
 
 _MAX_FEED = 6000  # 单个工具回填给模型的最大字符数(防长列表撑爆上下文)
+
+
+def _estimate_tokens(messages: list[dict]) -> int:
+    """零依赖的上下文令牌上界估算。
+
+    模型协议未统一返回 usage，按规范消息序列化后的字符数除以 2 估算，宁可偏保守地提前
+    收口，也不在预算未知时继续把工具结果灌入下一轮规划。
+    """
+    try:
+        chars = len(json.dumps(messages, ensure_ascii=False, default=str))
+    except (TypeError, ValueError):
+        chars = len(str(messages))
+    return max(1, (chars + 1) // 2)
 
 
 def _read_feed(res: OperationResult) -> str:
@@ -255,19 +276,59 @@ class AssistantAgent:
         model_turn: ModelTurn,
         *,
         max_steps: int = 8,
+        max_tool_calls: int | None = None,
+        max_session_tokens: int = 12_000,
+        max_session_seconds: float = 60.0,
         token_signer: ActionTokenSigner | None = None,
         stream_turn: StreamTurn | None = None,
         conversation: ConversationStore | None = None,
         summarizer: Summarizer | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        if max_steps < 1 or (max_tool_calls is not None and max_tool_calls < 1):
+            raise ValueError("Agent 轮数与工具调用上限必须为正数")
+        if max_session_tokens < 1 or max_session_seconds <= 0:
+            raise ValueError("Agent 令牌与时间预算必须为正数")
         self._pipeline = pipeline
         self._services = services
         self._turn = model_turn
         self._max_steps = max_steps
+        self._max_tool_calls = max_tool_calls if max_tool_calls is not None else max_steps
+        self._max_session_tokens = max_session_tokens
+        self._max_session_seconds = max_session_seconds
         self._signer = token_signer
         self._stream = stream_turn
         self._conversation = conversation
         self._summarizer = summarizer
+        self._clock = clock
+
+    def _budget_reason(
+        self, messages: list[dict], started: float, tool_calls: int
+    ) -> tuple[str, int]:
+        """在调用模型或工具前检查预算；超额一律停止后续规划。"""
+        estimated_tokens = _estimate_tokens(messages)
+        if self._clock() - started >= self._max_session_seconds:
+            return "time_limit", estimated_tokens
+        if estimated_tokens > self._max_session_tokens:
+            return "token_limit", estimated_tokens
+        if tool_calls >= self._max_tool_calls:
+            return "tool_call_limit", estimated_tokens
+        return "", estimated_tokens
+
+    @staticmethod
+    def _termination_reply(reason: str) -> str:
+        messages = {
+            "round_limit": "已达到本次会话的规划轮数上限，已安全停止后续工具调用。",
+            "tool_call_limit": "已达到本次会话的工具调用上限，已安全停止后续工具调用。",
+            "token_limit": "上下文已达到本次会话的令牌预算，已安全停止后续规划。",
+            "time_limit": "本次会话已达到时间上限，已安全停止后续规划。",
+            "model_timeout": "模型规划超时，已安全停止后续工具调用。",
+            "model_error": "模型规划异常，已安全停止后续工具调用。",
+            "tool_timeout": "受治理工具执行超时，已安全停止后续规划。",
+            "tool_error": "受治理工具执行异常，已安全停止后续规划。",
+            "output_gate_error": "出口安全策略异常，已拦截本次答复。",
+        }
+        return messages.get(reason, "本次会话已安全停止后续规划。")
 
     def _initial_messages(
         self, intent: str, session_id: str, *, progressive: bool = False
@@ -374,18 +435,49 @@ class AssistantAgent:
         messages = self._initial_messages(intent, session_id, progressive=progressive)
 
         final: str | None = None
+        started = self._clock()
+        tool_calls = 0
         for _step in range(self._max_steps):
+            reason, result.estimated_tokens = self._budget_reason(messages, started, tool_calls)
+            if reason:
+                result.termination_reason = reason
+                break
             specs = self._specs_for_turn(tools, loaded) if progressive else all_specs
-            reply = await self._turn(messages, specs)
+            remaining = self._max_session_seconds - (self._clock() - started)
+            try:
+                reply = await asyncio.wait_for(self._turn(messages, specs), timeout=remaining)
+            except TimeoutError:
+                result.termination_reason = "model_timeout"
+                break
+            except Exception:  # noqa: BLE001 -- 不可信模型异常必须 fail-closed
+                result.termination_reason = "model_error"
+                break
+            result.model_rounds += 1
             if not reply.tool_calls:
                 final = reply.content
                 break
             messages.append(_assistant_msg(reply))
             for tc in reply.tool_calls:
+                reason, result.estimated_tokens = self._budget_reason(messages, started, tool_calls)
+                if reason:
+                    result.termination_reason = reason
+                    break
+                tool_calls += 1
                 if progressive and tc.name == _SEARCH_TOOL_NAME:
                     o = self._handle_search(tc, principal, tools, loaded)
                 else:
-                    o = await self._execute_tool(tc, by_name.get(tc.name), principal, session_id)
+                    remaining = self._max_session_seconds - (self._clock() - started)
+                    try:
+                        o = await asyncio.wait_for(
+                            self._execute_tool(tc, by_name.get(tc.name), principal, session_id),
+                            timeout=remaining,
+                        )
+                    except TimeoutError:
+                        result.termination_reason = "tool_timeout"
+                        break
+                    except Exception:  # noqa: BLE001 -- 工具/闸门异常不得继续规划
+                        result.termination_reason = "tool_error"
+                        break
                 result.steps.append(o.step)
                 if o.ui is not None:
                     result.ui_directives.append(o.ui)
@@ -399,12 +491,27 @@ class AssistantAgent:
                         "content": o.feed,
                     }
                 )
+                if o.terminal:
+                    result.termination_reason = "tool_error"
+                    break
+            if result.termination_reason:
+                break
 
         if final is None:
-            final = "我已尽力检索(达到单轮步数上限)。请缩小范围或分步再问。"
+            result.termination_reason = result.termination_reason or "round_limit"
+            final = self._termination_reply(result.termination_reason)
         final = final or "(已完成上述操作。)"
+        result.tool_calls = tool_calls
+        result.estimated_tokens = _estimate_tokens(messages)
 
-        out = await self._pipeline.screen_output(session_id, final)
+        try:
+            out = await self._pipeline.screen_output(session_id, final)
+        except Exception:  # noqa: BLE001 -- 出口闸门不可用时不得回传未审答复
+            result.termination_reason = result.termination_reason or "output_gate_error"
+            result.reply = self._termination_reply("output_gate_error")
+            result.compressed = await self._persist(session_id, messages, result.reply)
+            await self._audit(session_id, principal, intent, result, gate)
+            return result
         if out.decision == Disposition.APPROVE:
             # 回复需人工复核:不直接回传内容,当面问操作员是否发起审批申请。
             result.approval_requests.append(self._approval_request("output", out, final))
@@ -479,25 +586,58 @@ class AssistantAgent:
         messages = self._initial_messages(intent, session_id, progressive=progressive)
 
         final: str | None = None
+        started = self._clock()
+        tool_calls = 0
         for _step in range(self._max_steps):
+            reason, result.estimated_tokens = self._budget_reason(messages, started, tool_calls)
+            if reason:
+                result.termination_reason = reason
+                break
             specs = self._specs_for_turn(tools, loaded) if progressive else all_specs
             reply: ModelReply | None = None
-            async for chunk in stream(messages, specs):
-                if chunk.delta:
-                    yield {"type": "delta", "text": chunk.delta}
-                elif chunk.final is not None:
-                    reply = chunk.final
+            remaining = self._max_session_seconds - (self._clock() - started)
+            try:
+                async with asyncio.timeout(remaining):
+                    async for chunk in stream(messages, specs):
+                        if chunk.delta:
+                            yield {"type": "delta", "text": chunk.delta}
+                        elif chunk.final is not None:
+                            reply = chunk.final
+            except TimeoutError:
+                result.termination_reason = "model_timeout"
+                break
+            except Exception:  # noqa: BLE001 -- 流式模型异常不得继续调用工具
+                result.termination_reason = "model_error"
+                break
+            result.model_rounds += 1
             if reply is None:
+                result.termination_reason = "model_error"
                 break
             if not reply.tool_calls:
                 final = reply.content
                 break
             messages.append(_assistant_msg(reply))
             for tc in reply.tool_calls:
+                reason, result.estimated_tokens = self._budget_reason(messages, started, tool_calls)
+                if reason:
+                    result.termination_reason = reason
+                    break
+                tool_calls += 1
                 if progressive and tc.name == _SEARCH_TOOL_NAME:
                     o = self._handle_search(tc, principal, tools, loaded)
                 else:
-                    o = await self._execute_tool(tc, by_name.get(tc.name), principal, session_id)
+                    remaining = self._max_session_seconds - (self._clock() - started)
+                    try:
+                        o = await asyncio.wait_for(
+                            self._execute_tool(tc, by_name.get(tc.name), principal, session_id),
+                            timeout=remaining,
+                        )
+                    except TimeoutError:
+                        result.termination_reason = "tool_timeout"
+                        break
+                    except Exception:  # noqa: BLE001 -- 工具/闸门异常不得继续规划
+                        result.termination_reason = "tool_error"
+                        break
                 result.steps.append(o.step)
                 yield _step_event(o.step)
                 if o.ui is not None:
@@ -514,11 +654,33 @@ class AssistantAgent:
                         "content": o.feed,
                     }
                 )
+                if o.terminal:
+                    result.termination_reason = "tool_error"
+                    break
+            if result.termination_reason:
+                break
 
         if final is None:
-            final = "我已尽力检索(达到单轮步数上限)。请缩小范围或分步再问。"
+            result.termination_reason = result.termination_reason or "round_limit"
+            final = self._termination_reply(result.termination_reason)
         final = final or "(已完成上述操作。)"
-        out = await self._pipeline.screen_output(session_id, final)
+        result.tool_calls = tool_calls
+        result.estimated_tokens = _estimate_tokens(messages)
+        try:
+            out = await self._pipeline.screen_output(session_id, final)
+        except Exception:  # noqa: BLE001 -- 出口闸门不可用时不得回传未审答复
+            result.termination_reason = result.termination_reason or "output_gate_error"
+            result.reply = self._termination_reply("output_gate_error")
+            result.compressed = await self._persist(session_id, messages, result.reply)
+            await self._audit(session_id, principal, intent, result, gate)
+            yield {
+                "type": "done",
+                "session_id": session_id,
+                "blocked": False,
+                "reply": result.reply,
+                "compressed": result.compressed,
+            }
+            return
         if out.decision == Disposition.APPROVE:
             req = self._approval_request("output", out, final)
             result.approval_requests.append(req)
@@ -554,6 +716,7 @@ class AssistantAgent:
             return _ToolOutcome(
                 feed="该工具不存在或你的角色无权调用,已拒绝。",
                 step=AssistantStep(tc.name, "?", tc.name, False, "工具不可用或越权,已拒绝"),
+                terminal=True,
             )
 
         if tool.kind == "ui":
@@ -598,10 +761,17 @@ class AssistantAgent:
         assert tool.handler is not None
         try:
             res = await tool.handler(tc.arguments, principal, self._services)
-        except Exception as exc:  # noqa: BLE001 —— 单个工具失败不拖垮整轮,记痕迹后跳过
+        except Exception as exc:  # noqa: BLE001 -- 异常结果不能驱动下一轮规划
             return _ToolOutcome(
-                feed=f"执行「{tool.label}」时出错,已跳过。",
-                step=AssistantStep(tool.name, "read", tool.label, False, f"执行异常:{exc}"),
+                feed=f"执行「{tool.label}」时出错,已安全停止后续规划。",
+                step=AssistantStep(
+                    tool.name,
+                    "read",
+                    tool.label,
+                    False,
+                    f"执行异常:{type(exc).__name__}",
+                ),
+                terminal=True,
             )
 
         feed = _read_feed(res)
@@ -651,6 +821,10 @@ class AssistantAgent:
                     "ui_directives": len(result.ui_directives),
                     "proposed_actions": len(result.proposed_actions),
                     "read_steps": sum(1 for s in result.steps if s.kind == "read"),
+                    "termination_reason": result.termination_reason or "completed",
+                    "model_rounds": result.model_rounds,
+                    "tool_calls": result.tool_calls,
+                    "estimated_tokens": result.estimated_tokens,
                 },
             )
         )
