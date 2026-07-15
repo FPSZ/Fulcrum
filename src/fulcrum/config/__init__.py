@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .loader import load_capability_config
+from .loader import DETECTOR_ZONES, load_capability_config, normalize_detector_zones
 from .settings import Settings
 
-__all__ = ["Settings", "load_capability_config"]
+__all__ = ["DETECTOR_ZONES", "Settings", "load_capability_config", "normalize_detector_zones"]

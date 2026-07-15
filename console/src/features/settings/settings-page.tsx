@@ -16,6 +16,7 @@ import { type MessageKey, useTranslation } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { BackupSettings } from '../backup/backup-settings'
 import { GatewayUpstreamPanel } from './gateway-upstream'
+import { SecurityConfigPanel } from './security-config-panel'
 import { useSettingsForm } from './use-console-settings'
 
 /** 设置面板统一保存条:仅有未保存更改且具「修改设置」权限时可点。 */
@@ -67,6 +68,7 @@ interface Cat {
 const CATS: Cat[] = [
   { id: 'instance', labelKey: 'settings.cat.instance', icon: SlidersHorizontal, scope: 'global' },
   { id: 'gateway', labelKey: 'settings.cat.gateway', icon: ShieldCheck, scope: 'global' },
+  { id: 'security', labelKey: 'settings.cat.security', icon: ShieldCheck, scope: 'global' },
   { id: 'runtime', labelKey: 'settings.cat.runtime', icon: ServerCog, scope: 'global' },
   { id: 'about', labelKey: 'settings.cat.about', icon: Info, scope: 'global' },
   { id: 'local', labelKey: 'settings.cat.local', icon: DatabaseBackup, scope: 'personal' },
@@ -154,6 +156,7 @@ export function SettingsPage() {
           <div className="mx-auto w-full max-w-[880px]">
             {cat === 'instance' && <InstancePanel />}
             {cat === 'gateway' && <GatewayPanel />}
+            {cat === 'security' && <SecurityConfigPanel />}
             {cat === 'runtime' && <RuntimePanel />}
             {cat === 'local' && <LocalPanel />}
             {cat === 'developer' && <DeveloperPanel />}

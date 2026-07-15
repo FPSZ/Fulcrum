@@ -8,6 +8,8 @@ __all__ = [
     "BackendModelInfo",
     "ConsoleSettingsWrite",
     "ConsoleSettingsPublic",
+    "SecurityConfigWrite",
+    "SecurityConfigPublicDTO",
     "LoginRequest",
     "RegisterRequest",
     "PrincipalResponse",
@@ -51,6 +53,30 @@ class ConsoleSettingsPublic(ConsoleSettingsWrite):
     """回前端:真实可写项 + 只读后端模型信息。"""
 
     backend_model: BackendModelInfo
+
+
+# ---- /admin/security-config(分级安全预设；密钥永不明文回传)----
+class SecurityConfigWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile: str = Field(pattern="^(lightweight|standard|strict|air_gapped)$")
+    zone_overrides: dict[str, list[str]] = Field(default_factory=dict)
+    judge_endpoint: str = Field(min_length=1, max_length=512)
+    judge_model: str = Field(min_length=1, max_length=128)
+    # null=保留，空串=清除；不在任何响应 DTO 中出现。
+    judge_api_key: str | None = Field(default=None, max_length=2048)
+    judge_timeout_seconds: float = Field(default=20.0, ge=1, le=120)
+
+
+class SecurityConfigPublicDTO(BaseModel):
+    profile: str
+    detector_zones: dict[str, list[str]]
+    available_detectors: list[str]
+    judge_endpoint: str
+    judge_model: str
+    judge_api_key_masked: str
+    judge_api_key_set: bool
+    judge_timeout_seconds: float
 
 
 # ---- /auth ----

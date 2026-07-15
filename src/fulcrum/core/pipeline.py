@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -78,6 +79,9 @@ def _sanitize_args(arguments: dict) -> tuple[dict, list[str]]:
 
 # 来源最坏信任级归约:与 yaml_policy 共用 core.trust 单一真源(消除口径漂移,评审 M1)。
 _intent_source_trust = intent_worst_trust
+_DETECTOR_ZONE_NAMES = frozenset(
+    {"gateway_input", "gateway_output", "tool_return", "assistant_intent"}
+)
 
 
 @dataclass(slots=True)
@@ -103,6 +107,7 @@ class SecurityPipeline:
         *,
         labeler: SourceLabeler,
         detectors: list[Detector],
+        detector_zones: dict[str, list[Detector]] | None = None,
         attributor: Attributor,
         risk_scorer: RiskScorer,
         chain_analyzer: ChainAnalyzer,
@@ -114,6 +119,8 @@ class SecurityPipeline:
     ) -> None:
         self._labeler = labeler
         self._detectors = detectors
+        # P_a-1 只承载已校验的区域配置契约；P_a-2 再让各闸门按该映射调度。
+        self._detector_zones = detector_zones or {}
         self._attributor = attributor
         self._risk_scorer = risk_scorer
         self._chain_analyzer = chain_analyzer
@@ -132,6 +139,41 @@ class SecurityPipeline:
     def policy(self) -> PolicyEngine:
         """只读访问策略引擎(供策略中心展示「当前装配的策略」)。"""
         return self._policy
+
+    @property
+    def detector_zones(self) -> dict[str, tuple[Detector, ...]]:
+        """按区域生效的检测器，只读暴露给编排和配置查询层。"""
+        return {zone: tuple(detectors) for zone, detectors in self._detector_zones.items()}
+
+    def replace_detector_zones(self, detector_zones: Mapping[str, Sequence[Detector]]) -> None:
+        """原子切换已构建的四区检测器配置，供设置保存后的热加载使用。
+
+        调用方须先在管线外构建候选配置；本方法只接受完整四区，拒绝半套配置造成某一
+        闸门静默失防。legacy 全局列表同步替换为按区域首次出现顺序去重后的并集。
+        """
+        if set(detector_zones) != _DETECTOR_ZONE_NAMES:
+            raise ValueError("检测器热更新必须提供完整四区配置")
+        zones = {zone: list(detector_zones[zone]) for zone in sorted(_DETECTOR_ZONE_NAMES)}
+        all_detectors: list[Detector] = []
+        seen: set[int] = set()
+        for zone in ("gateway_input", "gateway_output", "tool_return", "assistant_intent"):
+            for detector in zones[zone]:
+                if id(detector) not in seen:
+                    seen.add(id(detector))
+                    all_detectors.append(detector)
+        self._detectors = all_detectors
+        self._detector_zones = zones
+
+    def detector_zone_summary(self, zone: str | None) -> dict[str, object]:
+        """返回可审计的区域配置摘要，不包含检测器 options 中的密钥或端点。"""
+        detectors = self._detectors_for_zone(zone)
+        names = [getattr(detector, "name", detector.__class__.__name__) for detector in detectors]
+        canonical = json.dumps({"zone": zone, "detectors": names}, ensure_ascii=False)
+        return {
+            "zone": zone or "legacy",
+            "detectors": names,
+            "revision": hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16],
+        }
 
     def model_tool_schemas(self) -> list[dict]:
         """装配工具里声明了 model_schema 的 OpenAI function 规格列表。
@@ -156,7 +198,7 @@ class SecurityPipeline:
             ctx, AuditEventType.SOURCE_LABELED, evidence={"span_count": len(ctx.spans)}
         )
 
-        await self.detect_inputs(ctx, ctx.spans)
+        await self.detect_inputs(ctx, ctx.spans, zone="gateway_input")
 
         # 输入闸门:据检测结论决定是否转发给模型。此前 detect_inputs 的结果被**丢弃**、无条件转发,
         # 经此端点进来的高危注入照样喂模型;且多来源分片规避(gateway._effective_score)因唯一的多
@@ -230,7 +272,7 @@ class SecurityPipeline:
             ctx, AuditEventType.SOURCE_LABELED, evidence={"span_count": len(ctx.spans)}
         )
 
-        await self.detect_inputs(ctx, ctx.spans)
+        await self.detect_inputs(ctx, ctx.spans, zone="gateway_input")
 
         verdict = screen(ctx.findings)
         # 富化判定证据:把"这条输入凭什么这么判"的可展示依据落进审计 —— 供事件页逐事件
@@ -250,6 +292,7 @@ class SecurityPipeline:
                 "source_type": SourceType.USER.value,
                 "trust_level": TrustLevel.UNTRUSTED.value,
                 "stage": "input_gateway",
+                "detector_config": self.detector_zone_summary("gateway_input"),
                 "team_id": team_id,  # 团队级数据隔离(P2);None=无归属,对所有 events.view 可见
             },
         )
@@ -282,7 +325,7 @@ class SecurityPipeline:
                 content=text,  # 检测看全文:载荷放在 600 字符后也不漏检
             )
         ]
-        await self.detect_inputs(ctx, ctx.spans)
+        await self.detect_inputs(ctx, ctx.spans, zone="gateway_output")
 
         verdict = screen_output(ctx.findings)
         await self._emit(
@@ -299,6 +342,7 @@ class SecurityPipeline:
                 "source_type": SourceType.ASSISTANT.value,
                 "trust_level": TrustLevel.UNTRUSTED.value,
                 "stage": "output_gateway",
+                "detector_config": self.detector_zone_summary("gateway_output"),
                 "team_id": team_id,  # 团队级数据隔离(P2)
             },
         )
@@ -327,7 +371,7 @@ class SecurityPipeline:
                 content=text,  # 检测看全文:载荷放在 600 字符后也不漏检
             )
         ]
-        await self.detect_inputs(ctx, ctx.spans)
+        await self.detect_inputs(ctx, ctx.spans, zone="tool_return")
 
         verdict = screen(ctx.findings)
         await self._emit(
@@ -344,6 +388,7 @@ class SecurityPipeline:
                 "source_type": SourceType.TOOL_RETURN.value,
                 "trust_level": TrustLevel.UNTRUSTED.value,
                 "stage": "tool_return_gateway",
+                "detector_config": self.detector_zone_summary("tool_return"),
                 "team_id": team_id,  # 团队级数据隔离(P2)
             },
         )
@@ -375,6 +420,21 @@ class SecurityPipeline:
         spans / request_trace 能被归因与链分析看见。demo 与真实网关都经此单一真源——
         fail-closed 等内核保证对它们一视同仁,适配器不再各自手撸评估链。
         """
+        # 模型规划出的参数同样是不可信输入面：它可能携带工具返回中的间接指令，或在
+        # 规划阶段被污染。仅有审计 zone 而不实际检测会形成安全盲点，因此先按助手
+        # 工具治理区域复扫，再进入既有的归因、评分和策略链。
+        intent_text = json.dumps(intent.arguments, ensure_ascii=False, default=str)
+        assistant_span = SourceSpan(
+            source_type=SourceType.ASSISTANT,
+            trust_level=TrustLevel.UNTRUSTED,
+            content_hash=hashlib.sha256(intent_text.encode("utf-8")).hexdigest(),
+            excerpt=intent_text[:600],
+            content=intent_text,
+        )
+        # 此 span 只供本次检测器扫描，不能写入 ctx.spans：后者是归因/策略的既有来源
+        # 证据集合。把模型参数伪装成不可信来源放进去，会把正常的高风险业务动作从
+        # APPROVE 错升为 BLOCK，破坏原有审批语义。
+        await self.detect_inputs(ctx, [assistant_span], zone="assistant_intent")
         return await self._process_intent(intent, ctx)
 
     # ---- 共用:对单个工具意图做 归因 -> 评分 -> 策略 -> 处置 -> 审计 ----
@@ -420,6 +480,7 @@ class SecurityPipeline:
                 "attribution_confidence": intent.attribution_confidence,
                 "source_trust": _intent_source_trust(intent, ctx),
                 "matched_policy": decision.matched_policy_id,
+                "detector_config": self.detector_zone_summary("assistant_intent"),
             },
         )
 
@@ -525,20 +586,27 @@ class SecurityPipeline:
         return ToolOutcome(intent=intent, decision=decision)
 
     # ---- 输入检测(供 agent 循环复用:用户输入 / 工具返回间接注入 走同一套检测器)----
-    async def detect_inputs(self, ctx: Context, spans: list[SourceSpan]) -> list[Finding]:
-        """对一批新输入 span 跑全部检测器(逐个 fail-closed),累积进 ctx + 落审计,返回新增。"""
-        new = await self._run_detectors(ctx, spans)
+    async def detect_inputs(
+        self, ctx: Context, spans: list[SourceSpan], *, zone: str | None = None
+    ) -> list[Finding]:
+        """对一批新输入按区域跑检测器(逐个 fail-closed),累积进 ctx + 审计。"""
+        new = await self._run_detectors(ctx, spans, zone=zone)
         await self._emit(
             ctx,
             AuditEventType.INPUT_DETECTED,
-            evidence={"findings": [f.model_dump() for f in new]},
+            evidence={
+                "findings": [f.model_dump() for f in new],
+                "detector_config": self.detector_zone_summary(zone),
+            },
         )
         return new
 
     # ---- 检测:逐个检测器 fail-closed(某检测器崩溃 → 合成高危 Finding,绝不静默放行)----
-    async def _run_detectors(self, ctx: Context, spans: list[SourceSpan]) -> list[Finding]:
+    async def _run_detectors(
+        self, ctx: Context, spans: list[SourceSpan], *, zone: str | None = None
+    ) -> list[Finding]:
         new: list[Finding] = []
-        for detector in self._detectors:
+        for detector in self._detectors_for_zone(zone):
             try:
                 new.extend(detector.detect(spans, ctx))
             except Exception as exc:  # noqa: BLE001 —— 检测器崩溃当作高危信号,不得 fail-open
@@ -557,6 +625,15 @@ class SecurityPipeline:
                 )
         ctx.findings.extend(new)
         return new
+
+    def _detectors_for_zone(self, zone: str | None) -> list[Detector]:
+        """保留直接构造旧管线的全局列表兼容，分区配置缺失则 fail-closed。"""
+        if zone is None or not self._detector_zones:
+            return self._detectors
+        detectors = self._detector_zones.get(zone)
+        if detectors is None:
+            raise ValueError(f"未配置检测区域:{zone}")
+        return detectors
 
     # ---- 审计 helper ----
     async def _emit(
