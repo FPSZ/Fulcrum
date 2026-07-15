@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..config import DETECTOR_ZONES, normalize_detector_zones
+from ..core.errors import ConfigError
 from .net_guard import validate_endpoint
 
 SecurityProfile = Literal["lightweight", "standard", "strict", "air_gapped"]
@@ -108,7 +109,8 @@ class JudgeConfig(BaseModel):
 class SecurityConfig(BaseModel):
     """落盘安全配置：预设先展开，随后由 zone_overrides 覆盖指定区域。"""
 
-    profile: SecurityProfile = "standard"
+    # 首启必须保持既有规则基线；Judge 级联由管理员显式切换预设后才启用。
+    profile: SecurityProfile = "lightweight"
     zone_overrides: dict[str, list[str]] = Field(default_factory=dict)
     judge: JudgeConfig = Field(default_factory=JudgeConfig)
 
@@ -198,8 +200,8 @@ class SecurityConfigStore:
                 self._cache = SecurityConfig.model_validate_json(
                     self._path.read_text(encoding="utf-8")
                 )
-            except (OSError, ValueError):
-                self._cache = self._seed
+            except (OSError, ValueError) as exc:
+                raise ConfigError(f"安全配置文件无法读取或校验:{self._path}") from exc
         else:
             self._cache = self._seed
             self._write(self._cache)

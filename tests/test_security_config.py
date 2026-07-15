@@ -20,6 +20,7 @@ from fulcrum.adapters.security_config import (
 from fulcrum.app import build_pipeline
 from fulcrum.config import DETECTOR_ZONES
 from fulcrum.core.domain import AuditEventType
+from fulcrum.core.errors import ConfigError
 from fulcrum.core.pipeline import SecurityPipeline
 
 _BASE_CONFIG = {
@@ -82,6 +83,13 @@ def test_profile_expands_to_all_detector_zones(profile: str) -> None:
     assert all(isinstance(names, list) for names in zones.values())
 
 
+def test_default_profile_preserves_existing_rule_baseline() -> None:
+    config = SecurityConfig()
+
+    assert config.profile == "lightweight"
+    assert all("injection_cascade" not in names for names in config.detector_zones().values())
+
+
 def test_zone_override_replaces_only_that_zone() -> None:
     config = SecurityConfig(
         profile="standard", zone_overrides={"gateway_output": ["secret_egress"]}
@@ -113,6 +121,14 @@ def test_store_persists_and_public_view_masks_judge_key(tmp_path: Path) -> None:
     store.save(SecurityConfig(judge={"api_key": "supersecret123"}))
 
     assert SecurityConfigStore(path).load().judge.api_key == "supersecret123"
+
+
+def test_corrupt_security_config_refuses_to_lower_the_profile(tmp_path: Path) -> None:
+    path = tmp_path / "security.json"
+    path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="安全配置文件无法读取或校验"):
+        SecurityConfigStore(str(path)).load()
 
 
 def test_security_config_route_applies_candidate_and_never_returns_key(tmp_path: Path) -> None:
