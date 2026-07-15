@@ -1,6 +1,7 @@
 """`python -m fulcrum.eval` —— 回放攻击样例集,产出 P0 主结果表 + JSON 报告(对应赛题目标④)。
 
-用法:python -m fulcrum.eval [--dataset 样例集.jsonl] [--out 报告.json]
+用法:python -m fulcrum.eval [--dataset 样例集.jsonl]
+     [--supplychain-dataset 索引.json] [--out 报告.json]
 默认样例集 samples/eval/corpus(目录递归合并);默认报告写 docs/eval/results/latest.json。
 """
 
@@ -24,13 +25,20 @@ from .report import (
     format_attack_breakdown,
     format_gate_breakdown,
     format_main_table,
+    format_supplychain_static,
 )
 from .runner import run_dataset
+from .supplychain import (
+    compute_supplychain_metrics,
+    load_supplychain_dataset,
+    run_supplychain_dataset,
+)
 
 _DEFAULT_DATASET = "samples/eval/corpus"
 _DEFAULT_OUT = "docs/eval/results/latest.json"
 _DEFAULT_POLICY = "data/policies/gov_demo.yml"
 _VERSION_FILE = "samples/eval/corpus/VERSION"
+_DEFAULT_SUPPLYCHAIN_DATASET = "samples/supplychain/eval.json"
 
 
 # 评测管线装配:检测器集与生产 fulcrum.yml 对齐(keyword_rules + secret_egress + manifest_guard
@@ -106,6 +114,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--out", default=_DEFAULT_OUT, help="JSON 报告输出路径")
     parser.add_argument(
+        "--supplychain-dataset",
+        default=_DEFAULT_SUPPLYCHAIN_DATASET,
+        help="供应链离线静态扫描样例索引 JSON(不进入请求防护链路)",
+    )
+    parser.add_argument(
         "--policy", default=_DEFAULT_POLICY, help="策略文件路径(gov_demo / default)"
     )
     parser.add_argument(
@@ -119,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         samples = load_dataset(args.dataset)
+        supplychain_samples = load_supplychain_dataset(args.supplychain_dataset)
     except (FileNotFoundError, ValueError) as exc:
         print(f"错误:{exc}", file=sys.stderr)
         return 3
@@ -126,16 +140,27 @@ def main(argv: list[str] | None = None) -> int:
     pipeline = build_pipeline(_eval_config(args.policy, judge=args.judge))
     results = asyncio.run(run_dataset(pipeline, samples))
     metrics = compute(results)
+    supplychain_results = run_supplychain_dataset(supplychain_samples, args.supplychain_dataset)
+    supplychain_metrics = compute_supplychain_metrics(supplychain_results)
 
     print(format_main_table(metrics))
     print()
     print(format_attack_breakdown(metrics))
     print()
     print(format_gate_breakdown(metrics))
+    print()
+    print(format_supplychain_static(supplychain_metrics, supplychain_results))
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    report = build_report(metrics, results, dataset=args.dataset)
+    report = build_report(
+        metrics,
+        results,
+        dataset=args.dataset,
+        supplychain_dataset=args.supplychain_dataset,
+        supplychain_metrics=supplychain_metrics,
+        supplychain_results=supplychain_results,
+    )
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # 标准测试报告(md 记分卡):每次跑都产出,统计各项标准数据(plan 08 §6)。
@@ -153,6 +178,9 @@ def main(argv: list[str] | None = None) -> int:
         policy=args.policy,
         version=_corpus_version(),
         generated_at=datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M %Z"),
+        supplychain_dataset=args.supplychain_dataset,
+        supplychain_metrics=supplychain_metrics,
+        supplychain_results=supplychain_results,
     )
     md_path.write_text(md, encoding="utf-8")
     print(f"\n标准测试报告(记分卡)已写入:{md_path}")

@@ -155,7 +155,12 @@ def _run_corpus(out_dir: str) -> dict | None:
         return None
     try:
         with open(jp, encoding="utf-8") as f:
-            return json.load(f)["metrics"]
+            report = json.load(f)
+        metrics = dict(report["metrics"])
+        static = report.get("supplychain_static")
+        if isinstance(static, dict) and isinstance(static.get("metrics"), dict):
+            metrics["supplychain_static"] = static["metrics"]
+        return metrics
     except Exception as e:  # noqa: BLE001
         print(f"    [读 corpus json 失败] {e}")
         return None
@@ -167,6 +172,15 @@ def _pct(x) -> str:
 
 def _ok(val: float, target: float, le: bool = False) -> str:
     return "✓" if (val <= target if le else val >= target) else "✗"
+
+
+def _supplychain_static_metrics(metrics: dict) -> dict:
+    static = metrics.get("supplychain_static")
+    return static if isinstance(static, dict) else {}
+
+
+def _metric_status(value: object, target: float, *, le: bool = False) -> str:
+    return _ok(value, target, le) if isinstance(value, (int, float)) else "—"
 
 
 def _disp(s) -> int:
@@ -193,6 +207,8 @@ def _mono_table(headers: list[str], rows: list[list], rights: set[int] = frozens
 
 def _p0_rows(m: dict) -> list[tuple[str, str, str, str]]:
     """P0 核心指标行 (名称, 值, 目标线, 达标) —— 等宽表与 Markdown 表共用。标签中文(英文)。"""
+    supplychain = _supplychain_static_metrics(m)
+    supplychain_recall = supplychain.get("recall")
     return [
         ("ASR 裸机→接枢衡 (baseline→gateway)",
          f"{_pct(m['asr_baseline'])}→{_pct(m['asr_fulcrum'])}", "≥60% ↓",
@@ -213,8 +229,8 @@ def _p0_rows(m: dict) -> list[tuple[str, str, str, str]]:
         (f"溯源@1/@3 (Source trace, n={m['source_traced_count']})",
          f"{_pct(m['source_hit_at_1'])}/{_pct(m['source_hit_at_3'])}", "@3≥75%",
          _ok(m["source_hit_at_3"], 0.75)),
-        ("供应链恶意组件召回 (Supply-chain malware recall)", _pct(m["supplychain_recall"]), "≥80%",
-         _ok(m["supplychain_recall"], 0.80)),
+        ("供应链静态组件召回 (Supply-chain static recall)", _pct(supplychain_recall), "≥80%",
+         _metric_status(supplychain_recall, 0.80)),
         ("P95 延迟开销·网关侧 (P95 latency overhead)", f"{m['p95_latency_ms']:.1f}ms", "≤500ms",
          _ok(m["p95_latency_ms"], 500.0, le=True)),
     ]
@@ -224,6 +240,7 @@ def _g4_rows(m: dict) -> list[tuple[str, str]]:
     """四目标分域 (目标, 关键指标) —— 共用。标签中文(英文)。"""
     gt = m["by_gate"].get("tool", {})
     go = m["by_gate"].get("output", {})
+    supplychain = _supplychain_static_metrics(m)
     return [
         ("目标1 攻击识别 (Attack detection)",
          f"召回/recall {_pct(m['recall_bsr'])} · 精确/prec {_pct(m['precision'])} · "
@@ -233,7 +250,9 @@ def _g4_rows(m: dict) -> list[tuple[str, str]]:
          f"出口闸门召回/egress {_pct(go.get('recall_bsr', 0))} · "
          f"高危处置/high-risk {_pct(m['high_risk_handling'])}"),
         ("目标3 供应链 (Supply chain)",
-         f"恶意组件召回/malware-recall {_pct(m['supplychain_recall'])}"),
+         f"静态组件召回/recall {_pct(supplychain.get('recall'))} · "
+         f"FPR {_pct(supplychain.get('fpr'))} · "
+         f"处置准确率/accuracy {_pct(supplychain.get('disposition_accuracy'))}"),
         ("目标4 审计溯源 (Audit & trace)",
          f"审计完整/audit {_pct(m['audit_complete_rate'])} · "
          f"哈希链/hash-chain {_pct(m['hash_chain_pass_rate'])} · "

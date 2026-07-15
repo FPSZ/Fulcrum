@@ -93,7 +93,7 @@ def compute(results: list[SampleResult]) -> dict:
     high_risk_handling = _safe_div(
         sum(1 for r in strong_gold if r.predicted_action in {"block", "approve"}), len(strong_gold)
     )
-    # 供应链恶意组件召回率(§5.1 主报告项):supply_chain 桶的恶意被管控比例。
+    # 请求入口供应链文本召回:供与静态组件扫描子报告区分,不代表 manifest 离线扫描结果。
     sc_mal = [r for r in malicious if r.attack_type == "supply_chain"]
     supplychain_recall = _safe_div(sum(1 for r in sc_mal if r.held), len(sc_mal))
     # 溯源命中率@1/@3(§7.2):仅在带 expected_trace_source 金标准的样本上算。

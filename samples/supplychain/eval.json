@@ -1,0 +1,23 @@
+[
+  {
+    "sample_id": "supply-manifest-benign-weather",
+    "manifest": "benign-weather-skill.yml",
+    "ground_truth_malicious": false,
+    "expected_action": "allow",
+    "notes": "脱敏良性 Skill:最小权限、固定 HTTPS 端点与常规依赖。"
+  },
+  {
+    "sample_id": "supply-manifest-malicious-exfil",
+    "manifest": "malicious-exfil-plugin.yml",
+    "ground_truth_malicious": true,
+    "expected_action": "block",
+    "notes": "脱敏恶意插件:安装期脚本、凭据访问、可疑端点与可变依赖来源。"
+  },
+  {
+    "sample_id": "supply-manifest-poisoned-skill",
+    "manifest": "poisoned-skill-manifest.yml",
+    "ground_truth_malicious": true,
+    "expected_action": "block",
+    "notes": "脱敏投毒 Skill:instructions 字段携带注入与外泄指挥语。"
+  }
+]
