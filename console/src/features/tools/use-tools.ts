@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { api } from '@/lib/api/client'
+import { api, j } from '@/lib/api/client'
 import type { Disposition, RiskLevel, ToolCall, Trust } from './data'
 
 /** 后端 ToolCallDTO 的镜像(枚举为后端原值,时间为 epoch 秒)。 */
@@ -58,4 +58,42 @@ export function useToolCalls() {
     queryFn: async () => (await api<ToolCallDTO[]>('/tools/calls')).map(toToolCall),
     refetchInterval: 15_000,
   })
+}
+
+export interface ToolCallProposal {
+  tool: string
+  label: string
+  risk: string
+  args: Record<string, unknown>
+  requires: string[]
+  note: string
+  action_token: string
+}
+
+interface ConfirmResponse {
+  ok: boolean
+  summary: string
+  error: string | null
+}
+
+export function proposeToolCall(
+  toolName: string,
+  toolArguments: Record<string, unknown>,
+  sessionId: string,
+): Promise<ToolCallProposal> {
+  return api<ToolCallProposal>(
+    '/tools/call/proposal',
+    j({ tool_name: toolName, arguments: toolArguments, session_id: sessionId }),
+  )
+}
+
+export function confirmToolCall(
+  actionToken: string,
+  args: Record<string, unknown>,
+  sessionId: string,
+): Promise<ConfirmResponse> {
+  return api<ConfirmResponse>(
+    '/assistant/confirm',
+    j({ action_token: actionToken, edited_args: args, session_id: sessionId }),
+  )
 }

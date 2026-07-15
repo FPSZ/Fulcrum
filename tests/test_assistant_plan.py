@@ -128,7 +128,7 @@ def test_plan_endpoint_returns_governed_plan(tmp_path: Path) -> None:
     assert body["ok"] and body["action_id"] == "nav.events"
 
     # 规划已入审计链:能在该会话链里查到 ASSISTANT_PLANNED 事件。
-    chain = client.get("/audit/s-assist")
+    chain = client.get("/audit/assistant:admin:s-assist")
     assert chain.status_code == 200, chain.text
     types = [e["event_type"] for e in chain.json()["events"]]
     assert "assistant_planned" in types
@@ -165,7 +165,7 @@ def test_plan_endpoint_blocks_malicious_intent_at_gateway(tmp_path: Path) -> Non
     assert "网关" in body["reason"]
 
     # 审计链:网关判定(policy_decided + tool_blocked)与 assistant_planned 都在。
-    chain = client.get("/audit/s-mal")
+    chain = client.get("/audit/assistant:admin:s-mal")
     assert chain.status_code == 200, chain.text
     types = [e["event_type"] for e in chain.json()["events"]]
     assert "policy_decided" in types and "tool_blocked" in types
@@ -180,7 +180,7 @@ def test_plan_endpoint_clean_intent_passes_gateway(tmp_path: Path) -> None:
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["ok"] and body["action_id"] == "nav.events"
-    chain = client.get("/audit/s-ok")
+    chain = client.get("/audit/assistant:admin:s-ok")
     types = [e["event_type"] for e in chain.json()["events"]]
     assert "model_forwarded" in types
     assert "assistant_planned" in types

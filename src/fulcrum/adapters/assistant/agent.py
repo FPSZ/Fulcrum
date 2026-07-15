@@ -565,10 +565,14 @@ class AssistantAgent:
 
         if tool.kind == "write":
             # 写操作不进循环执行:产出可编辑待确认提案,确认走 /assistant/confirm(人闸 + 纵深
-            # RBAC + 前态快照 + 可撤销)。令牌绑定 tool+actor+过期,防篡改/转交。
+            # RBAC + 前态快照 + 可撤销)。令牌绑定 tool+actor+服务端会话+过期,防篡改/转交。
             token = ""
             if self._signer is not None:
-                token = self._signer.issue(tool=tool.name, actor=getattr(principal, "username", ""))
+                token = self._signer.issue(
+                    tool=tool.name,
+                    actor=getattr(principal, "username", ""),
+                    session_id=session_id,
+                )
             before: dict = {}
             if tool.before_handler is not None:
                 try:

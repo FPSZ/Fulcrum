@@ -4,6 +4,12 @@ import type { MessageKey } from '../../index'
 export const tools: Partial<Record<MessageKey, string>> = {
   'tools.empty.title': 'No tool calls yet',
   'tools.empty.hint': 'Tool calls passing through Fulcrum appear here. You can also load a demo backup under "Data & backup".',
+  'tools.execute.tool': 'Tool name',
+  'tools.execute.arguments': 'Arguments JSON',
+  'tools.execute.propose': 'Create proposal',
+  'tools.execute.confirm': 'Confirm execution',
+  'tools.execute.invalid_args': 'Arguments must be a JSON object.',
+  'tools.execute.failed': 'Tool call request failed.',
 
   'tools.summary': '{total} recent calls, {held} of them controlled (blocked / reviewed)',
 

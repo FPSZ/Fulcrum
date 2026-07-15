@@ -105,8 +105,8 @@ def _actuator(services):
 
 
 def _confirm(act, signer, tool, args, principal, session="s"):
-    token = signer.issue(tool=tool, actor=principal.username)
-    return asyncio.run(act.confirm(token, args, principal, session))
+    token = signer.issue(tool=tool, actor=principal.username, session_id=session)
+    return asyncio.run(act.confirm(token, args, principal))
 
 
 # ───────────────────────── 可见性:负责人的助手看得到 team_scoped 工具 ─────────────────────────
