@@ -13,6 +13,7 @@ from ... import __version__
 from ...core.domain import Disposition, ExecResult, Message, ModelRequest
 from ...core.errors import FulcrumError
 from ...core.redaction import redact
+from ...observability.http import install_request_observability
 from .schemas import (
     ChatRequest,
     ChatResponse,
@@ -98,6 +99,9 @@ def build_api(
             if too_big:
                 return JSONResponse(status_code=413, content={"detail": "请求体过大"})
         return await call_next(request)
+
+    # 后注册使其处于请求体限制器外层:连 400/413 等早退响应也带关联 ID 和完成日志。
+    install_request_observability(app)
 
     @app.exception_handler(FulcrumError)
     async def _on_fulcrum_error(_: Request, exc: FulcrumError) -> JSONResponse:
