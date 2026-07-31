@@ -99,7 +99,16 @@ def _corpus_version() -> str:
     return p.read_text(encoding="utf-8").strip() if p.exists() else "dev"
 
 
+def _configure_utf8_stdio() -> None:
+    """让 Windows 默认 GBK 终端/管道也能输出完整 Unicode 评测表。"""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _configure_utf8_stdio()
     parser = argparse.ArgumentParser(prog="fulcrum.eval", description="枢衡评测:样例回放出分")
     parser.add_argument(
         "--dataset", default=_DEFAULT_DATASET, help="样例集 JSONL 路径或目录(目录递归合并)"
