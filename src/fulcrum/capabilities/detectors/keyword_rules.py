@@ -75,6 +75,19 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             r"开发者(备注|模式|指令)|平台团队|系统覆盖|审计豁免|内部(指令|口径)(:|：)?|system\s+override|admin\s+override",
             # 载荷分片(变量赋值后拼接执行)
             r"设\s*[a-z]\s*[=＝].{0,24}[a-z]\s*[=＝]|let\s+\w+\s*=.{0,40}\+\s*\w+|执行\s*[a-z](\s*\+\s*[a-z]){1,}",
+            # 工具返回伪造:方括号包裹的 [tool_result: …] 冒充内部判定结果(后常跟批准/预授权)。
+            # 既有规则只认 "tool_result:" 后直接跟状态词,方括号+标签会绕过;此处收口方括号形态。
+            r"\[tool_result\s*[:：]",
+            # 藏头/首字组合(acrostic):把每句首字拼接成新指令再执行 —— 数据重组型注入。
+            r"(取|拼|读|按).{0,4}(每句|各句|句子).{0,4}(首字|首字母|开头字).{0,8}(组合|拼接|串联|连读|拼起来|连起来).{0,8}(执行|照做|做|办|命令)",
+            r"(藏头|首字母缩写|acrostic).{0,16}(指令|执行|照做|组合|拼接)",
+            # 摩尔斯/摩斯码走私(token_smuggling_morse):指示先解码再照做 —— 隐藏明文指令。
+            r"(摩尔斯|摩斯码|摩氏密码|morse).{0,16}(解码|破译|翻译|照做|照此执行|执行|转成|还原)",
+            r"解码.{0,8}(摩尔斯|摩斯码).{0,8}(照做|执行|翻译)",
+            # 低资源语种音译 PII 采集(low_resource_lang):重音符号包裹的 身份证/号码/居民/邮箱
+            # 等拉丁音译词。每个分支都要求词内带重音(à/è/ì/ò/ù…),纯英文 id-card/resident 不命中。
+            r"(?:[iì]d[- ]?k[àa]rt[aà]?|n[uù]m[eè]r[oò]|r[eè]s[iì]d[eè]nt|"
+            r"[iì]m[eè]l|t[àa]m[àa]n[àa]?)",
         ),
     ),
     "jailbreak": (
@@ -118,6 +131,13 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             # 虚拟化/游戏框定:把"任何指令"直接当作已授权命令执行
             r"(任何|所有|一切)\s*(指令|命令|输入|请求).{0,16}"
             r"(已授权|当作(已)?授权|直接(当作|视为|执行)|无需(审批|确认|核验)|都(直接)?执行)",
+            # 完整 system prompt / 凭据提取(英文+leetspeak):"输出完整 system prompt / 任何
+            # credentials"是经典提示词抽取+凭据收割(OWASP LLM02)。中文侧既有"逐字…系统提示词"
+            # 规则,此处补英文名词(经 deleet 后 pr0mpt→prompt 可中),须带"完整/全部/任何"定调
+            # 才算整段抽取;良性"输出结果中提到的prompt字段"无完整抽取定调不命中。
+            r"(输出|打印|泄露|贴出|给出|告诉我|发我|output|print|reveal|dump).{0,20}"
+            r"(完整|全部|整个|任何|所有|any|all).{0,16}"
+            r"(system\s*prompt|提示词|prompt|credentials?|凭据|密钥|口令|api[_-]?key|access[_-]?token|连接串|token)",
             # 危险动作提取(Bad Likert / Deceptive Delight:把有害做法洗成示例/剧情后"展开"步骤)。
             # **不裸配"X 和参数"**(良性"命令和参数的用法""操作步骤和参数列一下"会误命中),
             # 必须是"展开/写清…工具调用/命令/做法/绕过…"的提取祈使才命中。
@@ -157,6 +177,12 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             r"(全部|所有|整批|批量|整个)?\s*(公民|用户|客户|人员|学生|患者|员工|群众|居民)\s*"
             r"(数据|信息|名册|名单|档案|资料|记录)\s*.{0,16}"
             r"(导出|外发|发到|发往|发送|上传|回传).{0,16}(@|https?://|外部|境外|外网|第三方)",
+            # 格式胁迫 + PII 字段(style_coercion_json):只输出 JSON + 名册/身份证字段 →
+            # 结构化批量外泄。良性"只输出 JSON 格式的统计结果"无 PII 字段不命中。
+            r"只(输出|返回|给出|生成)\s*.{0,30}(json|数组|对象).{0,50}(id_card|身份证|名册|户籍|档案|花名册|居民记录|人员名单)",
+            # CSS 隐藏元素夹带外发指令(css_hidden):font-size:0 / color:#fff / display:none 等
+            # 隐藏样式后跟 URL 或外发措辞 → 隐蔽外联。静态页面的普通 CSS+链接不受影响。
+            r"(?:font-size\s*:\s*0(?:px)?|color\s*:\s*(?:#fff|white)|visibility\s*:\s*hidden|display\s*:\s*none)[\s\S]{0,150}(?:https?://|发出|发送|外发|追加|引用链接)",
         ),
     ),
     "sensitive_file": (
@@ -168,6 +194,9 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             r"(密钥|私钥|口令|凭据|凭证|机密|涉密|账号密码)",
             r"\.aws[\\/]+credentials|\.kube[\\/]+config|system32[\\/]+config[\\/]+(sam|system)",
             r"ntds\.dit|connection string|连接串",
+            # 内部敏感资产外泄:输出/泄露 内部路由表、服务账号、数据库账号等(须带提取动词,
+            # 纯问"什么是路由表/服务账号申请流程"不命中)。
+            r"(输出|泄露|打印|导出|贴出|告诉我|给我|背下来).{0,12}(内部路由表|路由表|服务账号|运维账号|管理员账号|数据库账号|账号口令|服务器密码|root\s*密码|超级管理员账号)",
         ),
     ),
     "command_exec": (
@@ -401,8 +430,20 @@ class KeywordRuleDetector:
                     )
                 )
             # 混淆复扫:递归解码后再扫;命中 = 刻意隐藏的注入/外发/命令,按 critical 计分。
+            # **模式级**去重:明文已直接命中的模式,其危险本就可读可见,只是 ROT13/unquote/
+            # 实体还原等变换副本又复现一次——非"刻意隐藏",不重复升级;仅**解码后才暴露的新模式**
+            # (明文未命中)才计入混淆,按 critical 计分。否则同一条规则 0.75(直接)+0.85(复扫)
+            # 双计,会把本应 approve 的注入错误抬成 block;而真正藏进 base64/hex 的注入,
+            # 明文看不到对应模式,仍照常命中混淆。
+            direct_pats = {p for ps in matched_by_cat.values() for p in ps}
             for decoded in decode_variants(text):
-                hidden = _scan_decoded(decoded)
+                hidden: list[str] = []
+                for _cat in _DEOBF_CATEGORIES:
+                    if any(
+                        p.search(decoded) and p.pattern not in direct_pats
+                        for p in _COMPILED[_cat][1]
+                    ):
+                        hidden.append(_cat)
                 if not hidden:
                     continue
                 raw = _DEOBF_BASE * trust_mul + (_INDIRECT_BOOST if indirect else 0.0)
