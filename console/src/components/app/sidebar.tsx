@@ -48,8 +48,8 @@ export function Sidebar({
         <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           {sections.map((sec) => (
             <div key={sec.group}>
-              {/* 分类名:收起时也保留(监测/管控… 2 字,窄条放得下) */}
-              <div className="whitespace-nowrap px-2.5 pb-1.5 pt-3.5 text-[13px] font-semibold text-ink-mute">
+              {/* 分类名与其他标签一致,收起时淡出且不改变图标布局。 */}
+              <div className={fade('whitespace-nowrap px-2.5 pb-1.5 pt-3.5 text-[13px] font-semibold text-ink-mute')}>
                 {t(`app.sidebar.group.${sec.group}` as MessageKey)}
               </div>
               {sec.items.map((f) => {

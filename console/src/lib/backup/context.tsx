@@ -4,11 +4,14 @@ import { buildBackup, parseBackup, type ImportReport } from './io'
 import type { BackupMeta, ResourceData } from './types'
 
 const LS_KEY = 'fulcrum.backup.v1'
+// localStorage 缓存独立于备份文件 schemaVersion;资源内存结构变化时递增此版本以丢弃旧缓存。
+const DATA_VERSION = 1
 /** 单文件导入上限:脱敏备份本就轻量(演示档约几十 KB),超过即视为误选大文件,
  *  直接拒绝,避免 file.text()+JSON.parse 把超大 JSON 读进内存卡死页面。 */
 const MAX_BACKUP_BYTES = 5 * 1024 * 1024
 
 interface PersistShape {
+  dataVersion: number
   resources: ResourceData
   meta: BackupMeta | null
 }
@@ -16,7 +19,13 @@ interface PersistShape {
 function loadLS(): PersistShape | null {
   try {
     const raw = localStorage.getItem(LS_KEY)
-    return raw ? (JSON.parse(raw) as PersistShape) : null
+    if (!raw) return null
+    const cached = JSON.parse(raw) as Partial<PersistShape>
+    if (cached.dataVersion !== DATA_VERSION) {
+      localStorage.removeItem(LS_KEY)
+      return null
+    }
+    return cached as PersistShape
   } catch {
     return null
   }
@@ -69,7 +78,7 @@ export function BackupProvider({ children }: { children: ReactNode }) {
     if (report.ok) {
       setResources(data)
       setMeta(report.meta ?? null)
-      saveLS({ resources: data, meta: report.meta ?? null })
+      saveLS({ dataVersion: DATA_VERSION, resources: data, meta: report.meta ?? null })
     }
     return report
   }, [])
