@@ -123,6 +123,12 @@ def match_variants(text: str) -> list[str]:
 
 # ---- 递归解码:把藏进 base64 / hex / URL 编码 / ROT13 / HTML 数字实体的指令解出来供复扫 ----
 _B64 = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
+# 空白容错 base64:攻击者在 base64 块里塞空格/换行/制表打断 `_B64` 的连续 {16,} 匹配
+# (如 `aW dub3Jl…`)。本正则匹配「base64 字符 + 内部空白」的连续块,块内空白剥除后再尝试解码。
+# **仅**对确含内部空白的块走此增量分支(见 decode_variants:`stripped != raw` 才解),无空白块
+# 逐位走既有 `_B64` 路径不变;解出物仍须过 `_is_clean_text` 可读门,benign 散串剥空白解出乱码即弃。
+_B64_WS = re.compile(r"[A-Za-z0-9+/](?:[A-Za-z0-9+/ \t\r\n]*[A-Za-z0-9+/])?={0,2}")
+_WS = re.compile(r"\s+")
 _HEX = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
 # base32(RFC4648 字母表 A-Z2-7):把指令 base32 编码绕过关键词匹配,与 base64/hex 同属"解码后复扫"。
 _B32 = re.compile(r"[A-Z2-7]{16,}={0,6}")
@@ -213,6 +219,46 @@ def _untag(text: str) -> str:
     return "".join(out)
 
 
+# bidi 覆盖反转:RLO/LRO 等双向覆盖控制符让**显示序≠逻辑序**——人眼看到的是被反转后的无害
+# 字样,模型读到的却是原始逻辑序里的危险命令(`‮ k*- fr- mr ‬` 视觉呈现 `rm -rf -*k`)。既有
+# normalize() 只**剥除**这些控制符,不还原视觉序;这里产出一个「把每段覆盖作用区字符序反转、
+# 并剥除控制符」的候选,经复扫即命中原本被视觉序藏起来的命令。无 bidi 控制符的文本零开销原样返回。
+_BIDI_OPEN = frozenset({0x202A, 0x202B, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068})
+_BIDI_CLOSE = frozenset({0x202C, 0x2069})
+# U+202A–202E(嵌入/覆盖)+ U+2066–2069(隔离),用码点构造避免源码藏不可见字符。
+_BIDI_CODEPOINTS = list(range(0x202A, 0x202F)) + list(range(0x2066, 0x206A))
+_BIDI_ANY = re.compile("[" + "".join(chr(c) for c in _BIDI_CODEPOINTS) + "]")
+
+
+def _bidi_reverse(text: str) -> str:
+    """把 bidi 覆盖作用区(开控制符→配套 PDF/PDI 或串尾)的字符序反转、剥除控制符。
+
+    无 bidi 控制符 → 原样返回(零开销早退,不产多余候选)。逐字符单遍扫描,线性,无指数展开。
+    """
+    if not _BIDI_ANY.search(text):
+        return text
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        cp = ord(text[i])
+        if cp in _BIDI_OPEN:
+            i += 1
+            seg: list[str] = []
+            # 收集到配套关闭符 / 遇到下一段开控制符 / 串尾为止
+            while i < n and ord(text[i]) not in _BIDI_CLOSE and ord(text[i]) not in _BIDI_OPEN:
+                seg.append(text[i])
+                i += 1
+            out.append("".join(reversed(seg)))
+            if i < n and ord(text[i]) in _BIDI_CLOSE:
+                i += 1  # 吃掉配套关闭符
+        elif cp in _BIDI_CLOSE:
+            i += 1  # 落单的关闭符,丢弃
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
 def decode_variants(text: str, depth: int = 2) -> list[str]:
     """抽取并解码文本里的编码块(base64/hex/URL/ROT13),递归至多 depth 层。
 
@@ -227,6 +273,13 @@ def decode_variants(text: str, depth: int = 2) -> list[str]:
         nxt: list[str] = []
         for s in frontier:
             cands: list[str] = [_b64(m.group(0)) for m in _B64.finditer(s)]
+            # 空白容错 base64:仅对**确含内部空白**的 base64 块(剥空白后)增量再解一次;
+            # 无空白块 stripped==raw 直接跳过,既有 `_B64` 路径逐位不变(回归锁)。
+            for m in _B64_WS.finditer(s):
+                raw = m.group(0)
+                stripped = _WS.sub("", raw)
+                if stripped != raw and len(stripped.rstrip("=")) >= 16:
+                    cands.append(_b64(stripped))
             cands += [_hexd(m.group(0)) for m in _HEX.finditer(s)]
             cands += [_b32(m.group(0)) for m in _B32.finditer(s)]
             if "-" in s or "_" in s:  # URL-safe base64 兜底:-_→+/ 后按标准 base64 再抽
@@ -237,6 +290,7 @@ def decode_variants(text: str, depth: int = 2) -> list[str]:
             if "&#" in s:
                 cands.append(_html_numref(s))
             cands.append(_untag(s))  # Unicode Tag 块走私(U+E0000–E007F)还原 ASCII 副本
+            cands.append(_bidi_reverse(s))  # bidi 覆盖:还原视觉序被藏起来的命令(无控制符则原样)
             try:
                 cands.append(codecs.decode(s, "rot13"))  # ROT13 只影响 a-z,中文不变
             except (UnicodeError, ValueError):
