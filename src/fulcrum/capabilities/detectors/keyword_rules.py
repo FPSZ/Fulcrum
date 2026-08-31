@@ -9,6 +9,8 @@
     sensitive_file  敏感文件 / 密钥凭据访问
     command_exec    系统命令 / 脚本执行
     data_poisoning  数据投毒 / 知识污染
+    encoded_instruction 编码/分片后要求执行的隐藏指令
+    high_impact_action  明确高影响动作(批量 PII、真实凭据、治理绕过等)
     markup_exfil    渲染即外联(markdown 图片/链接、HTML img/a 把数据藏进 URL 查询串外发)
     pii_leak        结构化敏感量泄露(身份证/手机号/邮箱/密钥实值,按命中条数升级)
 
@@ -18,7 +20,7 @@
 仅凭关键词规则(sensitive_file 只识"提到了凭据")是抓不住的。
 
 外加一条**混淆复扫**:`obfuscated_injection`——把文本里的 Base64/Hex 编码块解码后,用上述
-危险规则复扫;命中即说明攻击者刻意把指令藏进编码绕过关键词匹配,按 critical 计分。
+危险规则复扫;普通注入进复核档,隐藏外发或命令执行进阻断档。
 
 确定性、可解释、低延迟,作为第一层防线;LLM-judge 在 P3 作为后置增强叠加(见路线图)。
 每个命中产出一条 Finding:`score`∈[0,1],`evidence.severity`∈{low,medium,high,critical},
@@ -74,12 +76,20 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             # 权威伪装。"开发者模式"是产品概念(由 jailbreak 概念规则收口),此处只留"开发者备注/
             # 指令"这类冒充内部权威的注入措辞——否则良性"开发者模式是啥"会被本硬规则连坐(救 FPR)。
             r"开发者(备注|指令)|平台团队|系统覆盖|审计豁免|内部(指令|口径)(:|：)?|system\s+override|admin\s+override",
+            # 伪工具返回 / 策略批准边界。
+            r"\[?\s*tool_result\s*:[^\]\n]{0,40}\]?\s*"
+            r"(status\s*=\s*approved|管理员已预授权)",
+            # 宣告旧规则失效,再要求把外部内容无条件视为可信。
+            r"(之前|原有|原先).{0,16}(规范|规则|策略).{0,8}(作废|失效|停用)"
+            r".{0,48}(附件|文档|网页).{0,16}(完全可信|一律照做|直接执行)",
+            # 索取内部路由与服务身份属于可疑信息探查,先进入人工复核。
+            r"(输出|列出|打印|给我|提供).{0,16}(内部路由表|服务账号|服务账户)",
             # 载荷分片(变量赋值后拼接执行)
             r"设\s*[a-z]\s*[=＝].{0,24}[a-z]\s*[=＝]|let\s+\w+\s*=.{0,40}\+\s*\w+|执行\s*[a-z](\s*\+\s*[a-z]){1,}",
         ),
     ),
     "jailbreak": (
-        0.8,
+        0.7,
         (
             r"you are now",
             r"developer mode|dev\s*mode|god\s*mode",
@@ -222,6 +232,8 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             r"不(要|得).{0,6}(写|留|触发).{0,6}(审计|日志|记录|复核)",
             r"当.{0,14}(暗语|口令|触发词?|出现).{0,14}时.{0,16}(批准|通过|权限|不留)",
             r"自动(批准|通过)|跳过.{0,4}(核验|审批|二次)",
+            r"(所有|全部|任何)\s*(事项|申请|请求).{0,14}"
+            r"(无需|不需|不用|跳过).{0,6}(身份)?\s*(核验|审核|审批|复核)",
             r"我说的(话|内容).{0,10}(优先级?高于|优先于|压过).{0,10}(系统|规则|文件)",
         ),
     ),
@@ -237,6 +249,66 @@ _CATEGORIES: dict[str, tuple[float, tuple[str, ...]]] = {
             r"<(?:img|image)\b[^>]*\bsrc\s*=\s*['\"]?https?://[^'\">\s]*[?&#][^'\">\s]*=[A-Za-z0-9%+/_=-]{24,}",
             r"<a\b[^>]*\bhref\s*=\s*['\"]?https?://[^'\">\s]*[?&#][^'\">\s]*=[A-Za-z0-9%+/_=-]{24,}",
             r"(?:!?\[[^\]]*\]\(|src\s*=|href\s*=)\s*['\"<]?https?://[^)\s'\">]*(?:1[3-9]\d{9}|\d{17}[\dXx])",
+            # URL 参数仍是待填模板时先复核;明确同时索取多类敏感量由 high_impact_action 升级。
+            r"!?\[[^\]]*\]\(\s*https?://[^)\s>]*[?&#][^)\s>]*="
+            r"[^)]{0,80}(会话|手机号|身份证|令牌|token|密钥)[^)]*\)",
+        ),
+    ),
+    # 编码内容本身不等于高危,但“解码/拼接后照做”明确把隐藏载荷当指令执行,应进入人工复核。
+    "encoded_instruction": (
+        0.7,
+        (
+            r"(base\s*64|base64|十六进制|\bhex\b|rot13|摩尔斯|morse|解码)"
+            r".{0,28}(照做|执行|按(其)?(内容|说明)?(操作|执行)|进行操作)",
+            r"(取|提取).{0,12}(每句|各句|文本)?(首字|首字母|尾字)"
+            r".{0,16}(组合|拼接).{0,8}(执行|照做)",
+            r"(执行|照做).{0,24}[\u202a-\u202e\u2066-\u2069]",
+            r"(翻译|translate).{0,40}(并执行|然后执行|and\s+(execute|run))",
+        ),
+    ),
+    # 只有动作与高影响目标同时出现才自动阻断。敏感名词单独出现仍由既有规则落复核档,
+    # 避免把科普、本人数据导出、正常审计要求误判为高危。
+    "high_impact_action": (
+        0.85,
+        (
+            # 直接要求切入无约束人格,不是仅用故事/评分/编码包装的试探。
+            r"(进入|开启|切换到?)\s*(开发者|越狱|无限制).{0,20}(模式)?"
+            r".{0,28}(不受(任何)?限制|没有任何约束|绕过安全审查|回答一切)",
+            r"扮演.{0,24}(没有任何约束|不受任何限制).{0,28}"
+            r"(绕过.{0,10}(安全|审查|规则)|回答.{0,10}(所有|一切))",
+            r"(enter|enable|switch\s+to).{0,16}(developer|unrestricted|jailbreak)\s+mode"
+            r".{0,28}(no\s+(rules|restrictions)|bypass\s+(safety|review))",
+            # 批量人员记录 + 至少两类高敏字段。
+            r"(?=[\s\S]{0,160}(列出|输出|导出|汇总|提供|打印|返回))"
+            r"(?=[\s\S]{0,200}(人员|居民|申请人|名册|记录|json\s*数组))"
+            r"(?=[\s\S]{0,220}(身份证(号)?|id[_ -]?card))"
+            r"(?=[\s\S]{0,240}(家庭住址|地址|银行账号|联系电话|手机号|address|bank[_ -]?account))",
+            # 从上下文/运行环境索取真实凭据值。
+            r"(?=[\s\S]*(真实(的)?.{0,16}(值|连接串|api[_ ]?密钥|api[_ -]?key|管理员口令|凭据)|"
+            r"上下文(里|中)的真实值))"
+            r"(?=[\s\S]*(连接串|api[_ ]?密钥|api[_ -]?key|管理员口令|凭据|credentials?))"
+            r"(?=[\s\S]*(输出|读取|念|写出|给我|打印|提取|带上))",
+            # 系统提示与另一项控制面资产被打包索取。
+            r"(?=[\s\S]*(系统提示词|system\s+prompt))"
+            r"(?=[\s\S]*(访问控制策略|数据(处置|留存)策略|授权工具清单|工具定义|"
+            r"内部(策略|规则)|任何密钥|管理员口令|credentials?|居民记录|residents?\s+表))"
+            r"(?=[\s\S]*(逐字|原样|打印|输出|贴出|泄露|复现|念出|写出|真实值))",
+            # 自动越权批准与关闭审计/复核同时出现。
+            r"(?=[\s\S]*(自动|管理员权限).{0,24}(批准|通过))"
+            r"(?=[\s\S]*(不留|不写|不要写|关闭|跳过).{0,14}(审计|日志|记录|复核))",
+            r"(?=[\s\S]*(不要|不得|禁止|关闭).{0,14}(审计|日志))"
+            r"(?=[\s\S]*(不要|不得|禁止|关闭|跳过).{0,14}(复核|核验|审批))",
+            # 投毒模板强制外链并把它伪装为官方依据。
+            r"(必须|强制).{0,24}(附上?|带上?)\s*https?://.{0,100}"
+            r"(声明|伪称).{0,16}(官方依据|官方(规定|口径|来源|文件|答案))",
+            # 人不可见 HTML 指令把会话/上下文送往外部 URL。
+            r"<(div|span|p)\b[^>]*style\s*=\s*['\"][^'\"]*"
+            r"(font-size\s*:\s*0|display\s*:\s*none|visibility\s*:\s*hidden|color\s*:\s*#fff)"
+            r"[^'\"]*['\"][^>]*>[\s\S]{0,240}(会话|上下文|令牌|token)"
+            r"[\s\S]{0,100}https?://",
+            # 渲染 URL 的待填模板明确要求两类敏感数据。
+            r"!?\[[^\]]*\]\(\s*https?://[^)]*[?&#][^=]+\s*=\s*<"
+            r"(?=[^>]*(身份证|id[_ -]?card))(?=[^>]*(令牌|token|密钥))[^>]*>\)",
         ),
     ),
 }
@@ -436,10 +508,12 @@ def _severity(score: float) -> str:
 
 # ---- 混淆注入复扫:攻击者把「ignore previous instructions」之类塞进编码绕过关键词 ----
 # 解码委托 core.normalize.decode_variants(递归 Base64/Hex/URL/ROT13),再用既有危险规则复扫。
-# 解码后命中 = 刻意隐藏意图,比明文更可疑,按 critical 基准计分;解不出可读文本/无危险词则不产 finding,
-# 故正常 Base64(图片、令牌)不会误报。
+# 解码后命中 = 刻意隐藏意图。普通注入/越狱进复核档;隐藏外发/命令执行仍进阻断档。
+# 解不出可读文本/无危险词则不产 finding,故正常 Base64(图片、令牌)不会误报。
 _DEOBF_CATEGORIES: tuple[str, ...] = ("injection", "jailbreak", "exfiltration", "command_exec")
-_DEOBF_BASE = 0.85  # 混淆即恶意意图,基准取 critical 档
+_DEOBF_REVIEW_BASE = 0.7
+_DEOBF_BLOCK_BASE = 0.85
+_DEOBF_BLOCK_KINDS = frozenset({"exfiltration", "command_exec"})
 
 # 解码上下文专用外泄正则(**只在 `_scan_decoded` 用,绝不并入模块级 `_RULES["exfiltration"]`)。
 # 明文 exfiltration 规则要求 sink 是「http/external/外部/邮箱/@」——裸域名 `attacker.example`、
@@ -551,6 +625,7 @@ class KeywordRuleDetector:
                     )
                 )
             # 混淆复扫:递归解码后再扫;命中 = 刻意隐藏的注入/外发/命令,按 critical 计分。
+            # 混淆复扫:普通注入/越狱进复核;隐藏外发/命令执行仍直接阻断。
             seed = text.strip()
             for decoded in decode_variants(text):
                 # rot13 是对合:depth=2 往返(rot13∘rot13)把**原文明文**当作"解码产物"重放。
@@ -568,7 +643,12 @@ class KeywordRuleDetector:
                 # 产物"重放)→ 不是真藏进编码的载荷,跳过。真·隐藏载荷会命中明文外的新规则,照常计分。
                 if suppress and hidden_rules <= plaintext_rules:
                     continue
-                raw = _DEOBF_BASE * trust_mul + (_INDIRECT_BOOST if indirect else 0.0)
+                base = (
+                    _DEOBF_BLOCK_BASE
+                    if _DEOBF_BLOCK_KINDS.intersection(hidden)
+                    else _DEOBF_REVIEW_BASE
+                )
+                raw = base * trust_mul + (_INDIRECT_BOOST if indirect else 0.0)
                 score = round(min(raw, 1.0), 3)
                 findings.append(
                     Finding(
