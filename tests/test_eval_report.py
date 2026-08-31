@@ -3,10 +3,53 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from fulcrum.adapters.api.eval_routes import load_report
 from fulcrum.eval.__main__ import main as eval_main
+
+
+def test_eval_cli_reconfigures_gbk_stdio_to_utf8(tmp_path: Path) -> None:
+    """Windows 默认 GBK 管道也能完整输出含 `†` 的评测表,不触发 UnicodeEncodeError。"""
+    dataset = tmp_path / "minimal.jsonl"
+    dataset.write_text(
+        json.dumps(
+            {
+                "sample_id": "windows-gbk",
+                "attack_type": "benign",
+                "input": "hello",
+                "expected_action": "allow",
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "report.json"
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "0"
+    env["PYTHONIOENCODING"] = "gbk"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "fulcrum.eval",
+            "--dataset",
+            str(dataset),
+            "--out",
+            str(out),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    assert "†".encode() in completed.stdout
+    assert out.exists()
 
 
 def test_loads_report_produced_by_eval_cli(tmp_path: Path) -> None:
