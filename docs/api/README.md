@@ -1,5 +1,8 @@
 # 枢衡 API 契约(OpenAPI)
 
+> 本文回答什么问题：后端 API 契约如何生成、校验和供前端复用，避免路由与客户端定义漂移。
+> 状态：持续维护；生成结果以同目录 `openapi.json` 和当前代码为准，功能落地进度见 [`../plan/03-进度看板.md`](../plan/03-进度看板.md)。
+
 `openapi.json` 是后端 API 的**单一契约真源**,由 FastAPI 据路由 + pydantic schema 自动产出。
 前端据此生成 API client(TanStack Query 等),避免两边手抄接口导致漂移。
 
