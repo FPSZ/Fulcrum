@@ -11,7 +11,8 @@
                         其外链目标区里点名会话/用户敏感数据类目、或留一个「把…填进来」式数据槽
                         占位符。判别 = 「markup/渲染外联信道 ∧(敏感类目引用 ∨ 填充占位符)」两
                         条件共现——普通静态图/正常查询(page=2、id=123、token=<正常值>)缺其一
-                        不命中。base 0.85(untrusted→block)。
+                        不命中。分档:显式占位符 base 0.85(untrusted→block);仅敏感类目指代
+                        (data_reference)base 0.7(→approve 人工复核)。
 
     hidden_markup_inject CSS/样式隐藏标记(font-size:0 / color:#fff / display:none / opacity:0 /
                         visibility:hidden / 屏外定位 / hidden 属性 / 零宽字符)**且**隐藏块的同
@@ -27,6 +28,7 @@
 from __future__ import annotations
 
 import re
+from html import unescape as _html_unescape
 
 from ...core.domain import Context, Finding, SourceSpan, TrustLevel
 from ...core.registry import capability
@@ -125,8 +127,12 @@ _HIDDEN_INSTRUCTION_RE = re.compile(
     re.IGNORECASE,
 )
 
-# 两个 kind 固有严重度基准(untrusted→0.85≥0.8 block、semi→0.68 approve、trusted→0.468 allow)。
+# 严重度基准(untrusted 乘子 1.0):显式数据槽占位/隐藏块指令 = 0.85 ≥0.8 → block;
+# data_slot 的 **data_reference** 档(外链目标区仅**点名敏感类目**、无显式"填进来"占位)
+# 信号弱一档——0.7 → high → approve 人工复核(与语料冻结口径一致:inj-i04 类"query 携带
+# 上下文数据指代"标 approve;占位符模板才是一义的外泄结构,值 block)。
 _DATA_SLOT_BASE = 0.85
+_DATA_SLOT_REF_BASE = 0.7
 _HIDDEN_BASE = 0.85
 
 # 来源信任级 -> 乘子(与 exfil_channel/secret_egress/keyword_rules 同口径)。
@@ -217,13 +223,36 @@ class RenderExfilDetector:
         for span in spans:
             text = span.content
             trust_mul = _TRUST_MUL.get(span.trust_level, 1.0)
+            # 检测面 = 原文 + HTML 实体解码副本(仅当不同)。渲染时 `&lt;img src=…&gt;`、
+            # `&#60;div style=…&#62;` 会被解码成**活标签/活样式**——实体编码是 markup 注入的
+            # 标准预处理,检测面不解码即绕过;良性文本解码后与原文几乎恒同(去重后零额外扫描,
+            # 不扩 FP 面)。命中来自解码副本时证据标 encoded_html_entity 供审计。
+            dec = _html_unescape(text)
+            candidates: list[tuple[str, bool]] = [(text, False)]
+            if dec != text:
+                candidates.append((dec, True))
 
-            for kind, base, detail in (
-                ("data_slot_exfil", _DATA_SLOT_BASE, _data_slot_hit(text)),
-                ("hidden_markup_inject", _HIDDEN_BASE, _hidden_markup_hit(text)),
+            for kind, matcher in (
+                ("data_slot_exfil", _data_slot_hit),
+                ("hidden_markup_inject", _hidden_markup_hit),
             ):
+                detail: dict | None = None
+                encoded = False
+                for cand, is_decoded in candidates:
+                    detail = matcher(cand)
+                    if detail is not None:
+                        encoded = is_decoded
+                        break
                 if detail is None:
                     continue
+                if encoded:
+                    detail = {**detail, "encoded_html_entity": True}
+                if kind == "data_slot_exfil" and detail.get("slot") == "data_reference":
+                    base = _DATA_SLOT_REF_BASE
+                elif kind == "data_slot_exfil":
+                    base = _DATA_SLOT_BASE
+                else:
+                    base = _HIDDEN_BASE
                 score = round(min(base * trust_mul, 1.0), 3)
                 findings.append(
                     Finding(
