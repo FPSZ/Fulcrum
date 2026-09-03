@@ -15,10 +15,14 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from fulcrum.adapters.api.app import build_api
 from fulcrum.adapters.assistant import AssistantAgent, AssistantServices
 from fulcrum.adapters.assistant.model_client import ModelReply, ModelTurn, ToolCallReq
 from fulcrum.adapters.auth.models import Principal
 from fulcrum.adapters.auth.permissions import ALL_PERMISSION_KEYS
+from fulcrum.adapters.gateway.upstream import UpstreamReply
 from fulcrum.app import build_pipeline
 from fulcrum.config import Settings, load_capability_config
 from fulcrum.core.domain import Disposition, Finding
@@ -220,3 +224,75 @@ def test_clean_intent_lets_write_proposal_through(tmp_path: Path) -> None:
         assert res.proposed_actions[0].tool == "demo_write"
 
     _with_demo_write(body)
+
+
+# ───────────────── 网关集成回归(评审 #109:与最新输入/出口闸门共存)─────────────────
+# 用**全量生产管线**(fulcrum.yml 默认装配,含 #110/#112/#124 最新检测)+ 已配 async_judge,
+# 经真实 HTTP 路由 `/gateway/chat` 验证 §4.1 红线:前置网关两道闸门保持同步语义,
+# 不因管线配了异步 judge 而变异步/被绕过,且网关路径全程不启动 judge。
+
+
+class _StubForwarder:
+    """记录 chat() 是否被调用的上游替身;返回预置回复。"""
+
+    def __init__(self, reply: str) -> None:
+        self._reply = reply
+        self.calls: list[tuple[str, str]] = []
+
+    async def chat(self, session_id: str, message: str) -> UpstreamReply:
+        self.calls.append((session_id, message))
+        return UpstreamReply(ok=True, reply=self._reply)
+
+
+def _gateway_client(reply: str, judge: _FakeJudge) -> tuple[TestClient, _StubForwarder]:
+    p = _pipeline()
+    p._async_judge = judge
+    fwd = _StubForwarder(reply)
+    app = build_api(p, upstream=fwd)  # type: ignore[arg-type]  # 无 auth/settings → 纯网关面
+    return TestClient(app), fwd
+
+
+def _post(client: TestClient, message: str, session_id: str) -> dict:
+    resp = client.post("/gateway/chat", json={"session_id": session_id, "message": message})
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def test_gateway_malicious_input_still_blocks_synchronously_with_async_judge() -> None:
+    # 管线已配 async_judge(若被网关错误消费,该输入会被 judge 升格)→ 网关输入闸门
+    # 仍走同步 screen_input:确定性当场拦、上游绝不触达、judge 根本不启动。
+    calls: list[int] = []
+    client, fwd = _gateway_client("不该被调用", _FakeJudge(calls=calls))
+    body = _post(client, _MALICIOUS, "gw-1")
+    assert body["decision"] == "block"
+    assert body["forwarded"] is False
+    assert fwd.calls == []
+    assert calls == []  # 网关路径不碰 async_judge
+
+
+def test_gateway_judge_only_input_still_forwards_sync_semantics() -> None:
+    # 仅 judge 语义可判(_MARK 对确定性规则零信号)的输入:网关照常放行并转发——
+    # 输入闸门的同步语义不因配了 async_judge 改变(异步只属于助手路径,§4.1)。
+    # 若网关错误走了 screen_input_async 且等待 settle,此处会变 block;若异步放行
+    # 后靠"下游收口"补救,网关也根本没有下游收口点——这条用例把两种漂移都钉死。
+    calls: list[int] = []
+    client, fwd = _gateway_client("您好,办件进度是已受理。", _FakeJudge(calls=calls))
+    body = _post(client, f"看下安全总览 {_MARK}", "gw-2")
+    assert body["decision"] == "allow"
+    assert body["forwarded"] is True
+    assert body["reply"] == "您好,办件进度是已受理。"
+    assert len(fwd.calls) == 1
+    assert calls == []  # judge 未被网关路径启动
+
+
+def test_gateway_output_gate_still_blocks_exfil_with_async_judge() -> None:
+    # 出口闸门同步语义不受影响:良性输入 + 批量 PII 回复 → 出口当场拦截,明文不回传。
+    calls: list[int] = []
+    leaked = "名册:13812345678、13998887777、13600001111,请查收。"
+    client, fwd = _gateway_client(leaked, _FakeJudge(calls=calls))
+    body = _post(client, "帮我查一下王某的低保办件进度", "gw-3")
+    assert body["forwarded"] is True
+    assert body["output_blocked"] is True
+    assert body["output_decision"] == "block"
+    assert "13812345678" not in body["reply"]
+    assert calls == []  # 出口闸门同样不碰 async_judge
