@@ -134,6 +134,30 @@ _HIDDEN_INSTRUCTION_RE = re.compile(
 _DATA_SLOT_BASE = 0.85
 _DATA_SLOT_REF_BASE = 0.7
 _HIDDEN_BASE = 0.85
+# 跟踪像素:可疑回传通道,单独不足以 block(approve 复核档,与语料 eg-render-03 口径一致)。
+_PIXEL_BASE = 0.65
+
+# 1px 跟踪像素回传(eg-render-03 靶,LLM02/AML.T0024):<img> 渲染即自动请求,1px 尺寸=无显示
+# 价值的纯信道,离域主机 + 查询串携带非空参数值 = 数据经渲染信道外传。三特征共现高判别:
+# 良性 spacer/计数像素(无查询参数)、正常尺寸图(version 查询)均不命中。
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_SRC_ATTR_RE = re.compile(r"""src\s*=\s*["']?(https?://[^\s"'>]+)""", re.IGNORECASE)
+_PX_SIZE_RE = re.compile(r"""(?:width|height)\s*=\s*["']?1["']?(?:px)?\b""", re.IGNORECASE)
+_QUERY_VAL_RE = re.compile(r'[?&][^=\s"\'>]+=.+')
+
+
+def _tracking_pixel_hit(text: str) -> dict[str, str] | None:
+    """离域 1px 图片 ∧ 查询串携带非空参数值 → 跟踪像素数据回传(approve 复核档)。"""
+    for tag in _IMG_TAG_RE.finditer(text):
+        body = tag.group(0)
+        src = _SRC_ATTR_RE.search(body)
+        if src is None or not _PX_SIZE_RE.search(body):
+            continue
+        url = src.group(1)
+        if _QUERY_VAL_RE.search(url):
+            return {"channel": "tracking_pixel", "slot": "query_payload"}
+    return None
+
 
 # 来源信任级 -> 乘子(与 exfil_channel/secret_egress/keyword_rules 同口径)。
 _TRUST_MUL: dict[TrustLevel, float] = {
@@ -235,6 +259,7 @@ class RenderExfilDetector:
             for kind, matcher in (
                 ("data_slot_exfil", _data_slot_hit),
                 ("hidden_markup_inject", _hidden_markup_hit),
+                ("tracking_pixel_exfil", _tracking_pixel_hit),
             ):
                 detail: dict | None = None
                 encoded = False
@@ -251,6 +276,8 @@ class RenderExfilDetector:
                     base = _DATA_SLOT_REF_BASE
                 elif kind == "data_slot_exfil":
                     base = _DATA_SLOT_BASE
+                elif kind == "tracking_pixel_exfil":
+                    base = _PIXEL_BASE
                 else:
                     base = _HIDDEN_BASE
                 score = round(min(base * trust_mul, 1.0), 3)

