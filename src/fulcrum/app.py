@@ -38,6 +38,11 @@ def build_pipeline(config: dict[str, Any] | None = None) -> SecurityPipeline:
     def make(kind: str, name: str) -> Any:
         return registry.create(kind, name, **(opts.get(name) or {}))
 
+    # 异步 judge 旁路(plan/14 P_c):可选 `async_judge: <detector 注册名>`——仅助手工具治理路径用,
+    # judge 与模型规划并行。缺省=无(行为与今日一致);其构造参数走 options.<注册名> 同一约定。
+    async_judge_name = cfg.get("async_judge")
+    async_judge = make("detector", async_judge_name) if async_judge_name else None
+
     return SecurityPipeline(
         labeler=make("labeler", cfg["labeler"]),
         detectors=[make("detector", name) for name in cfg["detectors"]],
@@ -49,6 +54,7 @@ def build_pipeline(config: dict[str, Any] | None = None) -> SecurityPipeline:
         tools={name: make("tool", name) for name in cfg["tools"]},
         audit=make("audit", cfg["audit"]),
         model_client=make("model", cfg["model"]),
+        async_judge=async_judge,
     )
 
 
