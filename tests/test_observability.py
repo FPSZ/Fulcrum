@@ -253,3 +253,43 @@ print("PATH", r.headers.get("x-request-id") is not None)
     assert payload["http_path"] == "/echo"  # 路由模板,非原始 URL
     assert "sk-live-secret123456" not in stderr
     assert "token=sk" not in stderr
+
+
+def test_error_level_keeps_redacted_stack() -> None:
+    """评审 #126 取舍①:ERROR+(5xx 路径)保留脱敏后的栈(定位能力不归零),手机号入栈也打码。"""
+    _, stderr = _run_script(
+        """
+import logging
+from fulcrum.observability import configure_logging, get_logger
+configure_logging("INFO")
+try:
+    raise RuntimeError("boom at 手机号13812345678")
+except RuntimeError:
+    get_logger("fulcrum.http").exception("http.request.failed")
+"""
+    )
+    payload = _last_log_json(stderr, "http.request.failed")
+    assert payload["exception_type"] == "RuntimeError"
+    assert payload.get("stack") and "RuntimeError" in payload["stack"]
+    assert "13812345678" not in payload["stack"] and "138****" in payload["stack"]
+
+
+def test_framework_debug_suppressed_redact_hotpath() -> None:
+    """评审 #126 取舍②:非 fulcrum.* 的 DEBUG 噪声抑制正文(不付 redact 也不留泄露面);
+    INFO+/WARNING+(如 httpx 访问日志带 URL 凭据)恒过 redact——安全断言优先于性能。"""
+    _, stderr = _run_script(
+        """
+import logging
+from fulcrum.observability import configure_logging, get_logger
+configure_logging("DEBUG")
+get_logger("httpx").debug("raw debug 13812345678")
+get_logger("httpx").info("HTTP Request: GET https://x.test/a?token=sk-live-secret123456")
+get_logger("httpx").warning("warn must redact 13812345678")
+"""
+    )
+    import json as j
+
+    dbg = [ln for ln in stderr.splitlines() if ln.startswith("{") and "raw debug" in ln]
+    info = [ln for ln in stderr.splitlines() if ln.startswith("{") and "HTTP Request" in ln][-1]
+    assert j.loads(dbg[-1])["event"] == "(suppressed debug noise)"  # DEBUG 抑制
+    assert "sk-live-secret123456" not in j.loads(info)["event"]  # INFO 访问日志仍打码
