@@ -17,8 +17,10 @@ keyword_rules 同口径,融合数学一致。
 
 **可选 + 缺失自动降级(诚实声明)**:默认后端连 OpenAI 兼容端点(MiMo);端点不可达 / 未配置 /
 单次裁决异常 → 降级为 no-op(返回 []),**绝不拖垮确定性规则基线**,也绝不因 judge 故障反而拦截
-一切(对自身故障 fail-safe,而非 fail-closed)。**默认不入装配**:需可用的中文 LLM 端点;已注册进
-registry,在 fulcrum.yml `detectors` 启用并于 `options.llm_judge` 配 endpoint/model/api_key 即可。
+一切(对自身故障 fail-safe,而非 fail-closed)。**已入默认装配**(fulcrum.yml detectors 末位,
+keyword_rules 等规则检测全部保留兜底):端点/模型/密钥由组装根从 .env(FULCRUM_MODEL_*)注入,
+不入配置文件;未配真实端点时自动降级 no-op(行为与未启用一致)。关闭:删 fulcrum.yml 的
+`- llm_judge` 行;私有化本地端点则在 `options.llm_judge` 显式配置(显式优先,不被 .env 覆盖)。
 
 端点 / 密钥 / 模型经构造参数注入(组装根从 Settings 取),不在能力层 import 配置
 (守 capabilities→core 边界)。
@@ -36,7 +38,10 @@ from ...core.registry import capability
 _LOG = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "mimo-v2.5-pro"
-_DEFAULT_ENDPOINT = "http://127.0.0.1:11434/v1"  # OpenAI 兼容(本地 Ollama/vLLM 或云端 MiMo)
+# 默认空 = 未配置:组装根从 .env 注入(见 app._inject_judge_endpoint)或经 options.llm_judge 显式配。
+# 不再默认指 127.0.0.1:11434 —— judge 已入默认装配,裸默认端点会让装了 Ollama 的开发机
+# 在测试/评测里静默打本地模型(非确定性);空端点直接走降级,行为与未启用一致。
+_DEFAULT_ENDPOINT = ""
 
 # 审查口径:系统提示 + few-shot。判据是"有没有操纵智能体的指令",不是"有没有敏感字段"——
 # 锁定"询问/学习安全概念 ≠ 攻击""纯数据记录(含外发地址/证件号)≠ 攻击",压低中文良性误报。
@@ -190,6 +195,9 @@ class LlmJudgeDetector:
         if self._backend is not None or self._degraded or self._tried_load:
             return
         self._tried_load = True
+        if not self._endpoint:  # 未配置端点(默认装配且 .env 无模型)→ 直接降级,不尝试连接
+            self._degraded = True
+            return
         try:
             self._backend = _load_default_backend(
                 self._endpoint,

@@ -9,11 +9,11 @@ detectors:
   - manifest_guard       # 请求路径 manifest 哨兵:组件清单评估请求 → 抽取 → 扫描器分级处置
   - disclosure_egress    # 出口自披露:策略原文 / 工具清单泄露(双条件高精度)
   - exfil_channel        # 出站外泄信道:带外汇点册 / 即时通讯 webhook / DNS 隧道(高精度)
-  # 语义兜底(P6,可选,私有化合规推荐):抓无触发词的中文社工注入。二选一:
-  #   · injection_cascade —— keyword+judge 级联(**推荐**:规则已拦的不重判,judge 调用减半),启用时把上面 `- keyword_rules` 删掉(级联已内含),见 options.injection_cascade
-  #   · llm_judge         —— 纯 judge 全量(每条都判),与 keyword_rules 并列,见 options.llm_judge
-  # - injection_cascade
-  # - llm_judge
+  - llm_judge            # 大模型语义对抗裁决(无触发词语义注入/越狱兜底);端点经组装根从 .env
+                         # 注入(见 options.llm_judge),未配真实端点自动降级 no-op,规则链路始终兜底
+  # 语义级联变体(可选,替换上面 llm_judge 行):injection_cascade —— keyword+judge 级联
+  # (规则已拦的不重判,judge 调用减半),启用时把 `- keyword_rules` 删掉(级联已内含),
+  # 见 options.injection_cascade
 attributor: evidence     # 证据化来源归因(参数片段 × 来源信任)
 risk_scorer: heuristic   # 工具动作固有风险评分
 chain_analyzer: sequence # 任务链异常检测(敏感读取→对外发送 等外泄链);noop 为最小桩
@@ -31,12 +31,15 @@ audit: memory          # 内存桩(重启清零);改 `sqlite` 即持久化落库
 options:
   yaml:
     path: data/policies/default.yml   # 策略文件路径(原为实现内硬编码,现经此通道注入)
-  # ── 语义层 LLM-judge(可选,私有化合规推荐)──────────────────────
-  # judge 走客户**本地自托管**模型(同一台 llama-server/vLLM/Ollama 即可),数据不出域、零云调用——
-  # 满足政务"输入不外发"合规红线。Qwen3 等推理模型须关思考(enable_thinking:false)直出裁决。
-  # 实测(冻结语料 200 条,本地 Qwen3-8B air-gapped):接 judge 后整机召回 78.8%→94.1%、**FPR 0% 不破**、
-  # jailbreak/注入桶 ASR 砍 3–5 倍;代价是延迟 P95 0.7ms→~575ms(judge 单条 ~0.8s、判 ~50% 输入)。
-  # 对照英文分类器 protectai 单跑 79.8% 但 FPR 47%(政务不可用)。
+  # ── 语义层 LLM-judge(已入默认装配;端点/模型/密钥**不入此文件**)──────────────
+  # 组装根(app.py)在 .env 配了模型(FULCRUM_MODEL_ENDPOINT/NAME/API_KEY)时自动注入
+  # options.llm_judge 的 endpoint/model/api_key——部署机各配各的,密钥永不入库。
+  # 未配置/端点不可达 → 检测器自动降级 no-op(行为与未启用一致,规则链路兜底);
+  # 关闭方式:删除 detectors 里的 `- llm_judge` 行即可。
+  # 私有化合规:judge 走客户本地自托管模型(同一台 llama-server/vLLM/Ollama),
+  # 数据不出域;Qwen3 等推理模型须关思考(extra_body.chat_template_kwargs.enable_thinking:false)直出裁决。
+  # 实测(冻结语料 200 条):接 judge 整机召回 78.8%→94.1%、FPR 0% 不破、
+  # jailbreak/注入桶 ASR 砍 3–5 倍;代价 P95 0.7ms→~575ms(见 plan/14 §4)。
   #
   # 级联(推荐):规则先出分,规则已强命中(≥gray_high)的不重判,其余落 judge。gray_low=0=判所有未拦下
   # (保召回);gray_low>0 对当前二极分数无增益(见 plan/14 §4)。启用:上面用 `- injection_cascade`

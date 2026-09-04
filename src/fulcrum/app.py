@@ -52,6 +52,21 @@ def build_pipeline(config: dict[str, Any] | None = None) -> SecurityPipeline:
     )
 
 
+def _inject_judge_endpoint(cfg: dict[str, Any], settings: Settings) -> None:
+    """语义层 LLM-judge 端点注入(fulcrum.yml 只管"启用"开关,端点/密钥**不入库**)。
+
+    .env 配了模型(FULCRUM_MODEL_*)且 yml 未显式指定 endpoint 时,以 .env 为单一真源注入
+    options.llm_judge —— 部署机各配各的;显式配置(如私有化本地 Ollama)优先,不被覆盖。
+    """
+    if "llm_judge" not in (cfg.get("detectors") or []):
+        return
+    judge_opts: dict[str, Any] = cfg.setdefault("options", {}).setdefault("llm_judge", {})
+    if not judge_opts.get("endpoint") and settings.model_endpoint and settings.model_api_key:
+        judge_opts.setdefault("endpoint", settings.model_endpoint)
+        judge_opts.setdefault("model", settings.model_name)
+        judge_opts.setdefault("api_key", settings.model_api_key)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     configure_logging(settings.log_level)
@@ -71,6 +86,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     store = GatewayConfigStore(settings.gateway_config_path, seed=seed)
     upstream = UpstreamForwarder(store)
 
+    # 审计 SQLite 库路径:Settings(.env 的 FULCRUM_AUDIT_DB_PATH)注入为单一真源,
+    # 部署挂卷/测试 tmp 隔离都经此通道;fulcrum.yml 显式配了 options.sqlite.path 则以其优先。
+    sqlite_path = cfg.setdefault("options", {}).setdefault("sqlite", {})
+    sqlite_path.setdefault("path", settings.audit_db_path)
+
+    _inject_judge_endpoint(cfg, settings)
     pipeline = build_pipeline(cfg)  # 触发 _load_builtins,注册表此后含 scanner
     # 供应链扫描器经组装根注入 API(不入管线装配 —— 离线关切;adapters 不依赖 capabilities)。
     scanner = registry.create("scanner", "manifest")
