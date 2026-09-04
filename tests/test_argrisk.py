@@ -230,6 +230,67 @@ def test_encoded_benign_path_inside_workspace_ok() -> None:
     )
 
 
+# ── overlong UTF-8 分隔符路径穿越(tg-path-04):unquote 有损吞掉畸形字节前先规范 ──────────
+@pytest.mark.parametrize(
+    "path",
+    [
+        "..%c0%af..%c0%afetc%c0%afpasswd",  # 2 字节 overlong `/`(基线漏判)
+        "..%e0%80%af..%e0%80%afetc%e0%80%afpasswd",  # 3 字节 overlong `/`
+        "..%f0%80%80%af..%f0%80%80%afetc%f0%80%80%afpasswd",  # 4 字节 overlong `/`
+        "..%C0%AF..%C0%AFetc%C0%AFpasswd",  # 大写十六进制
+        # overlong `.` + overlong `/` 组合(连 `..` 里的点也 overlong)
+        "%c0%ae%c0%ae%c0%af%c0%ae%c0%ae%c0%afetc%c0%afpasswd",
+        "..%c0%9c..%c0%9cWindows%c0%9cwin.ini",  # overlong `\` Windows 版
+        "..%25c0%25af..%25c0%25afetc%25c0%25afpasswd",  # 双重编码 overlong(解一层再规范)
+    ],
+)
+def test_overlong_utf8_traversal_flagged(path: str) -> None:
+    # overlong UTF-8 编码的 `/`/`.`/`\` 在 unquote 前规范回 ASCII → `..` 独立成段被越界拦。
+    assert argrisk.path_outside_workspace({"path": path}, "/workspace") is True
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "..%c0%af..%c0%afetc%c0%afpasswd",
+        "..%e0%80%af..%e0%80%afetc%e0%80%afpasswd",
+        "..%f0%80%80%af..%f0%80%80%afetc%f0%80%80%afpasswd",
+        "..%C0%AF..%C0%AFetc%C0%AFpasswd",
+        "..%25c0%25af..%25c0%25afetc%25c0%25afpasswd",
+    ],
+)
+def test_overlong_utf8_sensitive_path_flagged(path: str) -> None:
+    # 规范 + 递归解码后 `_SENSITIVE_PATH` 命中 /etc/passwd。
+    assert argrisk.path_sensitive({"path": path}) is True
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../../etc/passwd",  # 明文穿越(基线不回归)
+        "%2e%2e%2fetc%2fpasswd",  # 单编码
+        "%252e%252e%252fetc%252fpasswd",  # 双重编码(#67 已支持)
+    ],
+)
+def test_prior_traversal_capability_not_regressed(path: str) -> None:
+    assert argrisk.path_outside_workspace({"path": path}, "/workspace") is True
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "file%20name.txt",  # 合法百分号:空格,非 overlong
+        "data%2ecsv",  # 合法百分号:正常 `.`(单编码)
+        "notes%c0%afdraft",  # 含 overlong 但规范成 `notes/draft`,仍在工作区内、无 `..`
+        "report..final.txt",  # 含 `..` 子串但非独立段
+        "..hidden",  # 隐藏文件名,非上级段
+    ],
+)
+def test_overlong_normalize_no_false_positive_traversal(path: str) -> None:
+    # 规范化不得对良性路径产生假越界(工作区内相对路径)。
+    assert argrisk.path_outside_workspace({"path": path}, "/workspace") is False
+
+
 @pytest.mark.parametrize("name", ["..hidden", "my..notes.txt", "v1..2.log"])
 def test_filename_containing_dotdot_substring_not_flagged(name: str) -> None:
     # 回归:含 `..` 子串的合法文件名(路径段本身不等于 `..`)不应误判越界。

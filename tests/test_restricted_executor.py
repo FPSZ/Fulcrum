@@ -284,3 +284,55 @@ def test_url_key_scheme_still_denied() -> None:
     """既有 url 键的协议白名单行为不变(回归保护)。"""
     r = _run(_PassTool(), {"url": "file:///etc/passwd"}, allow_domains=["gov.cn"])
     assert not r.ok and "协议" in (r.error or "")
+
+
+# ── overlong UTF-8 分隔符穿越:执行器端到端(评审 #113)──────────────────────────
+# argrisk 纯函数层已覆盖规范逻辑;这里钉**执行边界**层——策略放行后 RestrictedExecutor
+# 复用同一口径,Linux(`/`)/Windows(`\`)的 overlong 编码穿越在执行前仍被拒,
+# 且正常 Unicode 路径(中文/变音/emoji/全角)不因规范化被误伤。
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "..%c0%af..%c0%afetc%c0%afpasswd",  # 2 字节 overlong `/`(Linux 形态,基线漏判)
+        "..%e0%80%af..%e0%80%afetc%e0%80%afpasswd",  # 3 字节
+        "..%f0%80%80%af..%f0%80%80%afetc%f0%80%80%afpasswd",  # 4 字节
+        "%c0%ae%c0%ae%c0%afetc%c0%afpasswd",  # 连 `..` 里的点也 overlong
+        "..%c0%9c..%c0%9cWindows%c0%9cwin.ini",  # overlong `\`(Windows 形态,0xC0 前导)
+        "..%c1%9c..%c1%9cWindows%c1%9csam",  # overlong `\`(0xC1 前导变体)
+        "..%25c0%25af..%25c0%25afetc%25c0%25afpasswd",  # 双重编码 overlong
+    ],
+)
+def test_overlong_utf8_traversal_denied_by_executor(path: str) -> None:
+    r = _run(_PassTool(), {"path": path})
+    assert not r.ok
+    assert r.side_effects.get("sandbox") == "denied"
+
+
+def test_overlong_utf8_escape_to_nonsensitive_denied_by_executor() -> None:
+    # 目标非敏感(共享目录普通文件)→ 拦的是**越出工作区**本身,不依赖敏感路径清单。
+    r = _run(_PassTool(), {"path": "..%c0%af..%c0%afshared%c0%afbudget.xlsx"})
+    assert not r.ok and "越出" in (r.error or "")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "报表/2026年Q3.xlsx",  # 中文目录/文件名
+        "归档／2026／上半年.xlsx",  # 全角 ／(U+FF0F)是普通字符、非分隔符,不作穿越解读
+        "naïve-résumé_2026.pdf",  # 变音拉丁字母
+        "📁会议纪要.md",  # emoji 文件名
+        "file%20name.txt",  # 合法百分号编码(空格),非 overlong
+    ],
+)
+def test_normal_unicode_path_not_harmed_by_executor(path: str) -> None:
+    # 规范化只针对"良性输入绝不出现"的非法 overlong 序列,正常 Unicode 路径不受影响。
+    r = _run(_PassTool(), {"path": path})
+    assert r.ok and r.output == "done"
+
+
+def test_windows_style_unicode_path_inside_workspace_ok() -> None:
+    # Windows 反斜杠风格的区内路径(工作区前缀判定前统一归一为 `/`)不误伤。
+    r = _run(_PassTool(), {"path": r"data\workspace\报表.xlsx"}, workspace="data/workspace")
+    assert r.ok and r.output == "done"
