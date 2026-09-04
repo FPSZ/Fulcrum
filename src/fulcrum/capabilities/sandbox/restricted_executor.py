@@ -39,29 +39,10 @@ if TYPE_CHECKING:
 _ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
 
 # 无 `://` 主机段、但仍是 LFI/SSRF 面的"不透明"协议(`file:/etc/passwd`、`jar:a!/b`、`dict:…`)。
+# 单一真源在 `argrisk.RISKY_OPAQUE_SCHEMES`(与目的地候选围栏共用),此处仅引用,避免两表漂移。
 # 协议判定以"含 `://`"为主信号(排除 `localhost:6379`/`12:30`/`user@host` 这类带冒号的良性值被
-# 误读成协议),再叠加本集合兜住无双斜杠的危险协议。集中定义便于扩。
-_RISKY_OPAQUE_SCHEMES: frozenset[str] = frozenset(
-    {
-        "file",
-        "gopher",
-        "dict",
-        "ftp",
-        "ftps",
-        "sftp",
-        "tftp",
-        "ldap",
-        "ldaps",
-        "jar",
-        "data",
-        "javascript",
-        "php",
-        "expect",
-        "netdoc",
-        "smb",
-        "redis",
-    }
-)
+# 误读成协议),再叠加本表兜住无双斜杠的危险协议。
+_RISKY_OPAQUE_SCHEMES = argrisk.RISKY_OPAQUE_SCHEMES
 
 # 目的地参数键集单一真源见 `argrisk.DEST_KEYS`(URL 形态 + 地址形态并集)。协议白名单、域名/内网
 # 判定共用同一键集,避免"协议检查覆盖某键、域名检查漏该键"的漂移(曾致 {to:https://…} 绕过白名单)。
@@ -92,24 +73,22 @@ def _deny(reason: str) -> ExecResult:
     return ExecResult(ok=False, error=f"[沙箱拒绝] {reason}", side_effects={"sandbox": "denied"})
 
 
-def _disallowed_url_scheme(arguments: dict) -> tuple[str, str] | None:
-    """扫描**所有目的地键**,返回首个带非 http/https 协议的 (键名, 协议);全合规返回 None。
+def _disallowed_url_scheme(arguments: dict) -> str | None:
+    """扫描**全部目的地候选**(含嵌套,见 `argrisk.dest_candidates`),返回首个非 http/https
+    协议名;全合规返回 None。
 
-    纵深兜底:`_url_scheme` 旧实现只读 `url` 键,协议白名单只护住一个键,改键名(endpoint=
-    `file:///etc/passwd`、webhook=`gopher://…`)即绕过。这里对 `argrisk.DEST_KEYS` 全集判协议
-    (与域名/内网判定同一键集真源)。协议成立须满足"含 `://`(权威形 URL)或属
-    `_RISKY_OPAQUE_SCHEMES`(file:/jar:…)",据此把 `localhost:6379`/`12:30`/`user@host`/`C:/x`
-    这类带冒号的良性值排除在外(只做加法、不误伤)。
+    纵深兜底:旧实现只读顶层目的地键,改键名即绕过;进一步地,URL 藏进二层 dict
+    (`{"config":{"endpoint":"file:///etc/passwd"}}`)同样穿透。现与域名/内网判定共用同一
+    候选集单一真源(`dest_candidates`,三重围栏筛叶子),协议成立须满足"含 `://`(权威形 URL)
+    或属 `_RISKY_OPAQUE_SCHEMES`(file:/jar:…)",据此把 `localhost:6379`/`12:30`/`user@host`/
+    `C:/x` 这类带冒号的良性值排除在外(只做加法、不误伤)。
     """
-    for key in argrisk.DEST_KEYS:
-        raw = str(arguments.get(key) or "")
-        if not raw:
-            continue
+    for raw in argrisk.dest_candidates(arguments):
         scheme = urlparse(raw).scheme.lower()
         if not scheme or scheme in _ALLOWED_URL_SCHEMES:
             continue
         if "://" in raw or scheme in _RISKY_OPAQUE_SCHEMES:
-            return key, scheme
+            return scheme
     return None
 
 
@@ -195,9 +174,8 @@ class RestrictedExecutor:
         # 这类无主机协议会让下面的域名白名单返回 True 直接绕过,故先按协议白名单拦下。
         bad_scheme = _disallowed_url_scheme(args)
         if bad_scheme is not None:
-            key, scheme = bad_scheme
             return _deny(
-                f"目的地参数 {key} 的 URL 协议 {scheme}:// 不在允许清单(仅 http/https),拒绝执行"
+                f"目的地参数的 URL 协议 {bad_scheme}:// 不在允许清单(仅 http/https),拒绝执行"
             )
         if not argrisk.domain_allowed(args, self._allow_domains):
             return _deny("目标域名不在沙箱外联白名单(默认关闭外联)")

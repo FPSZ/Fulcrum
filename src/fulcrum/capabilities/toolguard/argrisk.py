@@ -136,6 +136,108 @@ def _dest_raw(arguments: dict) -> str:
     return ""
 
 
+# 标准点分四段 IPv4 字面量(每段 1-3 位数字)。裸值只有长这样才当地目的地候选——
+# `2130706433`/`0x7f000001` 等进制混淆形态**必须**由目的地键或 `://` 引入,否则嵌套参数
+# 里的普通数字(count/size/port)会被误当外联目标。
+_STANDARD_IPV4_RX = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+_MAX_DEST_DEPTH = 6
+
+# 无 `://` 主机段、但仍是 LFI/SSRF 面的"不透明"协议(`file:/etc/passwd`、`jar:a!/b`、`dict:…`)。
+# 单一真源:候选围栏与沙箱执行器的协议白名单共用此表(协议判定以"含 `://`"为主信号,
+# 再叠加本表兜住无双斜杠的危险协议;`localhost:6379`/`12:30`/`user@host`/`C:/x` 的伪 scheme
+# 均不在表内,不会被误当协议)。
+RISKY_OPAQUE_SCHEMES: frozenset[str] = frozenset(
+    {
+        "file",
+        "gopher",
+        "dict",
+        "ftp",
+        "ftps",
+        "sftp",
+        "tftp",
+        "ldap",
+        "ldaps",
+        "jar",
+        "data",
+        "javascript",
+        "php",
+        "expect",
+        "netdoc",
+        "smb",
+        "redis",
+    }
+)
+_OPAQUE_SCHEME_RX = re.compile(r"^(" + "|".join(RISKY_OPAQUE_SCHEMES) + r"):", re.IGNORECASE)
+
+
+def _iter_string_leaves(value: object, key: str | None = None, depth: int = 0):
+    """递归产出参数树中的 (键名, 字符串叶子);list 继承父键名(endpoint=["a","b"])。"""
+    if depth > _MAX_DEST_DEPTH:
+        return
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield from _iter_string_leaves(v, str(k).lower(), depth + 1)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _iter_string_leaves(v, key, depth + 1)
+    elif isinstance(value, str):
+        yield key, value
+
+
+def _is_dest_leaf(key: str | None, s: str) -> bool:
+    """字符串叶子是否构成外联目的地候选(四重围栏,防裸扫误报)。
+
+    ① 含 `://` 的权威 URL——客观外联形态,与所处键无关;
+    ② 键名属 URL 形态键(任意深度)——沿 `_dest_raw` 键语义,省 scheme 的 endpoint/webhook 也算;
+       地址形态键嵌套时仍须 `://`(防 `to=` 邮箱被 urlparse 误析出主机);
+    ③ 以危险不透明协议前缀开头(`file:`/`jar:`/`dict:`… 无 `://` 也是真实 URL 语法)——
+       与键无关、与深度无关,协议白名单必须看得见它(回归:`forward_to="jar:nested!/a"` 曾被
+       ②的收紧漏掉);
+    ④ 无键语义的裸值仅当是**标准点分四段 IPv4**(见 `_STANDARD_IPV4_RX`)——版本号
+       `2.31.0`(三段)与普通数字不入候选,守住良性参数的 FP 面。
+    """
+    if not s or len(s) > 2048:
+        return False
+    if "://" in s:
+        return True
+    if _OPAQUE_SCHEME_RX.match(s):
+        return True
+    if key in _DEST_URL_KEYS:
+        return True
+    if key in _DEST_ADDR_KEYS:
+        return False
+    return bool(_STANDARD_IPV4_RX.match(s.strip()))
+
+
+def dest_candidates(arguments: dict) -> list[str]:
+    """收集参数树(含嵌套 dict/list)中全部外联目的地候选串,顶层 `_dest_raw` 优先、去重保序。
+
+    对抗实测(2026-09-04):URL 藏进二层 dict(`{"config":{"endpoint":"http://198.51.100.9/x"}}`)
+    可全链穿透外联白名单——目的地判定必须作用于**参数树全部叶子**中被围栏筛出的候选,
+    而非仅顶层几个键(攻击者不挑键的位置放值)。
+    """
+    cands: list[str] = []
+    raw = _dest_raw(arguments)
+    if raw:
+        cands.append(raw)
+    for key, val in _iter_string_leaves(arguments):
+        if val == raw:
+            continue
+        if _is_dest_leaf(key, val):
+            cands.append(val)
+    return list(dict.fromkeys(cands))
+
+
+def url_hosts(arguments: dict) -> list[str]:
+    """从全部目的地候选取主机名集合(去重保序);空列表=无外联目的地。"""
+    hosts: list[str] = []
+    for c in dest_candidates(arguments):
+        host = urlparse(c if "://" in c else f"//{c}").hostname
+        if host:
+            hosts.append(host.lower())
+    return list(dict.fromkeys(hosts))
+
+
 # 公认的本机主机名(非 IP 字面量,ipaddress 解析不了,单列)。
 _INTERNAL_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
 
@@ -231,6 +333,12 @@ def path_outside_workspace(arguments: dict, workspace: str) -> bool:
     if not raw:
         return False
     norm = raw.replace("\\", "/")
+    # 非盘符冒号 fail-closed(对抗实测 2026-09-04):`note.txt:hidden` 这类 NTFS 交替流不越出
+    # 工作区,但构成**隐蔽信道**——外泄数据写进流,表面文件内容不变,审计/人工检查全盲。
+    # 受控文件边界不接受未定义语义的路径成分:除 Windows 盘符(`C:/x`)与 UNC 双斜杠外,
+    # 含冒号(交替流 / `data:` URI / path 里塞 URL)一律视为越界拒绝。Linux 相对路径无冒号不受影响。
+    if ":" in norm and not re.match(r"^[A-Za-z]:/", norm):
+        return True
     # 只认**路径段**恰为 `..` 的上级穿越,不把含 `..` 子串的合法文件名(如 `..hidden`、
     # `my..notes.txt`)误判为越界。
     if ".." in norm.split("/"):
@@ -279,11 +387,17 @@ def url_host(arguments: dict) -> str | None:
 
 
 def domain_allowed(arguments: dict, allow_domains: list[str]) -> bool:
-    """无 URL → 不涉及白名单,返回 True;有 URL → 命中白名单(含子域)才放行。"""
-    host = url_host(arguments)
-    if host is None:
+    """无外联目的地 → 不涉及白名单,返回 True;有 → **全部**目的地主机都在白名单(含子域)才放行。
+
+    多目的地(顶层 + 嵌套候选,见 `url_hosts`)任一不在白名单即 False——任放一个都是外泄通道。
+    """
+    hosts = url_hosts(arguments)
+    if not hosts:
         return True
-    return any(host == d.lower() or host.endswith("." + d.lower()) for d in allow_domains)
+    return all(
+        any(host == d.lower() or host.endswith("." + d.lower()) for d in allow_domains)
+        for host in hosts
+    )
 
 
 def dest_is_url(arguments: dict) -> bool:
@@ -322,12 +436,10 @@ def url_is_internal(arguments: dict) -> bool:
     `not is_global` 一并覆盖私网/回环/链路本地/保留/未指定地址(含阿里云 100.64/10、云元数据
     169.254.169.254),跨 Python 版本稳定。
     """
-    host = url_host(arguments)
-    if host is None:
-        return False
-    if host in _INTERNAL_HOSTNAMES:
-        return True
-    ip = _host_ip(host)
-    if ip is None:
-        return False  # 普通域名:不做解析,不在此判定(交由白名单/其它规则)
-    return not ip.is_global
+    for host in url_hosts(arguments):
+        if host in _INTERNAL_HOSTNAMES:
+            return True
+        ip = _host_ip(host)
+        if ip is not None and not ip.is_global:
+            return True  # 普通域名不解析(交白名单);字面 IP 落非公网段即 SSRF 面
+    return False

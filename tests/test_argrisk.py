@@ -163,10 +163,13 @@ def test_internal_target_on_non_url_dest_keys_flagged(key: str) -> None:
 
 
 def test_url_key_takes_precedence_over_other_dest_keys() -> None:
-    # `url` 优先,保证 http.request 既有行为不被其它目的地键改写。
+    # `url` 优先,保证 http.request 既有行为不被其它目的地键改写(单值口径不变)。
     args = {"url": "https://gov.cn/notice", "endpoint": "http://127.0.0.1:6379/"}
     assert argrisk.url_host(args) == "gov.cn"
-    assert argrisk.url_is_internal(args) is False
+    # 语义升级(2026-09-04 对抗修复):internal/白名单判定从"优先级首个目的地"扩为
+    # **全部目的地候选**——同一参数同时带 gov.cn 与 127.0.0.1:6379 时,旧的只判 gov.cn
+    # 放行,内网探测就从 endpoint 键走。现在任一候选命中内网即 True。
+    assert argrisk.url_is_internal(args) is True
 
 
 # ── 地址形态目的地键(to/recipient/forward_to…):带 scheme 才算外联 ──────────────
