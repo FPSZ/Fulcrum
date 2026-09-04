@@ -400,6 +400,18 @@ class ManifestScanner:
         # 1) 声明权限
         seen_kinds: set[str] = set()
         for perm in _gather(manifest, "permissions", "scopes", "capabilities"):
+            # 通配=元权限(对抗实测 2026-09-04):`permissions:['*']` 不是又一个待枚举的危险词,
+            # 而是声明了**全部能力**——比任何具体危险权限都宽,枚举式匹配对它天然失明。
+            if "*" in perm:
+                risks.append(
+                    _finding(
+                        "perm.wildcard",
+                        "critical",
+                        f"声明通配权限(等同全部能力,须按最宽权限审):{perm}",
+                        permission=perm,
+                    )
+                )
+                break  # 一个通配已覆盖全部能力,同清单内不再重复计
             for pattern, kind, severity in _PERM_RULES:
                 if pattern.search(perm) and kind not in seen_kinds:
                     seen_kinds.add(kind)
