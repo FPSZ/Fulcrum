@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "枢衡 Fulcrum API",
-    "version": "0.0.0"
+    "version": "0.5.0"
   },
   "paths": {
     "/auth/login": {
@@ -575,7 +575,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RoleWrite"
+                "$ref": "#/components/schemas/RoleUpdate"
               }
             }
           }
@@ -1176,6 +1176,185 @@
         }
       }
     },
+    "/admin/teams/{team_id}/members": {
+      "get": {
+        "summary": "Team Members",
+        "operationId": "team_members_admin_teams__team_id__members_get",
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Team Id"
+            }
+          },
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MembershipDTO"
+                  },
+                  "title": "Response Team Members Admin Teams  Team Id  Members Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add Team Member",
+        "operationId": "add_team_member_admin_teams__team_id__members_post",
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Team Id"
+            }
+          },
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamMemberWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/teams/{team_id}/members/{user_id}": {
+      "delete": {
+        "summary": "Remove Team Member",
+        "operationId": "remove_team_member_admin_teams__team_id__members__user_id__delete",
+        "parameters": [
+          {
+            "name": "team_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Team Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/overview/stats": {
       "get": {
         "summary": "Overview Stats",
@@ -1267,6 +1446,72 @@
                     "$ref": "#/components/schemas/SecurityEventDTO"
                   },
                   "title": "Response Events Events Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{event_id}/resolve": {
+      "post": {
+        "summary": "Resolve Event",
+        "description": "处置一条待审批事件:批准放行 / 维持阻断。落一条带 resolves 的处置判定点(append-only)。\n\n处置后原待审工单从墙上隐去,代之以放行/阻断结果行;原工单与本处置都留在审计链可溯源,\n处置人(actor)、决定与理由一并入证据。",
+        "operationId": "resolve_event_events__event_id__resolve_post",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          },
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventResolveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResolveResponse"
                 }
               }
             }
@@ -1609,6 +1854,106 @@
         }
       }
     },
+    "/admin/settings": {
+      "get": {
+        "summary": "Get Settings",
+        "operationId": "get_settings_admin_settings_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleSettingsPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Settings",
+        "operationId": "put_settings_admin_settings_put",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsoleSettingsWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleSettingsPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assistant/actions": {
       "get": {
         "summary": "Assistant Actions",
@@ -1642,6 +1987,556 @@
                     "$ref": "#/components/schemas/AssistantActionDTO"
                   },
                   "title": "Response Assistant Actions Assistant Actions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/tools": {
+      "get": {
+        "summary": "Assistant Tools",
+        "description": "当前角色可调的工具 = 助手能用的工具(从操作注册表按权限派生,单一真源)。",
+        "operationId": "assistant_tools_assistant_tools_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AssistantToolDTO"
+                  },
+                  "title": "Response Assistant Tools Assistant Tools Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/chat": {
+      "post": {
+        "summary": "Assistant Chat",
+        "description": "真执行 Agent:意图→自动跑读类/ui、产出写类待确认提案 + 最终答复 + 执行轨迹。\n\n三道吃狗粮闸门(入口/工具返回/出口)由 AssistantAgent 内部强制;一次会话落一条\nASSISTANT_CHAT 审计。agent 未装配(纯管线测试)时回 503 语义的诚实提示。",
+        "operationId": "assistant_chat_assistant_chat_post",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/chat/stream": {
+      "post": {
+        "summary": "Assistant Chat Stream",
+        "description": "流式真 Agent(SSE):逐字吐最终答复 + 实时下发 step/ui/proposal 事件。\n\n与 /assistant/chat 同语义、同三道闸门;事件 `data: {json}\\n\\n`,类型见 agent.run_stream。",
+        "operationId": "assistant_chat_stream_assistant_chat_stream_post",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/reset": {
+      "post": {
+        "summary": "Assistant Reset",
+        "description": "清空某会话的多轮记忆(新建会话 / 显式清除上下文)。无记忆存储时静默成功。",
+        "operationId": "assistant_reset_assistant_reset_post",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantResetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantResetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/request-approval": {
+      "post": {
+        "summary": "Assistant Request Approval",
+        "description": "操作员在对话里「发起审批申请」→ 落一条真·待审批工单(进实时事件·待审批)。\n\n与自动筛查的区别:闸门判 APPROVE 时**不**自动塞待审批(否则无效信息泛滥);助手当面\n提示,只有操作员**显式发起**才在此落 evidence.approval_requested=True 的判定点——\n事件墙据此放行展示(见 events_routes.is_feed_noise)。落同会话审计链,可溯源到发起人。",
+        "operationId": "assistant_request_approval_assistant_request_approval_post",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantRequestApprovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantRequestApprovalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/model-config": {
+      "get": {
+        "summary": "Assistant Model Config Get",
+        "description": "读当前模型接入配置(密钥掩码)。未装配存储 → 返回空未配置态(前端据此亮呼吸灯)。",
+        "operationId": "assistant_model_config_get_assistant_model_config_get",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantModelConfigDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Assistant Model Config Put",
+        "description": "保存模型接入配置(需 settings.manage)。保存即标记 configured,热加载生效。\n\napi_key=None 保持原密钥(防前端把掩码写回覆盖真值);\"\"=清空;非空=设新值。",
+        "operationId": "assistant_model_config_put_assistant_model_config_put",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantModelConfigUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantModelConfigDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/model-config/test": {
+      "post": {
+        "summary": "Assistant Model Config Test",
+        "description": "用「待保存的表单值」试调一次(不落盘)。api_key=None 时复用已存密钥。",
+        "operationId": "assistant_model_config_test_assistant_model_config_test_post",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantModelTestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantModelTestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/confirm": {
+      "post": {
+        "summary": "Assistant Confirm",
+        "description": "确认执行某写提案(带编辑后参数)。纵深 RBAC 在 actuator 内强制;越权 → 403。",
+        "operationId": "assistant_confirm_assistant_confirm_post",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/undo": {
+      "post": {
+        "summary": "Assistant Undo",
+        "description": "一键撤销某已执行写操作(逆操作回滚)。撤销与原写操作同权;越权 → 403。",
+        "operationId": "assistant_undo_assistant_undo_post",
+        "parameters": [
+          {
+            "name": "fulcrum_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulcrum Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantUndoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantUndoResponse"
                 }
               }
             }
@@ -2076,6 +2971,403 @@
         "title": "AssistantActionDTO",
         "description": "动作目录条目(供助手面板展示「当前角色能调哪些动作」)。"
       },
+      "AssistantApprovalRequestDTO": {
+        "properties": {
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "risk_level": {
+            "type": "string",
+            "title": "Risk Level"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt",
+            "default": ""
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage",
+          "title",
+          "reason",
+          "risk_level"
+        ],
+        "title": "AssistantApprovalRequestDTO",
+        "description": "需管理员审批的「待发起申请」(闸判 APPROVE 时产出;不自动落工单)。\n\n助手当面提示操作员「需审批,是否发起?」,由人点「发起申请」(/assistant/request-approval)\n才真正进实时事件·待审批。stage:input=可疑输入待审 / output=回复待人工复核。"
+      },
+      "AssistantChatRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "AssistantChatRequest"
+      },
+      "AssistantChatResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "reply": {
+            "type": "string",
+            "title": "Reply"
+          },
+          "blocked": {
+            "type": "boolean",
+            "title": "Blocked",
+            "default": false
+          },
+          "compressed": {
+            "type": "boolean",
+            "title": "Compressed",
+            "default": false
+          },
+          "ui_directives": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantUiDirectiveDTO"
+            },
+            "type": "array",
+            "title": "Ui Directives"
+          },
+          "proposed_actions": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantProposedActionDTO"
+            },
+            "type": "array",
+            "title": "Proposed Actions"
+          },
+          "approval_requests": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantApprovalRequestDTO"
+            },
+            "type": "array",
+            "title": "Approval Requests"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantStepDTO"
+            },
+            "type": "array",
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "reply"
+        ],
+        "title": "AssistantChatResponse"
+      },
+      "AssistantConfirmRequest": {
+        "properties": {
+          "action_token": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Action Token"
+          },
+          "edited_args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Edited Args"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action_token"
+        ],
+        "title": "AssistantConfirmRequest"
+      },
+      "AssistantConfirmResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "action_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Id"
+          },
+          "reversible": {
+            "type": "boolean",
+            "title": "Reversible",
+            "default": false
+          },
+          "undo_preview": {
+            "type": "string",
+            "title": "Undo Preview",
+            "default": ""
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "summary"
+        ],
+        "title": "AssistantConfirmResponse"
+      },
+      "AssistantModelConfigDTO": {
+        "properties": {
+          "protocol": {
+            "type": "string",
+            "title": "Protocol"
+          },
+          "endpoint": {
+            "type": "string",
+            "title": "Endpoint"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "api_key_masked": {
+            "type": "string",
+            "title": "Api Key Masked"
+          },
+          "api_key_set": {
+            "type": "boolean",
+            "title": "Api Key Set"
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "title": "Timeout Seconds"
+          },
+          "verify_tls": {
+            "type": "boolean",
+            "title": "Verify Tls"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          }
+        },
+        "type": "object",
+        "required": [
+          "protocol",
+          "endpoint",
+          "model",
+          "api_key_masked",
+          "api_key_set",
+          "timeout_seconds",
+          "verify_tls",
+          "configured",
+          "ready"
+        ],
+        "title": "AssistantModelConfigDTO",
+        "description": "回前端的模型接入配置(密钥掩码,只暴露是否已设置 / 是否配置完成)。"
+      },
+      "AssistantModelConfigUpdate": {
+        "properties": {
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "ollama",
+              "anthropic"
+            ],
+            "title": "Protocol"
+          },
+          "endpoint": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Endpoint"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Model"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "maximum": 600.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "default": 90.0
+          },
+          "verify_tls": {
+            "type": "boolean",
+            "title": "Verify Tls",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "protocol",
+          "endpoint",
+          "model"
+        ],
+        "title": "AssistantModelConfigUpdate",
+        "description": "保存模型接入配置。api_key 语义:None=保持原值;\"\"=清空;非空=设新值(防掩码覆盖真值)。"
+      },
+      "AssistantModelTestRequest": {
+        "properties": {
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "ollama",
+              "anthropic"
+            ],
+            "title": "Protocol"
+          },
+          "endpoint": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Endpoint"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Model"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "maximum": 600.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "default": 30.0
+          },
+          "verify_tls": {
+            "type": "boolean",
+            "title": "Verify Tls",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "protocol",
+          "endpoint",
+          "model"
+        ],
+        "title": "AssistantModelTestRequest",
+        "description": "测试连接:用「待保存的表单值」试调一次(api_key=None 时用已存密钥)。"
+      },
+      "AssistantModelTestResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "detail"
+        ],
+        "title": "AssistantModelTestResponse"
+      },
       "AssistantPlanRequest": {
         "properties": {
           "intent": {
@@ -2157,6 +3449,308 @@
         ],
         "title": "AssistantPlanResponse",
         "description": "规划结果:选了哪个动作、是否准许、是否需二次确认、为什么。"
+      },
+      "AssistantProposedActionDTO": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "risk": {
+            "type": "string",
+            "title": "Risk"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          },
+          "requires": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requires"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          },
+          "action_token": {
+            "type": "string",
+            "title": "Action Token",
+            "default": ""
+          },
+          "reversible": {
+            "type": "boolean",
+            "title": "Reversible",
+            "default": false
+          },
+          "before": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Before"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool",
+          "label",
+          "risk"
+        ],
+        "title": "AssistantProposedActionDTO",
+        "description": "写操作的待确认提案(可编辑卡片;确认走 /assistant/confirm,默认不执行)。"
+      },
+      "AssistantRequestApprovalRequest": {
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "stage": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Stage",
+            "default": "output"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 400,
+            "title": "Reason",
+            "default": ""
+          },
+          "risk_level": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Risk Level",
+            "default": "medium"
+          },
+          "excerpt": {
+            "type": "string",
+            "maxLength": 400,
+            "title": "Excerpt",
+            "default": ""
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "AssistantRequestApprovalRequest",
+        "description": "操作员在对话里「发起审批申请」:把某条 APPROVE 判定落成真·待审批工单。"
+      },
+      "AssistantRequestApprovalResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "AssistantRequestApprovalResponse"
+      },
+      "AssistantResetRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "title": "AssistantResetRequest",
+        "description": "清空某会话的多轮记忆(新建会话 / 显式清除上下文)。"
+      },
+      "AssistantResetResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "AssistantResetResponse"
+      },
+      "AssistantStepDTO": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool",
+          "kind",
+          "label",
+          "ok"
+        ],
+        "title": "AssistantStepDTO",
+        "description": "一步执行轨迹(透明展示助手调了什么)。"
+      },
+      "AssistantToolDTO": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "risk": {
+            "type": "string",
+            "title": "Risk"
+          },
+          "requires": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requires"
+          },
+          "reversible": {
+            "type": "boolean",
+            "title": "Reversible",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "label",
+          "description",
+          "risk"
+        ],
+        "title": "AssistantToolDTO",
+        "description": "当前角色可调的一个工具(供助手面板侧栏 + /assistant/tools 列出)。"
+      },
+      "AssistantUiDirectiveDTO": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool",
+          "label"
+        ],
+        "title": "AssistantUiDirectiveDTO",
+        "description": "前端待执行的 ui 指令(导航/筛选/开面板)。"
+      },
+      "AssistantUndoRequest": {
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Action Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action_id"
+        ],
+        "title": "AssistantUndoRequest"
+      },
+      "AssistantUndoResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "summary"
+        ],
+        "title": "AssistantUndoResponse"
       },
       "AuditChainEventDTO": {
         "properties": {
@@ -2271,14 +3865,40 @@
         "title": "AuditSessionDTO",
         "description": "一条会话审计链 + 其 hash-chain 校验结论 + 从链派生的一句话情景。"
       },
+      "BackendModelInfo": {
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "title": "Endpoint"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "key_set": {
+            "type": "boolean",
+            "title": "Key Set"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint",
+          "model_name",
+          "key_set"
+        ],
+        "title": "BackendModelInfo",
+        "description": "只读:后端模型出站配置(经 .env 注入,不在控制台改;此处仅如实回显)。"
+      },
       "ChatMessage": {
         "properties": {
           "role": {
             "type": "string",
+            "maxLength": 32,
             "title": "Role"
           },
           "content": {
             "type": "string",
+            "maxLength": 8000,
             "title": "Content"
           }
         },
@@ -2293,13 +3913,15 @@
         "properties": {
           "model": {
             "type": "string",
+            "maxLength": 128,
             "title": "Model",
             "default": "fulcrum-demo"
           },
           "session_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               {
                 "type": "null"
@@ -2312,6 +3934,7 @@
               "$ref": "#/components/schemas/ChatMessage"
             },
             "type": "array",
+            "maxItems": 64,
             "title": "Messages"
           }
         },
@@ -2352,6 +3975,52 @@
           "content"
         ],
         "title": "ChatResponse"
+      },
+      "ConsoleSettingsPublic": {
+        "properties": {
+          "instance_name": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Instance Name",
+            "default": "枢衡安全控制台"
+          },
+          "environment": {
+            "type": "string",
+            "pattern": "^(prod|staging|demo)$",
+            "title": "Environment",
+            "default": "demo"
+          },
+          "backend_model": {
+            "$ref": "#/components/schemas/BackendModelInfo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "backend_model"
+        ],
+        "title": "ConsoleSettingsPublic",
+        "description": "回前端:真实可写项 + 只读后端模型信息。"
+      },
+      "ConsoleSettingsWrite": {
+        "properties": {
+          "instance_name": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Instance Name",
+            "default": "枢衡安全控制台"
+          },
+          "environment": {
+            "type": "string",
+            "pattern": "^(prod|staging|demo)$",
+            "title": "Environment",
+            "default": "demo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ConsoleSettingsWrite",
+        "description": "更新控制台实例元信息(真实落盘字段)。"
       },
       "DepartmentDTO": {
         "properties": {
@@ -2622,6 +4291,41 @@
         "type": "object",
         "title": "EvalTotalsDTO"
       },
+      "EventResolveRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "block"
+            ],
+            "title": "Decision"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 400,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "EventResolveRequest",
+        "description": "处置一条待审批事件:批准放行(allow)或维持阻断(block)。需 events.handle。"
+      },
+      "EventResolveResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "EventResolveResponse"
+      },
       "GatewayChatRequest": {
         "properties": {
           "session_id": {
@@ -2807,6 +4511,17 @@
           "rest_response_path": {
             "type": "string",
             "title": "Rest Response Path"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
           }
         },
         "type": "object",
@@ -2912,6 +4627,17 @@
             "maxLength": 128,
             "title": "Rest Response Path",
             "default": "reply"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
           }
         },
         "type": "object",
@@ -3056,6 +4782,35 @@
         ],
         "title": "LoginRequest"
       },
+      "MembershipDTO": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "team_id": {
+            "type": "integer",
+            "title": "Team Id"
+          },
+          "team_role": {
+            "type": "string",
+            "title": "Team Role",
+            "default": "member"
+          },
+          "is_lead": {
+            "type": "boolean",
+            "title": "Is Lead",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "team_id"
+        ],
+        "title": "MembershipDTO",
+        "description": "成员在某团队的归属(plan/13 P1b):团队内角色 + 是否负责人。"
+      },
       "OutcomeDTO": {
         "properties": {
           "tool_name": {
@@ -3197,13 +4952,28 @@
           "group": {
             "type": "string",
             "title": "Group"
+          },
+          "capability": {
+            "type": "string",
+            "title": "Capability"
+          },
+          "cap_label": {
+            "type": "string",
+            "title": "Cap Label"
+          },
+          "access": {
+            "type": "string",
+            "title": "Access"
           }
         },
         "type": "object",
         "required": [
           "key",
           "label",
-          "group"
+          "group",
+          "capability",
+          "cap_label",
+          "access"
         ],
         "title": "PermissionDTO"
       },
@@ -3338,6 +5108,20 @@
             },
             "type": "array",
             "title": "Permissions"
+          },
+          "team_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Team Ids"
+          },
+          "managed_teams": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Managed Teams"
           }
         },
         "type": "object",
@@ -3413,6 +5197,11 @@
             "type": "integer",
             "title": "Member Count",
             "default": 0
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "default": "org"
           }
         },
         "type": "object",
@@ -3422,6 +5211,50 @@
           "name"
         ],
         "title": "RoleDTO"
+      },
+      "RoleUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "title": "RoleUpdate"
       },
       "RoleWrite": {
         "properties": {
@@ -3442,6 +5275,12 @@
             },
             "type": "array",
             "title": "Permissions"
+          },
+          "scope": {
+            "type": "string",
+            "pattern": "^(org|team)$",
+            "title": "Scope",
+            "default": "team"
           }
         },
         "type": "object",
@@ -3616,6 +5455,31 @@
         ],
         "title": "SupplyScanRiskDTO"
       },
+      "TeamMemberWrite": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "team_role": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Team Role",
+            "default": "member"
+          },
+          "is_lead": {
+            "type": "boolean",
+            "title": "Is Lead",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "TeamMemberWrite",
+        "description": "把某成员加入/更新到某团队(团队负责人或组织管理员可调)。"
+      },
       "TempPasswordResponse": {
         "properties": {
           "user": {
@@ -3730,10 +5594,12 @@
         "properties": {
           "session_id": {
             "type": "string",
+            "maxLength": 256,
             "title": "Session Id"
           },
           "tool_name": {
             "type": "string",
+            "maxLength": 128,
             "title": "Tool Name"
           },
           "arguments": {
@@ -3746,6 +5612,7 @@
               "type": "string"
             },
             "type": "array",
+            "maxItems": 64,
             "title": "Source Ids"
           }
         },
