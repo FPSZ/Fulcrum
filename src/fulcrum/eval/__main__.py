@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ..app import build_pipeline
+from .baseline import run_comparison
 from .dataset import load_dataset
 from .metrics import compute
 from .report import (
@@ -124,6 +125,12 @@ def main(argv: list[str] | None = None) -> int:
         help="LLM-judge 语义层:full=全量(每条都判);cascade=灰区级联(仅规则拿不准的落 judge)。"
         "端点经 LLM_BASE/LLM_MODEL/LLM_API_KEY/LLM_NO_THINK 注入;灰区阈值经 JUDGE_GRAY_LOW/HIGH",
     )
+    parser.add_argument(
+        "--baseline",
+        action="store_true",
+        help="加跑裸模型对照臂(.env 配了真模型端点时),产出**实测** ASR 基线并标注于主表;"
+        "默认不跑(主表按保守上界如实标注)——显式开关避免每次评测静默消耗模型调用。",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -134,7 +141,21 @@ def main(argv: list[str] | None = None) -> int:
 
     pipeline = build_pipeline(_eval_config(args.policy, judge=args.judge))
     results = asyncio.run(run_dataset(pipeline, samples))
-    metrics = compute(results)
+
+    # 对照臂(--baseline 显式开关):跑"裸模型 vs 经枢衡"同批对照拿实测 ASR 基线;
+    # 未开/端点未配置返回 None,compute 内退回保守上界并如实标注(见 eval/baseline.py)。
+    # 默认不跑:避免每次评测在有模型密钥的机器上静默消耗真实调用(测试/CI 确定性同理)。
+    comparison = asyncio.run(run_comparison()) if args.baseline else None
+    metrics = compute(
+        results, asr_baseline=None if comparison is None else comparison["asr_baseline"]
+    )
+    if comparison is not None:
+        print(
+            f"基线对照:裸模型臂实测 ASR={comparison['asr_baseline']:.1%}"
+            f"(同批 {comparison['attacks']} 条攻击 prompt · {comparison['model']});"
+            f"经枢衡防护臂 ASR={comparison['asr_fulcrum']:.1%}"
+        )
+        print()
 
     print(format_main_table(metrics))
     print()
