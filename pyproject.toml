@@ -54,6 +54,9 @@ typeCheckingMode = "basic"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "slow: 起真实子进程/等墙钟超时的沙箱用例,单条秒级(-m 'not slow' 可跳过)",
+]
 
 # ───────────────────────────── import-linter(依赖方向机器化强制)─────────────────────────────
 [tool.importlinter]

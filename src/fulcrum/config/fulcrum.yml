@@ -31,6 +31,16 @@ audit: memory          # 内存桩(重启清零);改 `sqlite` 即持久化落库
 options:
   yaml:
     path: data/policies/default.yml   # 策略文件路径(原为实现内硬编码,现经此通道注入)
+  # 真·受限执行器:不依赖 Docker。每调用一条 spawn 子进程;默认无网络,超时即终止该进程。
+  # allow_network 仅在同时配置 allow_domains 时才应开启;它不替代 OS 网络命名空间。
+  restricted:
+    workspace: data/workspace
+    timeout_seconds: 5
+    max_cpu_seconds: 5
+    max_memory_bytes: 268435456  # 256 MiB
+    max_output_chars: 16384
+    max_input_chars: 65536
+    allow_network: false
   # ── 语义层 LLM-judge(可选,私有化合规推荐)──────────────────────
   # judge 走客户**本地自托管**模型(同一台 llama-server/vLLM/Ollama 即可),数据不出域、零云调用——
   # 满足政务"输入不外发"合规红线。Qwen3 等推理模型须关思考(enable_thinking:false)直出裁决。
