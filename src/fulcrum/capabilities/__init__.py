@@ -22,6 +22,7 @@ def load_builtin_capabilities() -> None:
         manifest_guard,
         ml_classifier,
         noop,
+        render_exfil,
         secret_egress,
     )
     from .labelers import passthrough, role_trust  # noqa: F401
