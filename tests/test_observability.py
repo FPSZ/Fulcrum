@@ -289,7 +289,10 @@ get_logger("httpx").warning("warn must redact 13812345678")
     )
     import json as j
 
-    dbg = [ln for ln in stderr.splitlines() if ln.startswith("{") and "raw debug" in ln]
+    suppressed = [
+        ln for ln in stderr.splitlines() if ln.startswith("{") and "suppressed debug noise" in ln
+    ]
     info = [ln for ln in stderr.splitlines() if ln.startswith("{") and "HTTP Request" in ln][-1]
-    assert j.loads(dbg[-1])["event"] == "(suppressed debug noise)"  # DEBUG 抑制
+    assert suppressed, "DEBUG 噪声应被抑制为占位行"
+    assert "13812345678" not in stderr  # 明文不落任何日志行
     assert "sk-live-secret123456" not in j.loads(info)["event"]  # INFO 访问日志仍打码
