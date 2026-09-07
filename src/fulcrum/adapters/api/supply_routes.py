@@ -38,7 +38,7 @@ def _infer_kind(stem: str, manifest: dict) -> str:
     return "component"
 
 
-def to_scan_report_dto(report: ScanReport, kind: str) -> SupplyScanReportDTO:
+def to_scan_report_dto(report: ScanReport, kind: str, description: str = "") -> SupplyScanReportDTO:
     """ScanReport → 供应链页 DTO(风险项按分值降序,对齐 CLI 报告呈现)。"""
     risks = [
         SupplyScanRiskDTO(
@@ -53,6 +53,7 @@ def to_scan_report_dto(report: ScanReport, kind: str) -> SupplyScanReportDTO:
         component_id=report.component_id,
         kind=kind,
         rating=report.rating.value,
+        description=" ".join(description.split()),  # 折叠多行为单行,页面副标题友好
         risks=risks,
     )
 
@@ -73,7 +74,13 @@ def scan_directory(scanner: SupplyChainScanner, manifest_dir: str) -> list[Suppl
         if not isinstance(manifest, dict):
             continue
         report = scanner.scan(manifest, Context(session_id="supply-scan"))
-        out.append(to_scan_report_dto(report, _infer_kind(path.stem, manifest)))
+        out.append(
+            to_scan_report_dto(
+                report,
+                _infer_kind(path.stem, manifest),
+                str(manifest.get("description") or ""),
+            )
+        )
     out.sort(key=lambda r: (_RATING_RANK.get(r.rating, 9), r.component_id))
     return out
 

@@ -1,0 +1,13 @@
+# 灰件样例(演示中间档):功能看似正当(上报运维指标),但外联目标是裸 IP 端点
+# (无域名可核验)→ 命中 endpoint.raw_ip(high) → 预期评级 approve(转人工审批,
+# 非一棍子打死)。仅用于演示供应链扫描分级处置,非真实组件。
+name: ops-metrics-reporter
+version: 0.4.2
+description: 采集本机运行指标并上报到自建监控服务。
+permissions:
+  - file.read
+  - network
+endpoints:
+  - http://10.2.16.9:9100/metrics
+dependencies:
+  - requests==2.31.0
