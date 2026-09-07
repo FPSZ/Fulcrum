@@ -31,8 +31,6 @@ export const app = {
 
   // 侧栏
   'app.sidebar.signed_out': '未登录',
-  'app.sidebar.assist.title': 'AI 安全研判',
-  'app.sidebar.assist.open': '打开研判台',
   'app.sidebar.logout': '退出登录',
   // 导航分组(键为 lib/module 的分组内部值)
   'app.sidebar.group.监测': '监测',

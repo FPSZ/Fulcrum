@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { LogOut, Sparkles } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { Avatar, IconButton, Tooltip } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { type MessageKey, useTranslation } from '@/lib/i18n'
@@ -104,27 +104,6 @@ export function Sidebar({
             </div>
           ))}
         </nav>
-
-        {/* AI 研判卡:收起时高度+透明度一起收掉(固定宽 → 内部不回流) */}
-        <div
-          className={cn(
-            'overflow-hidden transition-all duration-200 ease-[var(--ease-out-quart)]',
-            collapsed ? 'mb-0 max-h-0 opacity-0' : 'mb-2.5 max-h-[220px] opacity-100',
-          )}
-        >
-          <div className="rounded-[14px] border border-line bg-white/65 p-3.5 shadow-card">
-            <div className="flex items-center gap-1.5 whitespace-nowrap text-[14.5px] font-bold text-ink">
-              <Sparkles className="h-[15px] w-[15px] text-accent" strokeWidth={1.9} />
-              {t('app.sidebar.assist.title')}
-            </div>
-            <button
-              type="button"
-              className="focus-ring mt-2.5 h-7 w-full whitespace-nowrap rounded-[8px] bg-accent text-[14px] font-semibold text-white transition-colors hover:bg-accent-hover"
-            >
-              {t('app.sidebar.assist.open')}
-            </button>
-          </div>
-        </div>
 
         {/* 用户 */}
         <div className="border-t border-line pt-2.5">
