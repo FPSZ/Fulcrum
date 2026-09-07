@@ -19,5 +19,6 @@ export interface ScanReport {
   component_id: string
   kind: string
   rating: Rating
+  description?: string // manifest 自报描述(中文可读,便于识别);备份演示数据可缺省
   risks: ScanRisk[]
 }

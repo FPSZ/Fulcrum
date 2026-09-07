@@ -5412,6 +5412,11 @@
             "type": "string",
             "title": "Rating"
           },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
           "risks": {
             "items": {
               "$ref": "#/components/schemas/SupplyScanRiskDTO"

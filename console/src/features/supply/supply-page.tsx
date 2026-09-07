@@ -64,7 +64,10 @@ export function SupplyPage() {
                 {t(RATING_KEY[r.rating])}
               </Badge>
             </div>
-            <p className="mt-1.5 text-[12px] text-ink-3">
+            <p className="mt-1 truncate text-[12.5px] text-ink-2" title={r.description ?? ''}>
+              {r.description || r.kind}
+            </p>
+            <p className="mt-1 text-[12px] text-ink-3">
               {r.kind} · {t('supply.risk_count', { count: r.risks.length })}
             </p>
           </button>
@@ -85,6 +88,9 @@ export function SupplyPage() {
                 {report.kind} · {t('supply.risk_count', { count: report.risks.length })}
               </span>
             </div>
+            {report.description ? (
+              <p className="mt-1.5 text-[13px] text-ink-2">{report.description}</p>
+            ) : null}
 
             <Card className="mt-3 overflow-hidden">
               <table className="w-full text-[14px]">

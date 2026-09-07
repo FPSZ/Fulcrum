@@ -152,6 +152,7 @@ class SupplyScanReportDTO(BaseModel):
     component_id: str  # name@version
     kind: str = "component"  # 组件类型(plugin/skill/mcp,据 manifest 或文件名推断)
     rating: str  # 评级 = 最严重项:critical→block / high→approve / medium→sanitize / 否则 allow
+    description: str = ""  # manifest 自报描述(组件获取时自带,中文可读,便于页面识别)
     risks: list[SupplyScanRiskDTO] = Field(default_factory=list)
 
 
