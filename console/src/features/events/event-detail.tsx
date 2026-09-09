@@ -219,17 +219,16 @@ export function EventDetail({
             animate="animate"
             exit="exit"
           >
-            {/* 标题 + 会话/事件(右) + 徽标 */}
+            {/* 标题独占一行,不再与编号横向争抢宽度(避免窄面板下中文标题被挤成竖排);
+                会话/事件编号降为标题下方的元信息行 */}
             <div className="px-[18px] pb-2 pt-4">
-              <div className="flex items-start justify-between gap-3">
-                <h1 className="min-w-0 text-[20px] font-semibold leading-snug tracking-[-0.02em]">
-                  {e.risk}
-                </h1>
-                <span className="mt-1 shrink-0 text-right text-[13px] leading-snug text-ink-3">
-                  {t('events.detail.session')} <span className="font-data text-ink-2">{e.sess}</span>
-                  <span className="mx-1.5 text-ink-mute">·</span>
-                  {t('events.detail.event')} <span className="font-data text-ink-2">{e.id}</span>
-                </span>
+              <h1 className="text-[20px] font-semibold leading-snug tracking-[-0.02em]">
+                {e.risk}
+              </h1>
+              <div className="mt-1.5 text-[13px] leading-snug text-ink-3">
+                {t('events.detail.session')} <span className="font-data text-ink-2">{e.sess}</span>
+                <span className="mx-1.5 text-ink-mute">·</span>
+                {t('events.detail.event')} <span className="font-data text-ink-2">{e.id}</span>
               </div>
               <div className="mt-2.5">
                 <Badge tone={LEVEL_BADGE[e.level]} dot>
