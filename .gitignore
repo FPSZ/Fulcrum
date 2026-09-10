@@ -124,3 +124,18 @@ scripts/generate_report_pdf.py
 scripts/postprocess_docx.py
 scripts/preview_report.py
 scripts/update_toc.py
+
+# 报告制作过程资产(2026-09-10 追加)
+# 均保留在本地磁盘、未删除;定稿需要入库时用 `git add -f <路径>` 显式添加。
+# 截图与视频素材:合计约 10MB 二进制,可由运行中的控制台重新截取,不进版本库。
+docs/report/photo/
+docs/report/视频素材/
+# 报告过程稿:封面/截图/Logo 方案等待定材料,正式交付稿另行入库。
+docs/report/02-报告审阅与封面建议.md
+docs/report/03-截图方案.md
+docs/report/04-截图环境与拍摄清单.md
+docs/report/05-Logo候选方案.md
+# 一次性资产渲染脚本(封面/流程图/视频卡片/品牌 Logo)。
+scripts/render_report_*.py
+scripts/render_video_cards.py
+scripts/render_brand_logo*.mjs
