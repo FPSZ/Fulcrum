@@ -127,6 +127,9 @@ export function ConversationSidebar({
               })
             )}
           </div>
+          <p className="shrink-0 px-3.5 pb-3 pt-2 text-center text-[12px] leading-relaxed text-ink-mute">
+            {t('assistant.disclaimer')}
+          </p>
         </div>
       )}
     </motion.aside>

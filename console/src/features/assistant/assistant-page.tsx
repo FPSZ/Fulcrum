@@ -489,9 +489,6 @@ export function AssistantPage() {
                   canConfigure={canConfigure}
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
-                <p className="mt-2 text-center text-[13.5px] text-ink-mute">
-                  {t('assistant.disclaimer')}
-                </p>
               </div>
             </div>
           </motion.div>

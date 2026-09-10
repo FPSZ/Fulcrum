@@ -33,8 +33,6 @@ export const app: Partial<Record<MessageKey, string>> = {
 
   // Sidebar
   'app.sidebar.signed_out': 'Not signed in',
-  'app.sidebar.assist.title': 'AI Security Analysis',
-  'app.sidebar.assist.open': 'Open Analysis Console',
   'app.sidebar.logout': 'Sign out',
   // Nav groups (key is the lib/module internal group value)
   'app.sidebar.group.监测': 'Monitoring',
