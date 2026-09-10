@@ -79,6 +79,7 @@
 | 文档 | 用途 |
 |---|---|
 | [AGENTS.md](AGENTS.md) | 仓库协作约定,AI 助手和协作者修改仓库前应先阅读。 |
+| [docs/status/README.md](docs/status/README.md) | 当前前端、后端、文档和评测状态的快速接手入口。 |
 | [docs/plan/00-项目大方向.md](docs/plan/00-项目大方向.md) | 项目定位、范围边界、能力分配和交付目标。 |
 | [docs/arch/00-技术架构总览.md](docs/arch/00-技术架构总览.md) | 总体架构、组件边界、关键决策和风险。 |
 | [docs/eval/00-评测指标体系.md](docs/eval/00-评测指标体系.md) | 核心指标、评测对象、样例口径和结果呈现。 |
@@ -96,9 +97,10 @@
 
 1. [README.md](README.md)
 2. [AGENTS.md](AGENTS.md)
-3. [docs/plan/00-项目大方向.md](docs/plan/00-项目大方向.md)
-4. [docs/arch/00-技术架构总览.md](docs/arch/00-技术架构总览.md)
-5. [docs/eval/00-评测指标体系.md](docs/eval/00-评测指标体系.md)
+3. [docs/status/README.md](docs/status/README.md)
+4. [docs/plan/00-项目大方向.md](docs/plan/00-项目大方向.md)
+5. [docs/arch/00-技术架构总览.md](docs/arch/00-技术架构总览.md)
+6. [docs/eval/00-评测指标体系.md](docs/eval/00-评测指标体系.md)
 
 如果只是核对赛题要求,直接阅读 [docs/reference/榜题-XA-202620-提取文本.txt](docs/reference/榜题-XA-202620-提取文本.txt)。
 
@@ -120,6 +122,7 @@ Fulcrum/
     ├── plan/              项目定位、范围、路线、进度
     ├── arch/              技术架构、模块边界、接口契约
     ├── eval/              评测方案、指标口径、实验记录
+    ├── status/            当前实现、验证与已知缺口快照
     └── reference/         赛题资料、外部参考、调研材料
 ```
 
