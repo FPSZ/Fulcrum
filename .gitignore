@@ -139,3 +139,7 @@ docs/report/05-Logo候选方案.md
 scripts/render_report_*.py
 scripts/render_video_cards.py
 scripts/render_brand_logo*.mjs
+# 演示视频自动录制工具链(2026-09-11 追加):录屏/配音/合成与探测产物,
+# 属视频制作过程物,与上面的报告资产同口径;文件保留在本地磁盘。
+scripts/autorecord/
+*.bak
