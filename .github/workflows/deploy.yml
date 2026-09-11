@@ -55,5 +55,37 @@ jobs:
 
       - name: Sync deps & restart service
         run: |
-          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.DEPLOY_HOST }} \
-            'export PATH=$HOME/.local/bin:$PATH; cd /opt/fulcrum && uv sync --python 3.11 && systemctl restart fulcrum && sleep 3 && systemctl is-active fulcrum && curl -sf -o /dev/null -w "healthz:%{http_code}\n" http://127.0.0.1:8001/healthz'
+          ssh -i ~/.ssh/id_ed25519 root@${{ secrets.DEPLOY_HOST }} bash -se <<'REMOTE'
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          cd /opt/fulcrum
+          uv sync --python 3.11
+          systemctl restart fulcrum
+
+          # 健康门:重启后应用要重新导入整个管线(FastAPI + 全部检测器 + 策略),
+          # uv sync 重建包后还是冷启动,固定 sleep 3 会在绑端口前就判死刑
+          # (2026-09-09 部署即因此失败:is-active=active 但 healthz:000)。
+          # 改为轮询,最多等 60s,任一次 200 即通过。
+          code=000
+          for i in $(seq 1 30); do
+            # curl 连不上时 -w 本身就会输出 000 且退出码非零,故只吞退出码、不再补写,
+            # 否则 code 会被拼成 000000,失败信息里的状态码就是错的。
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8001/healthz || true)
+            [ -n "$code" ] || code=000
+            if [ "$code" = "200" ]; then
+              echo "healthz:200(第 ${i} 次探测,约 $((i * 2))s)"
+              systemctl is-active fulcrum
+              exit 0
+            fi
+            sleep 2
+          done
+
+          # 失败时把现场打出来,否则日志里只有一个 exit code,无从判断。
+          echo "::error::healthz 60s 内未就绪,最后一次 HTTP code=${code}" >&2
+          systemctl is-active fulcrum || true
+          echo "----- systemctl status -----" >&2
+          systemctl status fulcrum --no-pager -l | tail -n 30 >&2
+          echo "----- journalctl(最近 80 行)-----" >&2
+          journalctl -u fulcrum -n 80 --no-pager >&2
+          exit 1
+          REMOTE
