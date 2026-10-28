@@ -16,6 +16,7 @@ def load_builtin_capabilities() -> None:
     from .detectors import (  # noqa: F401
         disclosure_egress,
         exfil_channel,
+        false_authority,
         injection_cascade,
         keyword_rules,
         llm_judge,
